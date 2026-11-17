@@ -18,8 +18,10 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  # Off until Flynn approves Workload Identity Federation (GCP_WIF_PROVIDER and GCP_DEPLOY_SA are unset,
+  # so the auth step failed on every push). Deploys run by hand with `npm run deploy`; see README.
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: false
     needs: test
     runs-on: ubuntu-latest
     permissions:

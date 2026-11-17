@@ -37,7 +37,8 @@ You need the Firebase CLI: `npm i -g firebase-tools && firebase login`.
    ```
 5. **Set the parent allowlist:** copy the rules to a gitignored local file and put your family's
    Google addresses in `allowedAccount()`, so a stranger who finds the URL can't create data in
-   your project. `npm run deploy` refuses to run while the file is missing or still lists the placeholder.
+   your project. `npm run deploy` refuses to run while the file is missing, lists any `@example`
+   address (comments included), or lists different addresses from `functions/.env`.
    ```bash
    cp firestore.rules firestore.local.rules   # replace parent@example.com with your addresses
    ```
@@ -61,10 +62,27 @@ npm run emulators                       # auth, firestore, hosting on localhost
 VITE_USE_EMULATORS=true npm run dev     # app talks to the emulators
 ```
 
+### Production project setup (rezzed-mathquest, 2026-11-17)
+
+Deploys run by hand with `npm run deploy` on application default credentials of an org account
+(`GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud/application_default_credentials.json`). The org
+blocks gmail project owners. These one-time settings exist in `rezzed-mathquest` only:
+
+- **Domain restricted sharing** (`iam.allowedPolicyMemberDomains`) is overridden to allow all on this
+  project. The callables need the `allUsers` invoker, because `kidSignIn` runs before anyone signs in.
+  The other three check the caller in code.
+- **Functions runtime service account** `mathquest-fn@rezzed-mathquest.iam.gserviceaccount.com`
+  (set in `functions/src/index.ts`). It has `roles/datastore.user` on the project and
+  `roles/iam.serviceAccountTokenCreator` on itself, so `createCustomToken` can sign kid tokens.
+- **Build service account.** The project's default compute account runs the functions build. It has
+  `roles/cloudbuild.builds.builder`. The org turns off automatic role grants, and without that role
+  every functions build fails.
+
 ### CI/CD (GitHub Actions)
 
-`.github/workflows/deploy.yml` runs typecheck and tests on every push and PR, and deploys `main`.
-It uses keyless Workload Identity Federation. Set these repository **variables**:
+`.github/workflows/deploy.yml` runs typecheck and tests on every push and PR. Its deploy job is off
+(`if: false`) until Workload Identity Federation is approved and configured. To turn it on, set these
+repository **variables** and remove the `if: false`:
 
 | Variable | Value |
 | --- | --- |
