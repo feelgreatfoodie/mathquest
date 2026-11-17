@@ -1,0 +1,15 @@
+node_modules
+dist
+dev-dist
+.env
+.env.local
+.env.*.local
+.firebaserc
+.firebase
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*.log
+.DS_Store
+firestore.local.rules
+firebase.deploy.json

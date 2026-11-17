@@ -1,0 +1,185 @@
+# Math Quest
+
+An adaptive math practice game for iPad. Kids fight through a retro dungeon by answering
+times tables, multi-digit multiplication and fraction problems. Behind the game, a
+spaced-repetition engine (FSRS) decides what each kid sees, and how soon, based on
+whether they were right and how fast they answered.
+
+- **Stack:** React 19 + TypeScript + Vite, installable PWA, Firebase Hosting + Auth (Google) + Firestore
+- **Kids:** multiple profiles per family. Kids never sign in; a parent signs in once per device.
+- **Offline:** Firestore's IndexedDB cache plus a service worker. It plays without Wi-Fi and syncs later.
+- **Privacy:** no analytics or third-party SDKs beyond Firebase. Data lives in your GCP project
+  under your Google account's uid. The only personal data is the kid's first name.
+
+## Quick start (no Firebase needed)
+
+```bash
+npm install
+npm run dev:local      # progress is saved in this browser only
+npm test               # engine tests
+```
+
+Open the printed URL on the iPad (same network) or in a desktop browser at iPad size.
+
+## Deploy to GCP (Firebase)
+
+You need the Firebase CLI: `npm i -g firebase-tools && firebase login`.
+
+1. **Add Firebase to a GCP project** (new or existing):
+   `firebase projects:addfirebase YOUR_GCP_PROJECT_ID`
+2. **Turn on Google sign-in:** Firebase console → Authentication → Sign-in method → Google → Enable.
+3. **Create Firestore:** Firebase console → Firestore → Create database → Native mode. Pick a
+   region near you (e.g. `us-west1`). The rules file below locks it down, so start in production mode.
+4. **Register a web app:** Project settings → Your apps → Web. Copy the config into `.env.local`:
+   ```bash
+   cp .env.example .env.local   # fill in API key, auth domain, project id, app id
+   cp .firebaserc.example .firebaserc   # set your project id
+   ```
+5. **Set the parent allowlist:** copy the rules to a gitignored local file and put your family's
+   Google addresses in `allowedAccount()`, so a stranger who finds the URL can't create data in
+   your project. `npm run deploy` refuses to run while the file is missing or still lists the placeholder.
+   ```bash
+   cp firestore.rules firestore.local.rules   # replace parent@example.com with your addresses
+   ```
+6. **Deploy hosting + rules + indexes:**
+   ```bash
+   npm run deploy
+   ```
+7. **On the iPad:** open `https://YOUR_PROJECT.web.app` in Safari, sign in with Google, set a parent
+   PIN, add each kid. Then Share → **Add to Home Screen** so it opens full screen like an app.
+
+A custom domain works too (Hosting → Add custom domain). Add it under Authentication → Settings →
+Authorized domains.
+
+### Local emulators
+
+```bash
+npm run emulators                       # auth, firestore, hosting on localhost
+VITE_USE_EMULATORS=true npm run dev     # app talks to the emulators
+```
+
+### CI/CD (GitHub Actions)
+
+`.github/workflows/deploy.yml` runs typecheck and tests on every push and PR, and deploys `main`.
+It uses keyless Workload Identity Federation. Set these repository **variables**:
+
+| Variable | Value |
+| --- | --- |
+| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID` | Web app config |
+| `GCP_WIF_PROVIDER` | `projects/NUM/locations/global/workloadIdentityPools/POOL/providers/PROVIDER` |
+| `GCP_DEPLOY_SA` | Deploy service account email |
+
+Deploy service account roles: Firebase Hosting Admin, Firebase Rules Admin,
+Cloud Datastore Index Admin, Service Usage Consumer.
+
+## How the adaptive engine works
+
+All of it lives in `src/engine/` as pure TypeScript with no UI or Firebase imports, and is covered by `engine.test.ts`.
+
+**Cards.** There are two kinds (`content.ts`):
+
+- **Fact cards:** one per unordered pair, 0–12 (91 cards). Each review asks the same fact, in a random order.
+- **Skill cards:** one per problem family (`md:2x1r` = 2-digit × 1-digit with regrouping,
+  `fr:msubr` = subtract mixed numbers with regrouping, …). Each review generates a fresh problem
+  (`problems.ts`), so the kid practices the method instead of memorizing one answer.
+
+**Grading** (`grading.ts`). Each first attempt per run is turned into an FSRS grade:
+
+| Result | Grade |
+| --- | --- |
+| Wrong | Again |
+| Right amount, wrong form (e.g. `3 10/8` instead of `4 2/8`) | Hard |
+| Right and slow | Hard |
+| Right, normal speed | Good |
+| Right and fast | Easy |
+
+The speed limits for facts adapt to the kid's own typical time (median of recent correct answers).
+"Fast" starts at 3 s and tightens toward 1.5 s as the kid speeds up. Skills have fixed limits per family.
+
+**Scheduling** (`scheduler.ts`). `ts-fsrs` aims for 90% recall, with a 120-day maximum interval
+and fuzz turned on. FSRS's short-term steps are off. Within a run, misses and slow answers come back
+3 questions later as ungraded practice, so FSRS only sees one grade per card per day.
+
+**Runs** (`session.ts`). Each run, in order:
+
+1. Due cards, the ones the kid is most likely to have forgotten first.
+2. New cards in curriculum order, up to the parent's limit, with at most 2 new skills.
+3. "Practice ahead" on the weakest cards if there is still room.
+
+Early on, when there is little history, the rest of the run is filled with probes of unseen facts.
+A fast, correct answer on a never-seen fact means the kid already knows it, so the first runs
+work as a placement test. A new skill opens with a worked example before the first try.
+
+**Unlocking** (`mastery.ts`). Times tables come in 5 groups:
+
+1. 0s, 1s, 2s, 5s, 10s
+2. 3s and 4s
+3. 9s and 11s
+4. 6s, 7s, 8s
+5. 12s
+
+The next group opens when 80% of the current one is past "learning." Skills open when their
+prerequisites are solid, for example fraction × whole needs adding fractions and the 3s and 4s.
+A parent can open fact groups early.
+
+**Mastery levels** (shown in the parent heatmap):
+
+| Level | Meaning |
+| --- | --- |
+| Not started | Never seen |
+| Learning | Seen, but the last answer was a miss or the memory is still weak |
+| Reviewing | Remembered for about 2 days or more |
+| Solid | Remembered for about 7 days or more, after at least 2 good reviews |
+| Fluent | Solid, and the kid's typical time is under the fast limit |
+
+**Game layer** (`game.ts`, `ui/`). XP, levels, gems, daily streaks, combos, and a hero shop.
+Every 5 questions is a new monster and the last 5 are the boss. There are no countdown timers:
+speed earns a bonus but never costs anything.
+
+## Parent area
+
+Behind a 4-digit PIN (stored as a salted SHA-256 hash). It shows, per kid:
+
+- A 0–12 heatmap of fact mastery, with facts missed 3 or more times outlined.
+- Lists of "keeps slipping" and "right but slow" facts.
+- Skill status, recent runs, and minutes this week.
+- Settings: tracks, questions per run, new cards per run, starting fact group.
+
+## Data model (Firestore)
+
+```
+families/{uid}                              { pinHash, createdAt }
+families/{uid}/kids/{kidId}                 { id, name, createdAt, settings, game }
+families/{uid}/kids/{kidId}/cards/{cardId}  { id, fsrs: {due, stability, difficulty, reps, lapses, state, …}, attempts, correct, recentMs[], lastRating, updatedAt }
+families/{uid}/kids/{kidId}/sessions/{id}   { startedAt, endedAt, graded, correct, fast, newLearned, medianMs, xp, gems, missed[] }
+```
+
+Each card is saved after every answer, and the changed cards are saved together again at the end of
+the run. A 30-question run is about 60 small writes, which is well inside Firestore's free tier.
+
+## Project layout
+
+```
+src/engine/     curriculum, generators, fractions, FSRS wrapper, grading, session planner/runner, game rules (+ tests)
+src/data/       Repo interface, FirestoreRepo, LocalRepo
+src/ui/         keypad, fraction entry, pixel sprites (SVG), screens: kid, run, parent
+firestore.rules owner-only access, optional account allowlist
+```
+
+## Tuning knobs
+
+| What | Where |
+| --- | --- |
+| Target recall, max interval | `scheduler.ts` (`request_retention`, `maximum_interval`) |
+| Fact speed limits | `grading.ts` (`factThresholds`) |
+| Skill speed limits, prerequisites, strategy tips | `content.ts` (`SKILL_CARDS`) |
+| Group unlock share, level cutoffs | `mastery.ts` |
+| Retry gap, XP and gem rules | `session.ts` |
+| Hero prices | `game.ts` |
+
+## Ideas for next
+
+- Division facts, tied to their multiplication facts.
+- Equivalent and comparing fractions, needed before unlike denominators.
+- A weekly parent email from a scheduled Cloud Function.
+- Export review logs to BigQuery to fit per-kid FSRS parameters once there are a few hundred reviews.

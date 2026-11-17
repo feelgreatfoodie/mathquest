@@ -1,0 +1,47 @@
+rules_version = '2';
+
+// Each parent's Google account owns one family tree: families/{uid}/...
+// Nobody else can read or write it. Kids never sign in; they play on the parent's device session.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedInAs(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Locks the app to your family's Google accounts, so strangers who find the URL can't
+    // create families on your project. This committed copy holds a placeholder. `npm run deploy`
+    // deploys firestore.local.rules (gitignored), which holds your real addresses.
+    function allowedAccount() {
+      return request.auth.token.email_verified == true
+        && request.auth.token.email in ['parent@example.com'];
+    }
+
+    // Guards against junk writes: our documents have well under 20 top-level fields.
+    function smallDoc() {
+      return request.resource == null || request.resource.data.size() < 20;
+    }
+
+    match /families/{uid} {
+      allow read: if signedInAs(uid) && allowedAccount();
+      allow write: if signedInAs(uid) && allowedAccount() && smallDoc();
+
+      match /kids/{kidId} {
+        allow read, delete: if signedInAs(uid) && allowedAccount();
+        allow create, update: if signedInAs(uid) && allowedAccount() && smallDoc()
+          && request.resource.data.id == kidId;
+
+        match /cards/{cardId} {
+          allow read, delete: if signedInAs(uid) && allowedAccount();
+          allow create, update: if signedInAs(uid) && allowedAccount() && smallDoc()
+            && request.resource.data.id == cardId;
+        }
+
+        match /sessions/{sessionId} {
+          allow read, delete: if signedInAs(uid) && allowedAccount();
+          allow create, update: if signedInAs(uid) && allowedAccount() && smallDoc();
+        }
+      }
+    }
+  }
+}
