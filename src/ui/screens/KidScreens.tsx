@@ -1,57 +1,124 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cardLabel } from '../../engine/content';
 import { HEROES, buyHero, levelFor } from '../../engine/game';
 import type { Kid } from '../../engine/models';
 import type { RunSummary } from '../../engine/session';
+import { TABS, readTab, tabForKey, writeTab, type LandingTab } from '../landingTab';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
 
-export function SignIn({ onSignIn, onBack, error }: { onSignIn: () => void; onBack?: () => void; error: string | null }) {
+function LandingTabs({ tab, onTab }: { tab: LandingTab; onTab: (t: LandingTab, viaKeyboard?: boolean) => void }) {
+  const labels: Record<LandingTab, string> = { kid: 'Kid', parent: 'Parent' };
+  return (
+    <div className="landing-tabs" role="tablist" aria-label="Who is signing in?">
+      {TABS.map((t) => (
+        <button
+          key={t}
+          type="button"
+          role="tab"
+          id={`landing-tab-${t}`}
+          aria-selected={tab === t}
+          aria-controls="landing-panel"
+          tabIndex={tab === t ? 0 : -1}
+          className={`landing-tab ${tab === t ? 'is-active' : ''}`}
+          onClick={() => onTab(t)}
+          onKeyDown={(e) => {
+            const next = tabForKey(t, e.key);
+            if (!next) return;
+            e.preventDefault();
+            onTab(next, true);
+          }}
+        >
+          {labels[t]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The landing card: Kid and Parent are two equal tabs. Kid shows the first-name + PIN form,
+ * Parent shows Google sign-in (which registers the parent, then opens setup). The last tab is remembered.
+ */
+export function Landing({
+  initialTab,
+  error,
+  onKidSubmit,
+  onParentSignIn,
+  onTabChange,
+}: {
+  initialTab?: LandingTab;
+  error: string | null;
+  onKidSubmit: (name: string, pin: string) => void;
+  onParentSignIn: () => void;
+  onTabChange?: () => void;
+}) {
+  const [tab, setTab] = useState<LandingTab>(() => initialTab ?? readTab());
+  const [name, setName] = useState('');
+  const refocus = useRef(false);
+  // The tab list remounts when the panel swaps, so focus moves after the new tab renders.
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    document.getElementById(`landing-tab-${tab}`)?.focus();
+  }, [tab]);
+  const pick = (t: LandingTab, viaKeyboard = false) => {
+    if (t === tab) return;
+    refocus.current = viaKeyboard;
+    setTab(t);
+    writeTab(t);
+    onTabChange?.();
+  };
+  const tabs = <LandingTabs tab={tab} onTab={pick} />;
+  const panelProps = { id: 'landing-panel', role: 'tabpanel', 'aria-labelledby': `landing-tab-${tab}` } as const;
+
+  if (tab === 'kid') {
+    return (
+      <div className="screen center">
+        <div className="panel pin-panel" {...panelProps}>
+          <PinPad
+            embedded
+            top={tabs}
+            title="Who's playing?"
+            subtitle="Type your first name, then your 4-digit PIN."
+            error={error}
+            header={
+              <>
+                <label htmlFor="kid-signin-name" className="visually-hidden">First name</label>
+                <input
+                  id="kid-signin-name"
+                  className="kid-name-input"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="First name"
+                  maxLength={20}
+                  autoComplete="off"
+                  autoCapitalize="words"
+                  autoCorrect="off"
+                  spellCheck={false}
+                />
+              </>
+            }
+            onComplete={(pin) => onKidSubmit(name, pin)}
+          />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="screen center">
-      <div className="panel title-panel">
+      <div className="panel title-panel landing-parent" {...panelProps}>
+        {tabs}
         <div className="title-sprites">
           <Sprite name="knight" size={84} />
           <Sprite name="boss" size={110} />
         </div>
         <h1 className="pixel title">Math Quest</h1>
-        <p className="muted">Parents: sign in with Google to open the parent area.</p>
         {error ? <p className="error">{error}</p> : null}
-        <button type="button" className="btn btn-big" onClick={onSignIn}>Sign in with Google</button>
-        {onBack ? <button type="button" className="btn btn-ghost" onClick={onBack}>Back</button> : null}
+        <button type="button" className="btn btn-big" onClick={onParentSignIn}>Sign in with Google</button>
+        <p className="muted">New here? Sign in with Google to create your family.</p>
       </div>
     </div>
-  );
-}
-
-/** The landing screen: first name (any capitalization) plus a 4-digit PIN, and a Parent link. */
-export function KidSignIn({ onSubmit, onParent, error }: { onSubmit: (name: string, pin: string) => void; onParent: () => void; error: string | null }) {
-  const [name, setName] = useState('');
-  return (
-    <PinPad
-      title="Who's playing?"
-      subtitle="Type your first name, then your 4-digit PIN."
-      error={error}
-      header={
-        <>
-          <label htmlFor="kid-signin-name" className="visually-hidden">First name</label>
-          <input
-            id="kid-signin-name"
-            className="kid-name-input"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="First name"
-            maxLength={20}
-            autoComplete="off"
-            autoCapitalize="words"
-            autoCorrect="off"
-            spellCheck={false}
-          />
-        </>
-      }
-      footer={<button type="button" className="btn btn-ghost parent-link" onClick={onParent}>Parent</button>}
-      onComplete={(pin) => onSubmit(name, pin)}
-    />
   );
 }
 

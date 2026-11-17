@@ -52,6 +52,11 @@ You need the Firebase CLI: `npm i -g firebase-tools && firebase login`.
    (`node scripts/backfill-parents.mjs --project YOUR_PROJECT`, then again with `--apply`), then
    deploy the rules. The backfill registers every existing family from Firestore and Auth and claims
    the names of existing kids. It commits no uids or emails.
+   After every functions deploy, run the live probe (ADC with Firestore access):
+   `node scripts/deploy-probe.mjs --project YOUR_PROJECT`. It seeds a throwaway parent, family and kid,
+   calls the deployed `kidSignIn` with the right PIN (expects a kid token) and a wrong PIN (expects the
+   generic error), then deletes everything. Exit 0 = pass. The emulator needs no IAM, so only this catches
+   a missing runtime role (11-17: `firebaseauth.viewer`).
 7. **On the iPad:** open `https://YOUR_PROJECT.web.app` in Safari, sign in with Google, set a parent
    PIN, add each kid. Then Share → **Add to Home Screen** so it opens full screen like an app.
 
