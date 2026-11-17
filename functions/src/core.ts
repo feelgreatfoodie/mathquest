@@ -23,6 +23,30 @@ export const LIMITS = {
   family: { max: 20, windowMs: 60 * 60_000 },
 } as const;
 
+// Number of X-Forwarded-For entries the trusted infrastructure appended, counted from the right.
+// Cloud Run's Google front end appends the address it received the connection from, so the last
+// entry is the real client and everything before it is whatever the caller sent. Confirm the value
+// by probing the deployed function (see the PR) before relying on it.
+export const TRUSTED_XFF_HOPS = 1;
+
+/**
+ * Client IP for the per-IP limit. Reads X-Forwarded-For from the right, so entries a caller
+ * forges at the left never pick the bucket. Falls back to `fallbackIp` (req.ip) with no header.
+ */
+export function clientIp(
+  xff: string | string[] | undefined,
+  fallbackIp?: string,
+  hops: number = TRUSTED_XFF_HOPS,
+): string {
+  const raw = Array.isArray(xff) ? xff.join(',') : (xff ?? '');
+  const entries = raw
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean);
+  if (entries.length === 0) return fallbackIp || 'unknown';
+  return (entries[Math.max(0, entries.length - Math.max(1, hops))] ?? 'unknown').slice(0, 64);
+}
+
 const GLOBAL = '_global';
 const PIN_RE = /^\d{4}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -171,7 +195,10 @@ async function familyAllowed(d: Deps, uid: string): Promise<boolean> {
   try {
     const u = await d.auth.getUser(uid);
     return isAllowed(d, u.email, u.emailVerified);
-  } catch {
+  } catch (err) {
+    // 11-17: the runtime SA lacked Firebase Auth read, getUser threw on every call, and this branch
+    // hid it, so every kid PIN looked wrong. A missing user and a permission error both log here.
+    console.error('familyAllowed: getUser failed', { uid, error: err instanceof Error ? err.message : String(err) });
     return false;
   }
 }
