@@ -5,7 +5,7 @@ import { LocalRepo } from './data/localRepo';
 import { hashPin, type Repo } from './data/repo';
 import type { Family, Kid } from './engine/models';
 import type { RunSummary } from './engine/session';
-import { dataMode, getFirebase, kidClaims, signInKid, signInParent, signOutParent } from './firebase';
+import { dataMode, getFirebase, kidClaims, registerParent, signInKid, signInParent, signOutParent } from './firebase';
 import { PinPad } from './ui/PinPad';
 import { KidHome, KidSignIn, Picker, SignIn, Summary } from './ui/screens/KidScreens';
 import { ParentArea, Setup } from './ui/screens/Parent';
@@ -85,6 +85,15 @@ export function App() {
           return;
         }
         setKidSession(false);
+        // Join the parent registry first. At the cap the message is shown and the account signs out.
+        try {
+          await registerParent();
+        } catch (e) {
+          setError((e as Error).message || 'Could not sign in. Try again.');
+          setScreen({ name: 'signin' });
+          void signOutParent();
+          return;
+        }
         const r = new FirestoreRepo(db, user.uid);
         setRepo(r);
         setSalt(user.uid);

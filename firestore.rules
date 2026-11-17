@@ -11,12 +11,12 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == uid;
     }
 
-    // Locks the app to your family's Google accounts, so strangers who find the URL can't
-    // create families on your project. This committed copy holds a placeholder. `npm run deploy`
-    // deploys firestore.local.rules (gitignored), which holds your real addresses.
+    // A registered parent: a verified Google email and a parents/{uid} doc. Only the registerParent
+    // function writes that doc, and it stops at MAX_PARENTS (20), so a stranger who finds the URL can
+    // sign in but cannot create or read any family.
     function allowedAccount() {
       return request.auth.token.email_verified == true
-        && request.auth.token.email in ['parent@example.com'];
+        && exists(/databases/$(database)/documents/parents/$(request.auth.uid));
     }
 
     // Guards against junk writes: our documents have well under 20 top-level fields.
@@ -24,7 +24,7 @@ service cloud.firestore {
       return request.resource == null || request.resource.data.size() < 20;
     }
 
-    // The parent: signed in as this family's Google account, on the allowlist.
+    // The parent: signed in as this family's Google account, and registered.
     function isParent(uid) {
       return signedInAs(uid) && allowedAccount();
     }
@@ -41,6 +41,18 @@ service cloud.firestore {
     // hasPin, createdAt) is parent-only.
     function kidOnlyChangedGame() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['game']);
+    }
+
+    // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
+    // touches them.
+    match /parents/{document=**} {
+      allow read, write: if false;
+    }
+    match /meta/{document=**} {
+      allow read, write: if false;
+    }
+    match /nameKeys/{document=**} {
+      allow read, write: if false;
     }
 
     // PIN hashes, salts and attempt counters. Only the Admin SDK in Cloud Functions touches them.

@@ -82,6 +82,11 @@ export async function signInKid(name: string, pin: string): Promise<void> {
   await signInWithCustomToken(getFirebase().auth, res.data.token);
 }
 
+/** Registers this Google account as a parent (idempotent). Throws "Math Quest is full right now." at the cap. */
+export async function registerParent(): Promise<void> {
+  await callable<Record<string, never>, { ok: true }>('registerParent')({});
+}
+
 export async function setKidPin(kidId: string, pin: string): Promise<void> {
   await callable<{ kidId: string; pin: string }, { ok: true }>('setKidPin')({ kidId, pin });
 }

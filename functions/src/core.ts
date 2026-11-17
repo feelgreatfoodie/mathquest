@@ -11,11 +11,19 @@ import type { Firestore, Transaction } from 'firebase-admin/firestore';
 //   pinIndex/{familyUid}/attempts/family         family failure counter and lock
 //   pinIndex/_global/attempts/ip_{hash}          per-IP failure counter and lock
 //   pinIndex/_global/attempts/name_{hash}        per-name failure counter and lock
+//   parents/{uid}                                { email, createdAt }: a registered parent account
+//   meta/parentCount                             { count }: how many parents are registered
+//   nameKeys/{nameKey}                           { familyUid, kidId }: the one kid that owns a name
 // IP and name counters sit in _global so an unknown name is counted exactly like a known one.
 // ---------------------------------------------------------------------------------------------
 
 export const MISMATCH_MESSAGE = "That name and PIN didn't match";
 export const LOCKED_MESSAGE = 'Too many wrong tries. Ask a parent, or wait and try again.';
+export const FULL_MESSAGE = 'Math Quest is full right now.';
+export const NAME_TAKEN_MESSAGE = 'That name is taken. Try adding a last initial, like EmmaS.';
+
+/** Parent accounts that may register. Raise it to let more families in. */
+export const MAX_PARENTS = 20;
 
 export const LIMITS = {
   ip: { max: 5, windowMs: 15 * 60_000 },
@@ -31,6 +39,8 @@ export interface AuthContext {
   uid: string;
   email?: string | undefined;
   emailVerified?: boolean | undefined;
+  /** The sign-in provider of the caller's token, for example 'google.com'. */
+  provider?: string | undefined;
 }
 
 export interface Deps {
@@ -38,10 +48,7 @@ export interface Deps {
   /** The parts of firebase-admin Auth that this code uses. */
   auth: {
     createCustomToken(uid: string, claims: Record<string, unknown>): Promise<string>;
-    getUser(uid: string): Promise<{ email?: string | undefined; emailVerified: boolean }>;
   };
-  /** Lowercase parent emails that may own a family. */
-  allowedEmails: string[];
   now?: () => number;
 }
 
@@ -65,14 +72,39 @@ function scryptAsync(pin: string, salt: Buffer): Promise<Buffer> {
 const DUMMY_SALT = Buffer.from('mathquest-dummy-salt-not-a-secret');
 const DUMMY_HASH = Buffer.alloc(32, 7);
 
-function isAllowed(d: Deps, email: string | undefined, verified: boolean | undefined): boolean {
-  return verified === true && !!email && d.allowedEmails.includes(email.toLowerCase());
+const parentRef = (d: Deps, uid: string) => d.db.doc(`parents/${uid}`);
+const parentCountRef = (d: Deps) => d.db.doc('meta/parentCount');
+const nameKeyRef = (d: Deps, nameKey: string) => d.db.doc(`nameKeys/${nameKey}`);
+
+/** A registered parent: a verified email and a parents/{uid} doc. */
+async function assertParent(d: Deps, auth: AuthContext | undefined): Promise<AuthContext> {
+  if (!auth) throw new HttpsError('unauthenticated', 'Sign in as a parent first.');
+  if (auth.emailVerified !== true || !auth.email) throw new HttpsError('permission-denied', 'Parents only.');
+  if (!(await parentRef(d, auth.uid).get()).exists) throw new HttpsError('permission-denied', 'Parents only.');
+  return auth;
 }
 
-function assertParent(d: Deps, auth: AuthContext | undefined): AuthContext {
-  if (!auth) throw new HttpsError('unauthenticated', 'Sign in as a parent first.');
-  if (!isAllowed(d, auth.email, auth.emailVerified)) throw new HttpsError('permission-denied', 'Parents only.');
-  return auth;
+// ---------- parent registry ----------
+
+/**
+ * Registers the calling Google account as a parent. Idempotent per uid. One transaction reads the
+ * count and refuses at MAX_PARENTS, so two callers at count 19 cannot both get in.
+ */
+export async function registerParent(d: Deps, auth: AuthContext | undefined): Promise<{ ok: true }> {
+  if (!auth) throw new HttpsError('unauthenticated', 'Sign in with Google first.');
+  if (auth.provider !== 'google.com') throw new HttpsError('permission-denied', 'Sign in with Google.');
+  if (auth.emailVerified !== true || !auth.email) throw new HttpsError('permission-denied', 'Verify your Google email first.');
+  const email = auth.email.toLowerCase();
+  await d.db.runTransaction(async (tx) => {
+    const [mine, counter] = await Promise.all([tx.get(parentRef(d, auth.uid)), tx.get(parentCountRef(d))]);
+    if (mine.exists) return;
+    const raw = counter.data()?.count;
+    const count = typeof raw === 'number' ? raw : 0;
+    if (count >= MAX_PARENTS) throw new HttpsError('resource-exhausted', FULL_MESSAGE);
+    tx.set(parentRef(d, auth.uid), { email, createdAt: nowOf(d) });
+    tx.set(parentCountRef(d), { count: count + 1 });
+  });
+  return { ok: true };
 }
 
 // ---------- counters ----------
@@ -167,13 +199,8 @@ interface PinRow {
   hash: Buffer;
 }
 
-async function familyAllowed(d: Deps, uid: string): Promise<boolean> {
-  try {
-    const u = await d.auth.getUser(uid);
-    return isAllowed(d, u.email, u.emailVerified);
-  } catch {
-    return false;
-  }
+async function familyRegistered(d: Deps, uid: string): Promise<boolean> {
+  return (await parentRef(d, uid).get()).exists;
 }
 
 /** Every family that has pinIndex rows, except the _global counter bucket. */
@@ -182,14 +209,13 @@ async function indexFamilies(d: Deps): Promise<string[]> {
   return refs.map((r) => r.id).filter((id) => id !== GLOBAL);
 }
 
-/** Rows whose nameKey matches and whose kid doc and allowlisted family still exist. */
-async function findRows(d: Deps, nameKey: string, skipFamily?: string): Promise<PinRow[]> {
+/** Rows whose nameKey matches and whose kid doc and registered family still exist. */
+async function findRows(d: Deps, nameKey: string): Promise<PinRow[]> {
   const out: PinRow[] = [];
   for (const familyUid of await indexFamilies(d)) {
-    if (familyUid === skipFamily) continue;
     const snap = await d.db.collection(`pinIndex/${familyUid}/kids`).where('nameKey', '==', nameKey).get();
     if (snap.empty) continue;
-    if (!(await familyAllowed(d, familyUid))) continue;
+    if (!(await familyRegistered(d, familyUid))) continue;
     for (const doc of snap.docs) {
       const kid = await d.db.doc(`families/${familyUid}/kids/${doc.id}`).get();
       if (!kid.exists) continue;
@@ -241,7 +267,7 @@ export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: s
 // ---------- setKidPin ----------
 
 export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { kidId?: unknown; pin?: unknown }): Promise<{ ok: true }> {
-  const parent = assertParent(d, auth);
+  const parent = await assertParent(d, auth);
   const { kidId, pin } = data;
   if (typeof kidId !== 'string' || !ID_RE.test(kidId)) throw new HttpsError('invalid-argument', 'Bad player id.');
   if (typeof pin !== 'string' || !PIN_RE.test(pin)) throw new HttpsError('invalid-argument', 'The PIN must be 4 digits.');
@@ -271,18 +297,35 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
       throw new HttpsError('already-exists', 'Another player in this family has that name.');
     }
   }
-  // Names are unique across allowlisted families too, so sign-in is never ambiguous.
-  if ((await findRows(d, nameKey, parent.uid)).length) {
-    throw new HttpsError('already-exists', 'That name is already used. Pick another spelling.');
-  }
-
   const salt = randomBytes(16);
   const hash = await scryptAsync(pin, salt);
-  await d.db.doc(`pinIndex/${parent.uid}/kids/${kidId}`).set({
-    nameKey,
-    salt: salt.toString('hex'),
-    hash: hash.toString('hex'),
-    updatedAt: nowOf(d),
+  const rowRef = d.db.doc(`pinIndex/${parent.uid}/kids/${kidId}`);
+
+  // Names are unique across every family. The claim doc nameKeys/{nameKey} is the lock: two
+  // parents claiming one name at once both read it, and Firestore retries the loser, who then sees the winner.
+  await d.db.runTransaction(async (tx) => {
+    const claimRef = nameKeyRef(d, nameKey);
+    const [claim, oldRow] = await Promise.all([tx.get(claimRef), tx.get(rowRef)]);
+    const owner = claim.data() as { familyUid?: string; kidId?: string } | undefined;
+    const ownedByThisKid = owner?.familyUid === parent.uid && owner?.kidId === kidId;
+    if (claim.exists && !ownedByThisKid) {
+      // A claim whose kid doc is gone is stale (the parent deleted that kid), so the name is free again.
+      const ownerKid = await tx.get(d.db.doc(`families/${owner?.familyUid}/kids/${owner?.kidId}`));
+      if (ownerKid.exists) {
+        throw new HttpsError('already-exists', owner?.familyUid === parent.uid ? 'Another player in this family has that name.' : NAME_TAKEN_MESSAGE);
+      }
+    }
+    // A kid whose name changed gives up the old name.
+    const oldKey = oldRow.exists ? String(oldRow.data()?.nameKey ?? '') : '';
+    let releaseOld: FirebaseFirestore.DocumentReference | null = null;
+    if (oldKey && oldKey !== nameKey) {
+      const oldClaim = await tx.get(nameKeyRef(d, oldKey));
+      const o = oldClaim.data();
+      if (oldClaim.exists && o?.familyUid === parent.uid && o?.kidId === kidId) releaseOld = oldClaim.ref;
+    }
+    tx.set(claimRef, { familyUid: parent.uid, kidId });
+    tx.set(rowRef, { nameKey, salt: salt.toString('hex'), hash: hash.toString('hex'), updatedAt: nowOf(d) });
+    if (releaseOld) tx.delete(releaseOld);
   });
   await kidRef.update({ hasPin: true });
   return { ok: true };
@@ -307,7 +350,7 @@ async function familyBuckets(d: Deps, uid: string) {
 }
 
 export async function kidLockStatus(d: Deps, auth: AuthContext | undefined): Promise<LockStatus> {
-  const parent = assertParent(d, auth);
+  const parent = await assertParent(d, auth);
   const now = nowOf(d);
   const fam = readCounter((await familyCounter(d, parent.uid).get()).data());
   const failures = fam.entries.filter((e) => e.at > now - LIMITS.family.windowMs).length;
@@ -323,7 +366,7 @@ export async function kidLockStatus(d: Deps, auth: AuthContext | undefined): Pro
 }
 
 export async function unlockKidSignIn(d: Deps, auth: AuthContext | undefined): Promise<{ ok: true }> {
-  const parent = assertParent(d, auth);
+  const parent = await assertParent(d, auth);
   const { names, ipDocs } = await familyBuckets(d, parent.uid);
   const refs = [familyCounter(d, parent.uid), ...names.map((n) => nameCounter(d, n.nameKey)), ...ipDocs.map((x) => x.ref)];
   const batch = d.db.batch();

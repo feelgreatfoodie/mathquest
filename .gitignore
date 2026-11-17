@@ -11,5 +11,3 @@ firestore-debug.log
 ui-debug.log
 *.log
 .DS_Store
-firestore.local.rules
-firebase.deploy.json

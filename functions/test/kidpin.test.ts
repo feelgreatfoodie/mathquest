@@ -5,6 +5,7 @@ import {
   LIMITS,
   LOCKED_MESSAGE,
   MISMATCH_MESSAGE,
+  NAME_TAKEN_MESSAGE,
   kidLockStatus,
   kidSignIn,
   parentPinHash,
@@ -17,16 +18,11 @@ import {
 // All names, ids, addresses and PINs below are made up for the tests.
 const FAM = 'fam-uid-1';
 const FAM2 = 'fam-uid-2';
-const PARENT: AuthContext = { uid: FAM, email: 'parent-one@example.com', emailVerified: true };
-const PARENT2: AuthContext = { uid: FAM2, email: 'parent-two@example.com', emailVerified: true };
+const PARENT: AuthContext = { uid: FAM, email: 'parent-one@example.com', emailVerified: true, provider: 'google.com' };
+const PARENT2: AuthContext = { uid: FAM2, email: 'parent-two@example.com', emailVerified: true, provider: 'google.com' };
 const PARENT_PIN = '4821';
 const PIN = '7305';
 const PIN_B = '2946';
-
-const users: Record<string, { email: string; emailVerified: boolean }> = {
-  [FAM]: { email: 'parent-one@example.com', emailVerified: true },
-  [FAM2]: { email: 'parent-two@example.com', emailVerified: true },
-};
 
 let db: Firestore;
 let clock = 1_700_000_000_000;
@@ -35,14 +31,8 @@ function deps(): Deps {
   return {
     db,
     now: () => clock,
-    allowedEmails: ['parent-one@example.com', 'parent-two@example.com'],
     auth: {
       createCustomToken: async (uid, claims) => JSON.stringify({ uid, claims }),
-      getUser: async (uid) => {
-        const u = users[uid];
-        if (!u) throw new Error('no such user');
-        return u;
-      },
     },
   };
 }
@@ -52,7 +42,7 @@ async function seedKid(fam: string, id: string, name: string) {
 }
 
 async function clearAll() {
-  for (const col of ['families', 'pinIndex']) {
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) {
     await db.recursiveDelete(db.collection(col));
   }
 }
@@ -77,6 +67,9 @@ beforeAll(() => {
 beforeEach(async () => {
   await clearAll();
   clock = 1_700_000_000_000;
+  await db.doc(`parents/${FAM}`).set({ email: 'parent-one@example.com', createdAt: 1 });
+  await db.doc(`parents/${FAM2}`).set({ email: 'parent-two@example.com', createdAt: 1 });
+  await db.doc('meta/parentCount').set({ count: 2 });
   await db.doc(`families/${FAM}`).set({ pinHash: parentPinHash(FAM, PARENT_PIN), createdAt: 1 });
   await seedKid(FAM, 'kid-bastian', 'Bastian');
   await seedKid(FAM, 'kid-maya', 'Maya');
@@ -126,22 +119,25 @@ describe('kidSignIn: name and PIN', () => {
     expect((await fail(signIn('Bastian', PIN))).message).toBe(MISMATCH_MESSAGE);
   });
 
-  it('refuses a family whose parent is no longer on the allowlist', async () => {
-    users[FAM] = { email: 'someone-else@example.com', emailVerified: true };
-    try {
-      expect((await fail(signIn('Bastian', PIN))).message).toBe(MISMATCH_MESSAGE);
-    } finally {
-      users[FAM] = { email: 'parent-one@example.com', emailVerified: true };
-    }
+  it('refuses a family that is not in the parents registry', async () => {
+    await db.doc(`parents/${FAM}`).delete();
+    expect((await fail(signIn('Bastian', PIN))).message).toBe(MISMATCH_MESSAGE);
+  });
+
+  it('finds a kid in any registered family, not only the first', async () => {
+    await seedKid(FAM2, 'kid-other', 'Otto');
+    await setKidPin(deps(), PARENT2, { kidId: 'kid-other', pin: PIN_B });
+    const t = claimsOf(await signIn('otto', PIN_B));
+    expect(t.claims).toEqual({ role: 'kid', familyUid: FAM2, kidId: 'kid-other' });
   });
 });
 
 describe('setKidPin', () => {
-  it('rejects callers who are not allowlisted parents', async () => {
+  it('rejects callers who are not registered parents', async () => {
     const d = deps();
     expect((await fail(setKidPin(d, undefined, { kidId: 'kid-zed', pin: PIN }))).code).toBe('unauthenticated');
     expect((await fail(setKidPin(d, { ...PARENT, emailVerified: false }, { kidId: 'kid-zed', pin: PIN }))).code).toBe('permission-denied');
-    expect((await fail(setKidPin(d, { uid: FAM, email: 'stranger@example.com', emailVerified: true }, { kidId: 'kid-zed', pin: PIN }))).code).toBe('permission-denied');
+    expect((await fail(setKidPin(d, { uid: 'unregistered-uid', email: 'stranger@example.com', emailVerified: true }, { kidId: 'kid-zed', pin: PIN }))).code).toBe('permission-denied');
     // A kid's own token has no email, so it cannot set PINs either.
     expect((await fail(setKidPin(d, { uid: 'kid_kid-zed' }, { kidId: 'kid-zed', pin: PIN }))).code).toBe('permission-denied');
   });
@@ -165,9 +161,11 @@ describe('setKidPin', () => {
     expect((await fail(setKidPin(deps(), PARENT, { kidId: 'kid-bastian2', pin: PIN_B }))).code).toBe('already-exists');
   });
 
-  it('refuses a name another allowlisted family already uses', async () => {
+  it('refuses a name another family already uses, with the last-initial hint', async () => {
     await seedKid(FAM2, 'other-bastian', 'bastian');
-    expect((await fail(setKidPin(deps(), PARENT2, { kidId: 'other-bastian', pin: PIN_B }))).code).toBe('already-exists');
+    const e = await fail(setKidPin(deps(), PARENT2, { kidId: 'other-bastian', pin: PIN_B }));
+    expect(e.code).toBe('already-exists');
+    expect(e.message).toBe(NAME_TAKEN_MESSAGE);
   });
 
   it('stores a hash and salt server-side, and only hasPin on the kid doc', async () => {
@@ -304,7 +302,7 @@ describe('parent lock status and unlock', () => {
   it('refuses status and unlock for anyone who is not a parent', async () => {
     expect((await fail(unlockKidSignIn(deps(), undefined))).code).toBe('unauthenticated');
     expect((await fail(unlockKidSignIn(deps(), { uid: 'kid_kid-zed' }))).code).toBe('permission-denied');
-    expect((await fail(kidLockStatus(deps(), { uid: 'x', email: 'stranger@example.com', emailVerified: true }))).code).toBe('permission-denied');
+    expect((await fail(kidLockStatus(deps(), { uid: 'unregistered-uid', email: 'stranger@example.com', emailVerified: true }))).code).toBe('permission-denied');
   });
 
   it("does not let one family's unlock clear another family's lock", async () => {
