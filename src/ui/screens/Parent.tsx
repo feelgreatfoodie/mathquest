@@ -3,7 +3,7 @@ import { FACT_GROUPS, SKILL_CARDS, factId, type Track } from '../../engine/conte
 import { levelFor } from '../../engine/game';
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, unlockedFactGroups, type Level } from '../../engine/mastery';
-import { DEFAULT_GAME, DEFAULT_SETTINGS, type CardMap, type Family, type Kid, type KidSettings, type SessionLog } from '../../engine/models';
+import { DEFAULT_GAME, DEFAULT_SETTINGS, paceOf, type CardMap, type Family, type Kid, type KidSettings, type SessionLog } from '../../engine/models';
 import { median } from '../../engine/scheduler';
 import { hashPin, newId, type Repo } from '../../data/repo';
 import { PinPad } from '../PinPad';
@@ -181,7 +181,8 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
   if (!cards) return <p className="pixel blink">Loading…</p>;
 
   const baseline = factBaseline(cards);
-  const fastBar = factThresholds(baseline).fastMs;
+  const pace = paceOf(kid.settings);
+  const fastBar = factThresholds(baseline, pace).fastMs;
   const groups = unlockedFactGroups(cards, kid.settings);
   const factStates = Object.values(cards).filter((c) => c.id.startsWith('mul:'));
   const leeches = factStates.filter((c) => c.fsrs.lapses >= 3).sort((a, b) => b.fsrs.lapses - a.fsrs.lapses);
@@ -207,9 +208,9 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
         <h2>Times tables</h2>
         <p className="muted">
           Open groups: {FACT_GROUPS.slice(0, groups).map((g) => g.label).join(' · ')}. "Fluent" means solid and answered in
-          under {fmtSec(fastBar)}.
+          under {fmtSec(fastBar)}. Pace {pace}x.
         </p>
-        <Heatmap cards={cards} baseline={baseline} />
+        <Heatmap cards={cards} baseline={baseline} pace={pace} />
         <div className="legend">
           {([0, 1, 2, 3, 4] as Level[]).map((l) => (
             <span key={l} className="legend-item"><span className={`swatch ${LEVEL_CLASS[l]}`} />{LEVEL_LABELS[l]}</span>
@@ -240,7 +241,7 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
               return (
                 <tr key={s.id}>
                   <td>{s.label}</td>
-                  <td>{c ? LEVEL_LABELS[cardLevel(c, baseline)] : 'Locked or not started'}</td>
+                  <td>{c ? LEVEL_LABELS[cardLevel(c, baseline, pace)] : 'Locked or not started'}</td>
                   <td className="num">{c?.attempts ? `${Math.round((c.correct / c.attempts) * 100)}%` : '–'}</td>
                   <td className="num">{c ? fmtSec(median(c.recentMs)) : '–'}</td>
                 </tr>
@@ -299,6 +300,12 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
           </select>
         </label>
         <label>
+          Pace
+          <select value={paceOf(settings)} onChange={(e) => setSettings({ ...settings, paceMultiplier: Number(e.target.value) })}>
+            {PACE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </label>
+        <label>
           Start times tables at
           <select value={settings.factGroupsUnlocked} onChange={(e) => setSettings({ ...settings, factGroupsUnlocked: Number(e.target.value) })}>
             {FACT_GROUPS.map((g, i) => <option key={g.id} value={i + 1}>{i === 0 ? g.label : `Through ${g.label}`}</option>)}
@@ -336,7 +343,14 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
   );
 }
 
-function Heatmap({ cards, baseline }: { cards: CardMap; baseline: number }) {
+const PACE_OPTIONS = [
+  { value: 3, label: '3x: most time (default)' },
+  { value: 2, label: '2x: more time' },
+  { value: 1.5, label: '1.5x: a little extra time' },
+  { value: 1, label: '1x: original speed bars (strictest)' },
+];
+
+function Heatmap({ cards, baseline, pace }: { cards: CardMap; baseline: number; pace: number }) {
   const nums = Array.from({ length: 13 }, (_, i) => i);
   return (
     <div className="heatmap" role="table" aria-label="Times table mastery, 0 to 12">
@@ -349,7 +363,7 @@ function Heatmap({ cards, baseline }: { cards: CardMap; baseline: number }) {
           <span className="hm-head" role="rowheader">{a}</span>
           {nums.map((b) => {
             const c = cards[factId(a, b)];
-            const lv = cardLevel(c, baseline);
+            const lv = cardLevel(c, baseline, pace);
             const tip = `${a} × ${b} = ${a * b}: ${LEVEL_LABELS[lv]}${c?.recentMs.length ? `, ${fmtSec(median(c.recentMs))}` : ''}${c?.fsrs.lapses ? `, missed ${c.fsrs.lapses}×` : ''}`;
             return (
               <span key={b} role="cell" title={tip} aria-label={tip} className={`hm-cell ${LEVEL_CLASS[lv]} ${c && c.fsrs.lapses >= 3 ? 'leech' : ''}`}>

@@ -3,7 +3,7 @@ import { Rating } from 'ts-fsrs';
 import { getCardDef, type CardDef } from './content';
 import { factBaseline, gradeAnswer, thresholdsFor } from './grading';
 import { cardLevel } from './mastery';
-import type { CardMap, CardState } from './models';
+import { paceOf, type CardMap, type CardState, type KidSettings } from './models';
 import { answerText, checkAnswer, generateProblem, type AnswerInput, type Problem, type Rng, type Verdict } from './problems';
 import { isDue, median, newCardState, practice, retrievability, review } from './scheduler';
 
@@ -122,6 +122,7 @@ export class SessionRunner {
   private changed = new Set<string>();
   private retries = new Map<string, number>();
   private baseline: number;
+  private pace: number;
   private combo = 0;
   private bestCombo = 0;
   private xp = 0;
@@ -135,7 +136,9 @@ export class SessionRunner {
     cards: CardMap,
     private rng: Rng,
     private clock: () => number = Date.now,
+    settings?: Pick<KidSettings, 'paceMultiplier'>,
   ) {
+    this.pace = paceOf(settings);
     this.cards = { ...cards };
     this.baseline = factBaseline(cards);
     for (const item of plan) {
@@ -182,7 +185,7 @@ export class SessionRunner {
     const now = this.clock();
     const verdict = checkAnswer(entry.problem, input);
     const correct = verdict === 'correct';
-    const th = thresholdsFor(def, this.baseline);
+    const th = thresholdsFor(def, this.baseline, this.pace);
     const fast = correct && ms <= th.fastMs;
     let rating: Grade | null = null;
 
@@ -211,7 +214,7 @@ export class SessionRunner {
     // Retry misses and slow answers a few questions later; extra reps for skills still being learned.
     const tries = this.retries.get(entry.cardId) ?? 0;
     const slow = correct && rating === Rating.Hard;
-    const learningSkill = correct && entry.kind === 'graded' && def.kind === 'skill' && cardLevel(prev, this.baseline) < 3;
+    const learningSkill = correct && entry.kind === 'graded' && def.kind === 'skill' && cardLevel(prev, this.baseline, this.pace) < 3;
     if ((!correct || slow || learningSkill) && tries < MAX_RETRIES) {
       this.retries.set(entry.cardId, tries + 1);
       const at = Math.min(this.queue.length, this.index + 1 + RETRY_GAP);

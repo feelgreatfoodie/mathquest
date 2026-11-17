@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { Rating } from 'ts-fsrs';
-import { ALL_CARDS, FACT_CARDS, FACT_GROUPS, SKILL_CARDS, factId, factStrategy } from './content';
+import { ALL_CARDS, FACT_CARDS, FACT_GROUPS, SKILL_CARDS, factId, factStrategy, getCardDef } from './content';
 import { add, equalValue, sub, toImproper, toMixed, type Mixed } from './fraction';
-import { factBaseline, factThresholds, gradeAnswer } from './grading';
+import { factBaseline, factThresholds, gradeAnswer, thresholdsFor } from './grading';
 import { availableCards, cardLevel, groupProgress, unlockedFactGroups } from './mastery';
-import { DEFAULT_SETTINGS, type CardMap, type KidSettings } from './models';
+import { DEFAULT_SETTINGS, paceOf, type CardMap, type KidSettings } from './models';
 import { checkAnswer, generateProblem, mulberry32, type Problem, type Token } from './problems';
 import { isDue, newCardState, review } from './scheduler';
 import { applyRun, buyHero, levelFor } from './game';
@@ -136,7 +136,7 @@ describe('answer checking', () => {
 
 describe('grading', () => {
   it('maps accuracy and speed to FSRS grades', () => {
-    const th = factThresholds(3500);
+    const th = factThresholds(3500, 1);
     expect(th.fastMs).toBe(3000);
     expect(gradeAnswer('wrong', 1000, th)).toBe(Rating.Again);
     expect(gradeAnswer('almost', 1000, th)).toBe(Rating.Hard);
@@ -150,7 +150,62 @@ describe('grading', () => {
     FACT_CARDS.slice(0, 10).forEach((c) => (cards[c.id] = { ...newCardState(c.id, T0), recentMs: [1800, 1900] }));
     const base = factBaseline(cards);
     expect(base).toBeLessThan(2000);
-    expect(factThresholds(base).fastMs).toBeLessThan(2000);
+    expect(factThresholds(base, 1).fastMs).toBeLessThan(2000);
+  });
+});
+
+describe('pace multiplier', () => {
+  const fact = getCardDef('mul:7x8')!;
+  const skill = getCardDef('md:2x1')!;
+
+  it('scales fact bars and their clamp bounds by pace', () => {
+    expect(thresholdsFor(fact, 3500, 1)).toEqual({ fastMs: 3000, slowMs: 8750 });
+    expect(thresholdsFor(fact, 3500, 3)).toEqual({ fastMs: 9000, slowMs: 26250 });
+    // A fast kid hits the lower clamp: 1500 ms and 5000 ms, times pace.
+    expect(thresholdsFor(fact, 1000, 3)).toEqual({ fastMs: 4500, slowMs: 15000 });
+    // A very slow kid hits the upper clamp: 3000 ms and 9000 ms, times pace.
+    expect(thresholdsFor(fact, 9000, 3)).toEqual({ fastMs: 9000, slowMs: 27000 });
+    expect(thresholdsFor(fact, 3500, 1.5)).toEqual({ fastMs: 4500, slowMs: 13125 });
+  });
+
+  it('scales skill bars by pace', () => {
+    expect(thresholdsFor(skill, 3500, 1)).toEqual({ fastMs: 14000, slowMs: 40000 });
+    expect(thresholdsFor(skill, 3500, 3)).toEqual({ fastMs: 42000, slowMs: 120000 });
+  });
+
+  it('grades a 6 s fact answer Easy at pace 3 and Good at pace 1', () => {
+    expect(gradeAnswer('correct', 6000, thresholdsFor(fact, 3500, 3))).toBe(Rating.Easy);
+    expect(gradeAnswer('correct', 6000, thresholdsFor(fact, 3500, 1))).toBe(Rating.Good);
+  });
+
+  it('reads a missing or invalid paceMultiplier as 3', () => {
+    expect(paceOf(undefined)).toBe(3);
+    expect(paceOf({})).toBe(3);
+    expect(paceOf({ paceMultiplier: 0 })).toBe(3);
+    expect(paceOf({ paceMultiplier: Number.NaN })).toBe(3);
+    expect(paceOf({ paceMultiplier: 1 })).toBe(1);
+    expect(paceOf({ paceMultiplier: 1.5 })).toBe(1.5);
+    expect(DEFAULT_SETTINGS.paceMultiplier).toBe(3);
+  });
+
+  it('uses the same bar for the session grade, the summary count and the mastery level', () => {
+    const answer = (settings: Partial<KidSettings>) => {
+      const run = new SessionRunner([{ cardId: 'mul:7x8', isNew: false }], {}, mulberry32(3), () => T0, settings as KidSettings);
+      return run.answer({ kind: 'int', value: 56 }, 6000);
+    };
+    expect(answer({ paceMultiplier: 3 }).rating).toBe(Rating.Easy);
+    expect(answer({ paceMultiplier: 1 }).rating).toBe(Rating.Good);
+    expect(answer({}).rating).toBe(Rating.Easy); // missing field behaves as 3
+
+    // A card solid at a 6 s median is fluent at pace 3 and not at pace 1.
+    let s = review(newCardState('mul:6x7', T0), Rating.Again, 9000, false, T0);
+    let t = T0;
+    for (let i = 0; i < 4; i++) {
+      t = Math.max(t + DAY, s.fsrs.due);
+      s = { ...review(s, Rating.Easy, 6000, true, t), recentMs: [6000, 6000, 6000] };
+    }
+    expect(cardLevel(s, 3500, 3)).toBe(4);
+    expect(cardLevel(s, 3500, 1)).toBe(3);
   });
 });
 
@@ -192,19 +247,19 @@ describe('mastery and unlocking', () => {
 
   it('does not call a card fluent after one lucky answer', () => {
     const once = review(newCardState('mul:6x7', T0), Rating.Easy, 1200, true, T0);
-    expect(cardLevel(once, 3000)).toBe(2);
+    expect(cardLevel(once, 3000, 1)).toBe(2);
   });
 
   it('levels a card from new to solid', () => {
-    expect(cardLevel(undefined, 3000)).toBe(0);
+    expect(cardLevel(undefined, 3000, 1)).toBe(0);
     let s = review(newCardState('mul:2x3', T0), Rating.Again, 9000, false, T0);
-    expect(cardLevel(s, 3000)).toBe(1);
+    expect(cardLevel(s, 3000, 1)).toBe(1);
     let t = T0;
     for (let i = 0; i < 4; i++) {
       t = Math.max(t + DAY, s.fsrs.due);
       s = review(s, Rating.Easy, 1500, true, t);
     }
-    expect(cardLevel(s, 3000)).toBeGreaterThanOrEqual(3);
+    expect(cardLevel(s, 3000, 1)).toBeGreaterThanOrEqual(3);
   });
 });
 

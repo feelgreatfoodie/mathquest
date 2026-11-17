@@ -53,7 +53,7 @@ export function Run({ repo, kid, onDone, onExit }: RunProps) {
           rng: Math.random,
         });
         if (!alive) return;
-        runnerRef.current = new SessionRunner(plan, cards, Math.random);
+        runnerRef.current = new SessionRunner(plan, cards, Math.random, Date.now, kid.settings);
         startedAt.current = now;
         setLoading(false);
       } catch (e) {
