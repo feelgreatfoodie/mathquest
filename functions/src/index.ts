@@ -32,7 +32,7 @@ function authOf(req: CallableRequest): AuthContext | undefined {
 }
 
 export const kidSignIn = onCall(opts, (req) =>
-  core.kidSignIn(deps(), { name: req.data?.name, pin: req.data?.pin, ip: req.rawRequest.ip }),
+  core.kidSignIn(deps(), { name: req.data?.name, pin: req.data?.pin, ip: core.clientIp(req.rawRequest.headers['x-forwarded-for'], req.rawRequest.ip) }),
 );
 export const registerParent = onCall(opts, (req) => core.registerParent(deps(), authOf(req)));
 export const setKidPin = onCall(opts, (req) => core.setKidPin(deps(), authOf(req), req.data ?? {}));

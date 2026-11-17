@@ -130,6 +130,36 @@ describe('kidSignIn: name and PIN', () => {
     const t = claimsOf(await signIn('otto', PIN_B));
     expect(t.claims).toEqual({ role: 'kid', familyUid: FAM2, kidId: 'kid-other' });
   });
+
+  it('logs a registry lookup failure instead of hiding it (11-17: a swallowed permission error hid the cause)', async () => {
+    const errors: unknown[][] = [];
+    const orig = console.error;
+    console.error = (...args: unknown[]) => { errors.push(args); };
+    const d = deps();
+    const realDb = d.db;
+    d.db = new Proxy(realDb, {
+      get(target, prop, recv) {
+        if (prop === 'doc') {
+          return (path: string) => {
+            if (path.startsWith('parents/')) {
+              return { get: async () => { throw new Error('PERMISSION_DENIED: datastore.entities.get'); } };
+            }
+            return target.doc(path);
+          };
+        }
+        const v = Reflect.get(target, prop, recv);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    try {
+      expect((await fail(kidSignIn(d, { name: 'Bastian', pin: PIN, ip: '10.0.0.9' }))).message).toBe(MISMATCH_MESSAGE);
+    } finally {
+      console.error = orig;
+    }
+    expect(errors.length).toBeGreaterThan(0);
+    expect(String(errors[0][0])).toContain('familyRegistered');
+    expect(JSON.stringify(errors[0][1])).toContain('PERMISSION_DENIED');
+  });
 });
 
 describe('setKidPin', () => {
