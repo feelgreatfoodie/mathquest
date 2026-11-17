@@ -195,7 +195,10 @@ async function familyAllowed(d: Deps, uid: string): Promise<boolean> {
   try {
     const u = await d.auth.getUser(uid);
     return isAllowed(d, u.email, u.emailVerified);
-  } catch {
+  } catch (err) {
+    // 11-17: the runtime SA lacked Firebase Auth read, getUser threw on every call, and this branch
+    // hid it, so every kid PIN looked wrong. A missing user and a permission error both log here.
+    console.error('familyAllowed: getUser failed', { uid, error: err instanceof Error ? err.message : String(err) });
     return false;
   }
 }

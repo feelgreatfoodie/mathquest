@@ -134,6 +134,22 @@ describe('kidSignIn: name and PIN', () => {
       users[FAM] = { email: 'parent-one@example.com', emailVerified: true };
     }
   });
+
+  it('logs a getUser failure instead of hiding it (11-17: missing Firebase Auth read role)', async () => {
+    const errors: unknown[][] = [];
+    const orig = console.error;
+    console.error = (...args: unknown[]) => { errors.push(args); };
+    const d = deps();
+    d.auth = { ...d.auth, getUser: async () => { throw new Error('PERMISSION_DENIED: firebaseauth.users.get'); } };
+    try {
+      expect((await fail(kidSignIn(d, { name: 'Bastian', pin: PIN, ip: '10.0.0.9' }))).message).toBe(MISMATCH_MESSAGE);
+    } finally {
+      console.error = orig;
+    }
+    expect(errors.length).toBeGreaterThan(0);
+    expect(String(errors[0][0])).toContain('familyAllowed');
+    expect(JSON.stringify(errors[0][1])).toContain('PERMISSION_DENIED');
+  });
 });
 
 describe('setKidPin', () => {
