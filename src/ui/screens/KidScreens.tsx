@@ -3,9 +3,10 @@ import { cardLabel } from '../../engine/content';
 import { HEROES, buyHero, levelFor } from '../../engine/game';
 import type { Kid } from '../../engine/models';
 import type { RunSummary } from '../../engine/session';
+import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
 
-export function SignIn({ onSignIn, error }: { onSignIn: () => void; error: string | null }) {
+export function SignIn({ onSignIn, onBack, error }: { onSignIn: () => void; onBack?: () => void; error: string | null }) {
   return (
     <div className="screen center">
       <div className="panel title-panel">
@@ -14,11 +15,43 @@ export function SignIn({ onSignIn, error }: { onSignIn: () => void; error: strin
           <Sprite name="boss" size={110} />
         </div>
         <h1 className="pixel title">Math Quest</h1>
-        <p className="muted">Parents: sign in once on this iPad. Kids pick their hero after that.</p>
+        <p className="muted">Parents: sign in with Google to open the parent area.</p>
         {error ? <p className="error">{error}</p> : null}
         <button type="button" className="btn btn-big" onClick={onSignIn}>Sign in with Google</button>
+        {onBack ? <button type="button" className="btn btn-ghost" onClick={onBack}>Back</button> : null}
       </div>
     </div>
+  );
+}
+
+/** The landing screen: first name (any capitalization) plus a 4-digit PIN, and a Parent link. */
+export function KidSignIn({ onSubmit, onParent, error }: { onSubmit: (name: string, pin: string) => void; onParent: () => void; error: string | null }) {
+  const [name, setName] = useState('');
+  return (
+    <PinPad
+      title="Who's playing?"
+      subtitle="Type your first name, then your 4-digit PIN."
+      error={error}
+      header={
+        <>
+          <label htmlFor="kid-signin-name" className="visually-hidden">First name</label>
+          <input
+            id="kid-signin-name"
+            className="kid-name-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="First name"
+            maxLength={20}
+            autoComplete="off"
+            autoCapitalize="words"
+            autoCorrect="off"
+            spellCheck={false}
+          />
+        </>
+      }
+      footer={<button type="button" className="btn btn-ghost parent-link" onClick={onParent}>Parent</button>}
+      onComplete={(pin) => onSubmit(name, pin)}
+    />
   );
 }
 

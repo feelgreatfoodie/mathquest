@@ -1,7 +1,9 @@
 rules_version = '2';
 
 // Each parent's Google account owns one family tree: families/{uid}/...
-// Nobody else can read or write it. Kids never sign in; they play on the parent's device session.
+// Kids sign in through the kidSignIn Cloud Function (first name + 4-digit PIN). It returns a
+// custom token with role 'kid', familyUid and kidId. A kid reaches only their own kid doc,
+// cards and sessions. pinIndex holds PIN hashes and brute-force counters: server only.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -22,24 +24,54 @@ service cloud.firestore {
       return request.resource == null || request.resource.data.size() < 20;
     }
 
+    // The parent: signed in as this family's Google account, on the allowlist.
+    function isParent(uid) {
+      return signedInAs(uid) && allowedAccount();
+    }
+
+    // A kid: a custom token minted by kidSignIn for exactly this family and this kid.
+    function isKid(uid, kidId) {
+      return request.auth != null
+        && request.auth.token.role == 'kid'
+        && request.auth.token.familyUid == uid
+        && request.auth.token.kidId == kidId;
+    }
+
+    // The only kid doc fields a run writes. Everything else (name, settings, paceMultiplier,
+    // hasPin, createdAt) is parent-only.
+    function kidOnlyChangedGame() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['game']);
+    }
+
+    // PIN hashes, salts and attempt counters. Only the Admin SDK in Cloud Functions touches them.
+    match /pinIndex/{document=**} {
+      allow read, write: if false;
+    }
+
+    // The family doc holds the parent PIN hash, and no kid screen reads a family field, so
+    // kids get no access here.
     match /families/{uid} {
-      allow read: if signedInAs(uid) && allowedAccount();
-      allow write: if signedInAs(uid) && allowedAccount() && smallDoc();
+      allow read: if isParent(uid);
+      allow write: if isParent(uid) && smallDoc();
 
       match /kids/{kidId} {
-        allow read, delete: if signedInAs(uid) && allowedAccount();
-        allow create, update: if signedInAs(uid) && allowedAccount() && smallDoc()
-          && request.resource.data.id == kidId;
+        allow read: if isParent(uid) || isKid(uid, kidId);
+        allow delete: if isParent(uid);
+        allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId;
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId)
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame());
 
         match /cards/{cardId} {
-          allow read, delete: if signedInAs(uid) && allowedAccount();
-          allow create, update: if signedInAs(uid) && allowedAccount() && smallDoc()
+          allow read: if isParent(uid) || isKid(uid, kidId);
+          allow delete: if isParent(uid);
+          allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc()
             && request.resource.data.id == cardId;
         }
 
         match /sessions/{sessionId} {
-          allow read, delete: if signedInAs(uid) && allowedAccount();
-          allow create, update: if signedInAs(uid) && allowedAccount() && smallDoc();
+          allow read: if isParent(uid) || isKid(uid, kidId);
+          allow delete: if isParent(uid);
+          allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc();
         }
       }
     }

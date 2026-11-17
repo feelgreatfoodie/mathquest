@@ -5,15 +5,17 @@ import { LocalRepo } from './data/localRepo';
 import { hashPin, type Repo } from './data/repo';
 import type { Family, Kid } from './engine/models';
 import type { RunSummary } from './engine/session';
-import { dataMode, getFirebase, signInParent, signOutParent } from './firebase';
+import { dataMode, getFirebase, kidClaims, signInKid, signInParent, signOutParent } from './firebase';
 import { PinPad } from './ui/PinPad';
-import { KidHome, Picker, SignIn, Summary } from './ui/screens/KidScreens';
+import { KidHome, KidSignIn, Picker, SignIn, Summary } from './ui/screens/KidScreens';
 import { ParentArea, Setup } from './ui/screens/Parent';
 import { Run } from './ui/screens/Run';
 
 type Screen =
   | { name: 'boot' }
+  | { name: 'kidsignin' }
   | { name: 'signin' }
+  | { name: 'kidpin'; kidId: string }
   | { name: 'setup' }
   | { name: 'picker' }
   | { name: 'home'; kidId: string }
@@ -30,6 +32,8 @@ export function App() {
   const [kids, setKids] = useState<Kid[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
+  /** A kid session (custom token) can reach only that kid's data and never the parent area. */
+  const [kidSession, setKidSession] = useState(false);
 
   const load = useCallback(async (r: Repo) => {
     try {
@@ -56,13 +60,36 @@ export function App() {
     return onAuthStateChanged(auth, (user) => {
       if (!user) {
         setRepo(null);
-        setScreen({ name: 'signin' });
+        setKids([]);
+        setFamily(null);
+        setKidSession(false);
+        // No session: the kid PIN pad. The Parent link moves to the Google screen and stays there.
+        setScreen((s) => (s.name === 'signin' ? s : { name: 'kidsignin' }));
         return;
       }
-      const r = new FirestoreRepo(db, user.uid);
-      setRepo(r);
-      setSalt(user.uid);
-      void load(r);
+      void (async () => {
+        const claims = await kidClaims();
+        if (claims) {
+          const r = new FirestoreRepo(db, claims.familyUid);
+          try {
+            const k = await r.getKid(claims.kidId);
+            if (!k) throw new Error('That player was removed.');
+            setRepo(r);
+            setKids([k]);
+            setKidSession(true);
+            setScreen({ name: 'home', kidId: k.id });
+          } catch (e) {
+            setError((e as Error).message);
+            void signOutParent();
+          }
+          return;
+        }
+        setKidSession(false);
+        const r = new FirestoreRepo(db, user.uid);
+        setRepo(r);
+        setSalt(user.uid);
+        void load(r);
+      })();
     });
   }, [load]);
 
@@ -77,10 +104,34 @@ export function App() {
   );
 
   if (screen.name === 'boot') return <div className="screen center"><p className="pixel blink">Loading…</p></div>;
+  if (screen.name === 'kidsignin')
+    return (
+      <KidSignIn
+        error={pinError ?? error}
+        onParent={() => {
+          setPinError(null);
+          setError(null);
+          setScreen({ name: 'signin' });
+        }}
+        onSubmit={(name, pin) => {
+          if (!name.trim()) {
+            setPinError('Type your first name first.');
+            return;
+          }
+          setPinError(null);
+          setError(null);
+          signInKid(name, pin).catch((e: { message?: string }) => setPinError(e.message ?? "That name and PIN didn't match"));
+        }}
+      />
+    );
   if (screen.name === 'signin')
     return (
       <SignIn
         error={error}
+        onBack={() => {
+          setError(null);
+          setScreen({ name: 'kidsignin' });
+        }}
         onSignIn={() => {
           setError(null);
           signInParent().catch((e: Error) => setError(e.message));
@@ -103,14 +154,35 @@ export function App() {
         />
       );
     case 'picker':
-      return <Picker kids={kids} onPick={(k) => setScreen({ name: 'home', kidId: k.id })} onParent={() => setScreen({ name: 'pin' })} />;
+      return (
+        <Picker
+          kids={kids}
+          // A kid with a PIN must type it, so a sibling cannot play as them on a parent's device.
+          onPick={(k) => {
+            setPinError(null);
+            setScreen(k.hasPin && dataMode === 'firestore' ? { name: 'kidpin', kidId: k.id } : { name: 'home', kidId: k.id });
+          }}
+          onParent={() => setScreen({ name: 'pin' })}
+        />
+      );
+    case 'kidpin':
+      return kid ? (
+        <PinPad
+          title={`${kid.name}'s PIN`}
+          error={pinError}
+          onCancel={() => { setPinError(null); setScreen({ name: 'picker' }); }}
+          onComplete={(p) => {
+            signInKid(kid.name, p).catch((e: { message?: string }) => setPinError(e.message ?? "That name and PIN didn't match"));
+          }}
+        />
+      ) : null;
     case 'home':
       return kid ? (
         <KidHome
           kid={kid}
           onSave={(k) => void saveKid(k)}
           onStart={() => setScreen({ name: 'run', kidId: kid.id, key: Date.now() })}
-          onBack={() => setScreen({ name: 'picker' })}
+          onBack={() => (kidSession ? void signOutParent() : setScreen({ name: 'picker' }))}
         />
       ) : null;
     case 'run':

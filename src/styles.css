@@ -298,3 +298,36 @@ legend { padding: 0 6px; color: var(--muted); }
 .check input { width: 24px; height: 24px; }
 .add-kid { display: flex; flex-direction: column; gap: 10px; }
 .add-kid label { font-weight: 700; }
+
+.kid-name-input {
+  width: 100%;
+  font: inherit;
+  font-size: 1.25rem;
+  text-align: center;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 2px solid var(--line, #3a4066);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.lock-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; justify-content: space-between; }
+.pin-set { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.pin-set input {
+  font: inherit;
+  width: 7ch;
+  text-align: center;
+  letter-spacing: 0.3em;
+  padding: 8px;
+  border-radius: 8px;
+  border: 2px solid var(--line, #3a4066);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+}

@@ -41,7 +41,10 @@ You need the Firebase CLI: `npm i -g firebase-tools && firebase login`.
    ```bash
    cp firestore.rules firestore.local.rules   # replace parent@example.com with your addresses
    ```
-6. **Deploy hosting + rules + indexes:**
+6. **Deploy hosting + functions + rules + indexes.** Functions read the parent allowlist from
+   `functions/.env` (gitignored; copy `functions/.env.example`, set `ALLOWED_EMAILS`). The functions
+   runtime service account needs `roles/iam.serviceAccountTokenCreator` on itself, so
+   `createCustomToken` can sign:
    ```bash
    npm run deploy
    ```
@@ -145,11 +148,24 @@ Behind a 4-digit PIN (stored as a salted SHA-256 hash). It shows, per kid:
 - Skill status, recent runs, and minutes this week.
 - Settings: tracks, questions per run, new cards per run, starting fact group.
 
+## Kid sign-in (name + PIN, any device)
+
+Opening the site with no session shows "Who's playing?": a first name (any capitalization) and a
+4-digit PIN. The `kidSignIn` Cloud Function checks them and returns a custom token with
+`role: kid`, `familyUid` and `kidId`. Rules let that token reach only that kid's doc, cards and
+sessions. Parents set each kid's PIN in the parent area (`setKidPin`). PIN hashes (scrypt, per-kid
+salt) and attempt counters live in `pinIndex/*`, which no client can read.
+
+Limits: 5 wrong PINs per IP in 15 min, 10 per name in 1 h, 20 per family in 1 h. The parent area
+shows the lock and an Unlock button.
+
+Tests: `npm test` (engine), `npm run test:emulator` (rules + functions; needs Java for the Firestore emulator).
+
 ## Data model (Firestore)
 
 ```
 families/{uid}                              { pinHash, createdAt }
-families/{uid}/kids/{kidId}                 { id, name, createdAt, settings, game }
+families/{uid}/kids/{kidId}                 { id, name, createdAt, settings, game, hasPin }
 families/{uid}/kids/{kidId}/cards/{cardId}  { id, fsrs: {due, stability, difficulty, reps, lapses, state, …}, attempts, correct, recentMs[], lastRating, updatedAt }
 families/{uid}/kids/{kidId}/sessions/{id}   { startedAt, endedAt, graded, correct, fast, newLearned, medianMs, xp, gems, missed[] }
 ```

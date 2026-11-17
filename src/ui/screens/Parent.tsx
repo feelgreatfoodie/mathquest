@@ -6,6 +6,7 @@ import { LEVEL_LABELS, cardLevel, unlockedFactGroups, type Level } from '../../e
 import { DEFAULT_GAME, DEFAULT_SETTINGS, paceOf, type CardMap, type Family, type Kid, type KidSettings, type SessionLog } from '../../engine/models';
 import { median } from '../../engine/scheduler';
 import { hashPin, newId, type Repo } from '../../data/repo';
+import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { PinPad } from '../PinPad';
 
 export function makeKid(name: string): Kid {
@@ -55,21 +56,28 @@ export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone
   );
 }
 
-function AddKidForm({ onAdd }: { onAdd: (name: string) => Promise<void> | void }) {
+/** The same normalization the kidSignIn function uses, so a clash shows up before the PIN step. */
+export function nameKey(name: string): string {
+  return name.trim().normalize('NFC').toLowerCase();
+}
+
+function AddKidForm({ onAdd, existing = [] }: { onAdd: (name: string) => Promise<void> | void; existing?: string[] }) {
   const [name, setName] = useState('');
+  const taken = !!name.trim() && existing.some((n) => nameKey(n) === nameKey(name));
   return (
     <form
       className="add-kid"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!name.trim()) return;
+        if (!name.trim() || taken) return;
         await onAdd(name);
         setName('');
       }}
     >
       <label htmlFor="kid-name">Player name</label>
       <input id="kid-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={20} autoComplete="off" />
-      <button type="submit" className="btn" disabled={!name.trim()}>Add player</button>
+      {taken ? <p className="error">Another player already has that name. Names are how kids sign in, so each needs its own.</p> : null}
+      <button type="submit" className="btn" disabled={!name.trim() || taken}>Add player</button>
     </form>
   );
 }
@@ -113,6 +121,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
           <button type="button" className="btn btn-small" onClick={onExit}>Back to game</button>
         </div>
       </header>
+      <LockBanner />
       <nav className="tabs" aria-label="Players">
         {kids.map((k) => (
           <button key={k.id} type="button" className={`tab ${selected === k.id ? 'is-active' : ''}`} onClick={() => setSelected(k.id)}>
@@ -124,6 +133,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
       {selected === 'add' || !kid ? (
         <section className="panel">
           <AddKidForm
+            existing={kids.map((x) => x.name)}
             onAdd={async (name) => {
               const k = makeKid(name);
               await repo.saveKid(k);
@@ -150,6 +160,101 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
         />
       )}
     </div>
+  );
+}
+
+/** Shows when kid PIN sign-in is locked after wrong PINs, with an Unlock button. */
+function LockBanner() {
+  const [status, setStatus] = useState<KidLockStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (dataMode !== 'firestore') return;
+    let alive = true;
+    kidLockStatus().then((s) => alive && setStatus(s)).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!status || (!status.locked && status.failures === 0)) return null;
+  return (
+    <section className="panel lock-banner">
+      <p>
+        {status.locked
+          ? `Kid sign-in locked after ${status.failures} wrong PINs.`
+          : `${status.failures} wrong kid PIN${status.failures === 1 ? '' : 's'} in the last hour. Sign-in is still open.`}
+        {err ? <span className="error"> {err}</span> : null}
+      </p>
+      <button
+        type="button"
+        className="btn btn-small"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setErr(null);
+          try {
+            await unlockKidSignIn();
+            setStatus({ locked: false, failures: 0, lockedUntil: 0, lockedPlayers: [] });
+          } catch (e) {
+            setErr((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Unlock
+      </button>
+    </section>
+  );
+}
+
+/** Set or change one kid's sign-in PIN. The PIN goes to the setKidPin function and is never stored client-side. */
+function KidPinPanel({ kid, onSet }: { kid: Kid; onSet: () => Promise<void> }) {
+  const [pin, setPin] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (dataMode !== 'firestore') return null;
+  return (
+    <section className="panel">
+      <h2>Sign-in PIN for {kid.name}</h2>
+      <p className="muted">
+        {kid.name} signs in on any device with the name "{nameKey(kid.name)}" (capitalization does not matter) and this 4-digit PIN.
+        {kid.hasPin ? ' A PIN is set.' : ' No PIN yet, so this player cannot sign in on their own.'} It must differ from the parent PIN.
+      </p>
+      <form
+        className="pin-set"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setMsg(null);
+          try {
+            await setKidPin(kid.id, pin);
+            await onSet();
+            setPin('');
+            setMsg({ ok: true, text: 'PIN saved.' });
+          } catch (err) {
+            setMsg({ ok: false, text: (err as Error).message });
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <label>
+          {kid.hasPin ? 'New PIN' : 'PIN'}
+          <input
+            type="password"
+            inputMode="numeric"
+            pattern="[0-9]{4}"
+            maxLength={4}
+            autoComplete="off"
+            value={pin}
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          />
+        </label>
+        <button type="submit" className="btn btn-small" disabled={busy || pin.length !== 4}>{kid.hasPin ? 'Change PIN' : 'Set PIN'}</button>
+        {msg ? <span className={msg.ok ? 'muted' : 'error'}>{msg.text}</span> : null}
+      </form>
+    </section>
   );
 }
 
@@ -275,6 +380,8 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
           <p className="muted">No runs yet.</p>
         )}
       </section>
+
+      <KidPinPanel kid={kid} onSet={() => onSave({ ...kid, hasPin: true })} />
 
       <section className="panel settings">
         <h2>Settings for {kid.name}</h2>

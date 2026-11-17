@@ -62,6 +62,11 @@ export class FirestoreRepo implements Repo {
     return snap.docs.map((d) => d.data() as Kid);
   }
 
+  async getKid(kidId: string): Promise<Kid | null> {
+    const snap = await getDoc(doc(this.kids(), kidId));
+    return snap.exists() ? (snap.data() as Kid) : null;
+  }
+
   async saveKid(kid: Kid): Promise<void> {
     await setDoc(doc(this.kids(), kid.id), kid);
   }
