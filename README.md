@@ -6,7 +6,8 @@ spaced-repetition engine (FSRS) decides what each kid sees, and how soon, based 
 whether they were right and how fast they answered.
 
 - **Stack:** React 19 + TypeScript + Vite, installable PWA, Firebase Hosting + Auth (Google) + Firestore
-- **Kids:** multiple profiles per family. Kids never sign in; a parent signs in once per device.
+- **Live:** https://math.rezzed.ai (also https://rezzed-mathquest.web.app, kept for existing installs).
+- **Kids:** multiple profiles per family. A kid signs in on any device with a first name and a 4-digit PIN that a parent sets.
 - **Offline:** Firestore's IndexedDB cache plus a service worker. It plays without Wi-Fi and syncs later.
 - **Privacy:** no analytics or third-party SDKs beyond Firebase. Data lives in your GCP project
   under your Google account's uid. The only personal data is the kid's first name.
@@ -76,6 +77,10 @@ Deploys run by hand with `npm run deploy` on application default credentials of 
 (`GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud/application_default_credentials.json`). The org
 blocks gmail project owners. These one-time settings exist in `rezzed-mathquest` only:
 
+- **Custom domain** `math.rezzed.ai`: Firebase Hosting custom domain on site `rezzed-mathquest`, Cloudflare
+  CNAME `math` to `rezzed-mathquest.web.app` with proxy off (DNS only), so Firebase issues the certificate.
+  It is also listed in Firebase Auth authorized domains. `rezzed-mathquest.web.app` serves the same app, with
+  no redirect.
 - **Domain restricted sharing** (`iam.allowedPolicyMemberDomains`) is overridden to allow all on this
   project. The callables need the `allUsers` invoker, because `kidSignIn` runs before anyone signs in.
   The other four check the caller in code.
