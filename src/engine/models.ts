@@ -36,6 +36,11 @@ export interface KidSettings {
   maxNew: number;
   /** Fact groups a parent marks as already started (1 = only the first group). */
   factGroupsUnlocked: number;
+  /**
+   * Multiplies every fast and slow time bar (3 = most time, 1 = the original bars).
+   * Optional on stored docs: a missing value reads as 3. Read it through `paceOf`.
+   */
+  paceMultiplier?: number;
 }
 
 export interface KidGame {
@@ -82,7 +87,16 @@ export const DEFAULT_SETTINGS: KidSettings = {
   sessionSize: 30,
   maxNew: 8,
   factGroupsUnlocked: 1,
+  paceMultiplier: 3,
 };
+
+export const DEFAULT_PACE = 3;
+
+/** The pace to grade with: a missing, zero, negative or non-finite value reads as 3. */
+export function paceOf(settings: { paceMultiplier?: number } | undefined | null): number {
+  const p = settings?.paceMultiplier;
+  return typeof p === 'number' && Number.isFinite(p) && p > 0 ? p : DEFAULT_PACE;
+}
 
 export const DEFAULT_GAME: KidGame = {
   xp: 0,

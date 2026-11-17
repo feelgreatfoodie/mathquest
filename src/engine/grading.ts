@@ -26,18 +26,25 @@ export function factBaseline(cards: CardMap): number {
 }
 
 /**
- * Facts: Easy means automatic recall. The fast bar never exceeds 3 s (the usual fluency target)
- * and tightens toward 1.5 s as the kid's own baseline drops.
+ * Facts: Easy means automatic recall. At pace 1 the fast bar never exceeds 3 s (the usual fluency
+ * target) and tightens toward 1.5 s as the kid's own baseline drops. Pace multiplies all of it.
  */
-export function factThresholds(baselineMs: number): Thresholds {
+export function factThresholds(baselineMs: number, pace: number): Thresholds {
   return {
-    fastMs: clamp(baselineMs * 0.9, 1500, 3000),
-    slowMs: clamp(baselineMs * 2.5, 5000, 9000),
+    fastMs: clamp(baselineMs * 0.9 * pace, 1500 * pace, 3000 * pace),
+    slowMs: clamp(baselineMs * 2.5 * pace, 5000 * pace, 9000 * pace),
   };
 }
 
-export function thresholdsFor(def: CardDef, baselineMs: number): Thresholds {
-  return def.kind === 'fact' ? factThresholds(baselineMs) : { fastMs: def.fastMs, slowMs: def.slowMs };
+/**
+ * The one place that turns a card and a pace into fast and slow bars. `pace` multiplies the bars
+ * and the clamp bounds (3 = three times the time). Grading, the run summary, mastery levels and the
+ * parent view all call this, so they agree. Callers pass `paceOf(kid.settings)`.
+ */
+export function thresholdsFor(def: CardDef, baselineMs: number, pace: number): Thresholds {
+  return def.kind === 'fact'
+    ? factThresholds(baselineMs, pace)
+    : { fastMs: def.fastMs * pace, slowMs: def.slowMs * pace };
 }
 
 /**

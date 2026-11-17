@@ -1,7 +1,7 @@
 import { Rating, State } from 'ts-fsrs';
 import { FACT_CARDS, FACT_GROUPS, SKILL_CARDS, getCardDef, type CardDef, type Track } from './content';
-import { factThresholds } from './grading';
-import type { CardMap, CardState, KidSettings } from './models';
+import { thresholdsFor } from './grading';
+import { DEFAULT_PACE, type CardMap, type CardState, type KidSettings } from './models';
 import { median } from './scheduler';
 
 /** 0 new · 1 learning · 2 reviewing · 3 solid · 4 fluent (solid and fast) */
@@ -20,7 +20,7 @@ const REVIEWING_STABILITY_DAYS = 2;
 const SOLID_STABILITY_DAYS = 7;
 const GROUP_UNLOCK_SHARE = 0.8;
 
-export function cardLevel(state: CardState | undefined, factBaselineMs: number): Level {
+export function cardLevel(state: CardState | undefined, factBaselineMs: number, pace: number): Level {
   if (!state || state.fsrs.reps === 0) return 0;
   if (state.fsrs.state !== State.Review || state.lastRating === Rating.Again) return 1;
   if (state.fsrs.stability < REVIEWING_STABILITY_DAYS) return 1;
@@ -28,7 +28,7 @@ export function cardLevel(state: CardState | undefined, factBaselineMs: number):
   if (state.fsrs.stability < SOLID_STABILITY_DAYS || state.fsrs.reps < 2) return 2;
   if (state.fsrs.reps < 3) return 3;
   const def = getCardDef(state.id);
-  const fastMs = def?.kind === 'fact' ? factThresholds(factBaselineMs).fastMs : def?.kind === 'skill' ? def.fastMs : 0;
+  const fastMs = def ? thresholdsFor(def, factBaselineMs, pace).fastMs : 0;
   const med = median(state.recentMs);
   return Number.isFinite(med) && med <= fastMs ? 4 : 3;
 }
@@ -36,7 +36,7 @@ export function cardLevel(state: CardState | undefined, factBaselineMs: number):
 /** Share of a fact group's cards that are at least "reviewing". */
 export function groupProgress(groupIndex: number, cards: CardMap): number {
   const group = FACT_CARDS.filter((c) => c.groupIndex === groupIndex);
-  const ok = group.filter((c) => cardLevel(cards[c.id], Infinity) >= 2).length;
+  const ok = group.filter((c) => cardLevel(cards[c.id], Infinity, DEFAULT_PACE) >= 2).length;
   return group.length ? ok / group.length : 1;
 }
 
@@ -49,7 +49,7 @@ export function unlockedFactGroups(cards: CardMap, settings: KidSettings): numbe
 
 function skillReady(id: string, cards: CardMap): boolean {
   const s = cards[id];
-  return !!s && s.fsrs.reps >= 3 && cardLevel(s, Infinity) >= 2;
+  return !!s && s.fsrs.reps >= 3 && cardLevel(s, Infinity, DEFAULT_PACE) >= 2;
 }
 
 export function prereqMet(ref: string, cards: CardMap, settings: KidSettings): boolean {
