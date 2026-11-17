@@ -35,20 +35,28 @@ You need the Firebase CLI: `npm i -g firebase-tools && firebase login`.
    cp .env.example .env.local   # fill in API key, auth domain, project id, app id
    cp .firebaserc.example .firebaserc   # set your project id
    ```
-5. **Set the parent allowlist:** copy the rules to a gitignored local file and put your family's
-   Google addresses in `allowedAccount()`, so a stranger who finds the URL can't create data in
-   your project. `npm run deploy` refuses to run while the file is missing, lists any `@example`
-   address (comments included), or lists different addresses from `functions/.env`.
-   ```bash
-   cp firestore.rules firestore.local.rules   # replace parent@example.com with your addresses
-   ```
-6. **Deploy hosting + functions + rules + indexes.** Functions read the parent allowlist from
-   `functions/.env` (gitignored; copy `functions/.env.example`, set `ALLOWED_EMAILS`). The functions
-   runtime service account needs `roles/iam.serviceAccountTokenCreator` on itself, so
-   `createCustomToken` can sign:
+5. **Parent sign-up is open, capped at 20.** Any verified Google account can sign in. On first sign-in
+   the app calls the `registerParent` function, which writes `parents/{uid}` and bumps
+   `meta/parentCount` in one transaction. At 20 it answers "Math Quest is full right now." and the app
+   signs the visitor out. Raise `MAX_PARENTS` in `functions/src/core.ts` to let more families in.
+   Firestore rules let only a registered parent (a `parents/{uid}` doc) touch `families/{uid}`.
+   Nobody can read or write `parents/`, `meta/` or `nameKeys/` from a client. Kid names are unique
+   across all families (case-insensitive); a taken name is refused with a last-initial hint.
+6. **Deploy hosting + functions + rules + indexes.** `firestore.rules` is the deployed file and no
+   secret config remains. The functions runtime service account needs
+   `roles/iam.serviceAccountTokenCreator` on itself, so `createCustomToken` can sign:
    ```bash
    npm run deploy
    ```
+   Moving an existing project to the registry: deploy the functions first, run the backfill
+   (`node scripts/backfill-parents.mjs --project YOUR_PROJECT`, then again with `--apply`), then
+   deploy the rules. The backfill registers every existing family from Firestore and Auth and claims
+   the names of existing kids. It commits no uids or emails.
+   After every functions deploy, run the live probe (ADC with Firestore access):
+   `node scripts/deploy-probe.mjs --project YOUR_PROJECT`. It seeds a throwaway parent, family and kid,
+   calls the deployed `kidSignIn` with the right PIN (expects a kid token) and a wrong PIN (expects the
+   generic error), then deletes everything. Exit 0 = pass. The emulator needs no IAM, so only this catches
+   a missing runtime role (11-17: `firebaseauth.viewer`).
 7. **On the iPad:** open `https://YOUR_PROJECT.web.app` in Safari, sign in with Google, set a parent
    PIN, add each kid. Then Share → **Add to Home Screen** so it opens full screen like an app.
 
@@ -70,7 +78,7 @@ blocks gmail project owners. These one-time settings exist in `rezzed-mathquest`
 
 - **Domain restricted sharing** (`iam.allowedPolicyMemberDomains`) is overridden to allow all on this
   project. The callables need the `allUsers` invoker, because `kidSignIn` runs before anyone signs in.
-  The other three check the caller in code.
+  The other four check the caller in code.
 - **Functions runtime service account** `mathquest-fn@rezzed-mathquest.iam.gserviceaccount.com`
   (set in `functions/src/index.ts`). It has `roles/datastore.user` on the project and
   `roles/iam.serviceAccountTokenCreator` on itself, so `createCustomToken` can sign kid tokens.
@@ -197,7 +205,7 @@ the run. A 30-question run is about 60 small writes, which is well inside Firest
 src/engine/     curriculum, generators, fractions, FSRS wrapper, grading, session planner/runner, game rules (+ tests)
 src/data/       Repo interface, FirestoreRepo, LocalRepo
 src/ui/         keypad, fraction entry, pixel sprites (SVG), screens: kid, run, parent
-firestore.rules owner-only access, optional account allowlist
+firestore.rules owner-only access, registered parents only (parents/{uid})
 ```
 
 ## Tuning knobs

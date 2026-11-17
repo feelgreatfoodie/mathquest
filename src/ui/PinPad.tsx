@@ -11,9 +11,13 @@ interface PinPadProps {
   error?: string | null;
   onComplete: (pin: string) => void;
   onCancel?: () => void;
+  /** Render only the contents, for use inside another card (the landing tabs). */
+  embedded?: boolean;
+  /** Rendered above the title (the landing tab list). */
+  top?: ReactNode;
 }
 
-export function PinPad({ title, subtitle, header, footer, error, onComplete, onCancel }: PinPadProps) {
+export function PinPad({ title, subtitle, header, footer, error, onComplete, onCancel, embedded, top }: PinPadProps) {
   const [pin, setPin] = useState('');
   const digit = useCallback((d: number) => setPin((p) => (p + d).slice(0, 4)), []);
   useEffect(() => {
@@ -27,26 +31,31 @@ export function PinPad({ title, subtitle, header, footer, error, onComplete, onC
   const back = useCallback(() => setPin((p) => p.slice(0, -1)), []);
   const submit = useCallback(() => undefined, []);
 
+  const content = (
+    <>
+      {top}
+      <h2 className="pixel">{title}</h2>
+      {subtitle ? <p className="muted">{subtitle}</p> : null}
+      {header}
+      <div className="pin-dots" aria-label={`${pin.length} of 4 digits`}>
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className={`pin-dot ${i < pin.length ? 'is-on' : ''}`} />
+        ))}
+      </div>
+      {error ? <p className="error">{error}</p> : null}
+      <Keypad onDigit={digit} onBack={back} onSubmit={submit} canSubmit={false} />
+      {footer}
+      {onCancel ? (
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+      ) : null}
+    </>
+  );
+  if (embedded) return content;
   return (
     <div className="screen center">
-      <div className="panel pin-panel">
-        <h2 className="pixel">{title}</h2>
-        {subtitle ? <p className="muted">{subtitle}</p> : null}
-        {header}
-        <div className="pin-dots" aria-label={`${pin.length} of 4 digits`}>
-          {[0, 1, 2, 3].map((i) => (
-            <span key={i} className={`pin-dot ${i < pin.length ? 'is-on' : ''}`} />
-          ))}
-        </div>
-        {error ? <p className="error">{error}</p> : null}
-        <Keypad onDigit={digit} onBack={back} onSubmit={submit} canSubmit={false} />
-        {footer}
-        {onCancel ? (
-          <button type="button" className="btn btn-ghost" onClick={onCancel}>
-            Cancel
-          </button>
-        ) : null}
-      </div>
+      <div className="panel pin-panel">{content}</div>
     </div>
   );
 }

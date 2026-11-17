@@ -1,15 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { deleteDoc, doc, getDoc, getDocs, collection, setDoc, updateDoc } from 'firebase/firestore';
-import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 // Test names, ids and addresses are made up. RULES_FILE lets the suite run against another
 // rules file (for example the previous release) to prove the tests fail on unfixed rules.
 const RULES = readFileSync(process.env.RULES_FILE ?? 'firestore.rules', 'utf8');
-const PARENT_EMAIL = 'parent@example.com'; // the committed rules allowlist this placeholder
+const PARENT_EMAIL = 'parent@example.com'; // made up
 
 const FAM = 'fam-parent-uid';
 const OTHER_FAM = 'fam-other-uid';
+const STRANGER = 'stranger-uid';
 const KID = 'kidaaaa';
 const SIBLING = 'kidbbbb';
 
@@ -46,6 +47,11 @@ beforeEach(async () => {
     await setDoc(doc(db, `families/${OTHER_FAM}/kids/${KID}`), kidDoc(KID));
     await setDoc(doc(db, `pinIndex/${FAM}/kids/${KID}`), { nameKey: 'testkid', salt: 'aa', hash: 'bb' });
     await setDoc(doc(db, `pinIndex/${FAM}/attempts/family`), { entries: [] });
+    // The registry: FAM is a registered parent, STRANGER is signed in with Google but never registered.
+    await setDoc(doc(db, `parents/${FAM}`), { email: PARENT_EMAIL, createdAt: 1 });
+    await setDoc(doc(db, `parents/${OTHER_FAM}`), { email: 'other@example.com', createdAt: 1 });
+    await setDoc(doc(db, 'meta/parentCount'), { count: 2 });
+    await setDoc(doc(db, 'nameKeys/testkid'), { familyUid: FAM, kidId: KID });
   });
 });
 
@@ -145,18 +151,64 @@ describe('parent token', () => {
   });
 });
 
-describe('other accounts', () => {
-  it('denies a Google account that is not on the allowlist', async () => {
-    const db = env.authenticatedContext(FAM, { email: 'stranger@example.com', email_verified: true }).firestore();
+describe('parent registry', () => {
+  const stranger = () => env.authenticatedContext(STRANGER, { email: 'stranger@example.com', email_verified: true });
+
+  it('lets a registered parent into their own family only', async () => {
+    const db = parentCtx().firestore();
+    await assertSucceeds(getDoc(doc(db, `families/${FAM}`)));
+    await assertFails(getDoc(doc(db, `families/${OTHER_FAM}`)));
+    await assertFails(setDoc(doc(db, `families/${OTHER_FAM}`), { pinHash: 'y', createdAt: 1 }));
+    await assertFails(getDoc(doc(db, `families/${OTHER_FAM}/kids/${KID}`)));
+  });
+
+  it('keeps another registered parent out of this family', async () => {
+    const db = env.authenticatedContext(OTHER_FAM, { email: 'other@example.com', email_verified: true }).firestore();
+    await assertSucceeds(getDoc(doc(db, `families/${OTHER_FAM}`)));
     await assertFails(getDoc(doc(db, `families/${FAM}`)));
+    await assertFails(getDocs(collection(db, `families/${FAM}/kids`)));
     await assertFails(setDoc(doc(db, `families/${FAM}/kids/${KID}`), kidDoc(KID)));
   });
 
-  it('denies an allowlisted address that is not verified', async () => {
+  it('denies a verified Google account that is not registered, on every family path', async () => {
+    const db = stranger().firestore();
+    await assertFails(getDoc(doc(db, `families/${STRANGER}`)));
+    await assertFails(setDoc(doc(db, `families/${STRANGER}`), { pinHash: 'x', createdAt: 1 }));
+    await assertFails(setDoc(doc(db, `families/${STRANGER}/kids/k1`), kidDoc('k1')));
+    await assertFails(setDoc(doc(db, `families/${STRANGER}/kids/k1/cards/c1`), { id: 'c1' }));
+    await assertFails(getDoc(doc(db, `families/${FAM}`)));
+    await assertFails(getDocs(collection(db, `families/${FAM}/kids`)));
+  });
+
+  it('denies a registered uid whose email is not verified', async () => {
     const db = env.authenticatedContext(FAM, { email: PARENT_EMAIL, email_verified: false }).firestore();
     await assertFails(getDoc(doc(db, `families/${FAM}`)));
   });
 
+  it('denies registered and unregistered clients any access to parents, meta and nameKeys', async () => {
+    for (const db of [parentCtx().firestore(), stranger().firestore(), kidCtx().firestore(), env.unauthenticatedContext().firestore()]) {
+      await assertFails(getDoc(doc(db, `parents/${FAM}`)));
+      await assertFails(getDocs(collection(db, 'parents')));
+      await assertFails(getDoc(doc(db, 'meta/parentCount')));
+      await assertFails(getDoc(doc(db, 'nameKeys/testkid')));
+    }
+    const p = parentCtx().firestore();
+    await assertFails(setDoc(doc(p, `parents/${STRANGER}`), { email: 'x@example.com', createdAt: 1 }));
+    await assertFails(setDoc(doc(p, `parents/${FAM}`), { email: 'x@example.com', createdAt: 1 }));
+    await assertFails(deleteDoc(doc(p, `parents/${FAM}`)));
+    await assertFails(setDoc(doc(p, 'meta/parentCount'), { count: 0 }));
+    await assertFails(updateDoc(doc(p, 'meta/parentCount'), { count: 0 }));
+    await assertFails(setDoc(doc(p, 'nameKeys/someone'), { familyUid: FAM, kidId: 'k' }));
+    await assertFails(deleteDoc(doc(p, 'nameKeys/testkid')));
+  });
+
+  it('has no email list in the rules file', () => {
+    expect(RULES).not.toMatch(/token\.email\s+in\b/);
+    expect(RULES).not.toMatch(/@/);
+  });
+});
+
+describe('other accounts', () => {
   it('denies a signed-out visitor', async () => {
     const db = env.unauthenticatedContext().firestore();
     await assertFails(getDoc(doc(db, `families/${FAM}/kids/${KID}`)));

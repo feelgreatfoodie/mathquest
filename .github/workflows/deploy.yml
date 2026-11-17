@@ -47,8 +47,4 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
-      # The parent allowlist stays out of the repo: store the full local rules file as a secret.
-      - run: printf '%s' "$RULES" > firestore.local.rules && node scripts/deploy-config.mjs
-        env:
-          RULES: ${{ secrets.FIRESTORE_LOCAL_RULES }}
-      - run: npx firebase-tools@latest deploy --config firebase.deploy.json --only hosting,firestore:rules,firestore:indexes --project ${{ vars.VITE_FIREBASE_PROJECT_ID }} --non-interactive
+      - run: npx firebase-tools@latest deploy --only hosting,firestore:rules,firestore:indexes --project ${{ vars.VITE_FIREBASE_PROJECT_ID }} --non-interactive

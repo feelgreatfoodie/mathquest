@@ -5,9 +5,9 @@ import { LocalRepo } from './data/localRepo';
 import { hashPin, type Repo } from './data/repo';
 import type { Family, Kid } from './engine/models';
 import type { RunSummary } from './engine/session';
-import { dataMode, getFirebase, kidClaims, signInKid, signInParent, signOutParent } from './firebase';
+import { dataMode, getFirebase, kidClaims, registerParent, signInKid, signInParent, signOutParent } from './firebase';
 import { PinPad } from './ui/PinPad';
-import { KidHome, KidSignIn, Picker, SignIn, Summary } from './ui/screens/KidScreens';
+import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
 import { ParentArea, Setup } from './ui/screens/Parent';
 import { Run } from './ui/screens/Run';
 
@@ -85,6 +85,15 @@ export function App() {
           return;
         }
         setKidSession(false);
+        // Join the parent registry first. At the cap the message is shown and the account signs out.
+        try {
+          await registerParent();
+        } catch (e) {
+          setError((e as Error).message || 'Could not sign in. Try again.');
+          setScreen({ name: 'signin' });
+          void signOutParent();
+          return;
+        }
         const r = new FirestoreRepo(db, user.uid);
         setRepo(r);
         setSalt(user.uid);
@@ -104,16 +113,17 @@ export function App() {
   );
 
   if (screen.name === 'boot') return <div className="screen center"><p className="pixel blink">Loading…</p></div>;
-  if (screen.name === 'kidsignin')
+  if (screen.name === 'kidsignin' || screen.name === 'signin')
     return (
-      <KidSignIn
-        error={pinError ?? error}
-        onParent={() => {
+      <Landing
+        key={screen.name}
+        {...(screen.name === 'signin' ? { initialTab: 'parent' as const } : {})}
+        error={screen.name === 'signin' ? error : (pinError ?? error)}
+        onTabChange={() => {
           setPinError(null);
           setError(null);
-          setScreen({ name: 'signin' });
         }}
-        onSubmit={(name, pin) => {
+        onKidSubmit={(name, pin) => {
           if (!name.trim()) {
             setPinError('Type your first name first.');
             return;
@@ -122,17 +132,7 @@ export function App() {
           setError(null);
           signInKid(name, pin).catch((e: { message?: string }) => setPinError(e.message ?? "That name and PIN didn't match"));
         }}
-      />
-    );
-  if (screen.name === 'signin')
-    return (
-      <SignIn
-        error={error}
-        onBack={() => {
-          setError(null);
-          setScreen({ name: 'kidsignin' });
-        }}
-        onSignIn={() => {
+        onParentSignIn={() => {
           setError(null);
           signInParent().catch((e: Error) => setError(e.message));
         }}
