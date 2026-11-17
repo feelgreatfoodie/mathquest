@@ -11,7 +11,13 @@ initializeApp();
 // Parent emails, comma separated. Set in functions/.env (gitignored); `npm run deploy` checks it.
 const allowedEmails = defineString('ALLOWED_EMAILS');
 
-const opts = { region: 'us-west1', maxInstances: 5 } as const;
+// Dedicated runtime service account: Firestore access plus Token Creator on itself, which
+// createCustomToken needs to sign kid tokens. The project has no default compute account.
+const opts = {
+  region: 'us-west1',
+  maxInstances: 5,
+  serviceAccount: 'mathquest-fn@rezzed-mathquest.iam.gserviceaccount.com',
+} as const;
 
 function deps(): Deps {
   const auth = getAuth();
