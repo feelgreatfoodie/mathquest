@@ -45,11 +45,7 @@ function authOf(req: CallableRequest): AuthContext | undefined {
 }
 
 export const kidSignIn = onCall(opts, (req) =>
-  core.kidSignIn(deps(), {
-    name: req.data?.name,
-    pin: req.data?.pin,
-    ip: core.clientIp(req.rawRequest.headers['x-forwarded-for'], req.rawRequest.ip),
-  }),
+  core.kidSignIn(deps(), { name: req.data?.name, pin: req.data?.pin, ip: core.clientIp(req.rawRequest.headers['x-forwarded-for'], req.rawRequest.ip) }),
 );
 export const setKidPin = onCall(opts, (req) => core.setKidPin(deps(), authOf(req), req.data ?? {}));
 export const kidLockStatus = onCall(opts, (req) => core.kidLockStatus(deps(), authOf(req)));
