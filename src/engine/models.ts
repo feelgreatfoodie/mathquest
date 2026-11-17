@@ -59,6 +59,8 @@ export interface Kid {
   createdAt: number;
   settings: KidSettings;
   game: KidGame;
+  /** Set by the setKidPin function. The PIN hash itself lives server-side only. */
+  hasPin?: boolean;
 }
 
 export interface Family {

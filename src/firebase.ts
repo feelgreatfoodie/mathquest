@@ -3,11 +3,13 @@ import {
   GoogleAuthProvider,
   connectAuthEmulator,
   getAuth,
+  signInWithCustomToken,
   signInWithPopup,
   signInWithRedirect,
   signOut as fbSignOut,
   type Auth,
 } from 'firebase/auth';
+import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions';
 import {
   connectFirestoreEmulator,
   initializeFirestore,
@@ -30,6 +32,8 @@ export const firebaseConfigured = Boolean(config.apiKey && config.projectId && c
 /** "local" stores progress on this device only (no sign-in). */
 export const dataMode: 'firestore' | 'local' =
   env.VITE_DATA_MODE === 'local' || !firebaseConfigured ? 'local' : 'firestore';
+
+const FUNCTIONS_REGION = 'us-west1';
 
 let cached: { app: FirebaseApp; auth: Auth; db: Firestore } | null = null;
 
@@ -63,6 +67,48 @@ export async function signInParent(): Promise<void> {
     }
     throw err;
   }
+}
+
+function callable<I, O>(name: string) {
+  const { app } = getFirebase();
+  const fns = getFunctions(app, FUNCTIONS_REGION);
+  if (env.VITE_USE_EMULATORS === 'true') connectFunctionsEmulator(fns, '127.0.0.1', 5001);
+  return httpsCallable<I, O>(fns, name);
+}
+
+/** First name + PIN to the kidSignIn function, then sign this device in as that kid. */
+export async function signInKid(name: string, pin: string): Promise<void> {
+  const res = await callable<{ name: string; pin: string }, { token: string }>('kidSignIn')({ name, pin });
+  await signInWithCustomToken(getFirebase().auth, res.data.token);
+}
+
+export async function setKidPin(kidId: string, pin: string): Promise<void> {
+  await callable<{ kidId: string; pin: string }, { ok: true }>('setKidPin')({ kidId, pin });
+}
+
+export interface KidLockStatus {
+  locked: boolean;
+  failures: number;
+  lockedUntil: number;
+  lockedPlayers: string[];
+}
+
+export async function kidLockStatus(): Promise<KidLockStatus> {
+  return (await callable<Record<string, never>, KidLockStatus>('kidLockStatus')({})).data;
+}
+
+export async function unlockKidSignIn(): Promise<void> {
+  await callable<Record<string, never>, { ok: true }>('unlockKidSignIn')({});
+}
+
+/** The kid claims on the current session, or null for a parent (Google) session. */
+export async function kidClaims(): Promise<{ familyUid: string; kidId: string } | null> {
+  const user = getFirebase().auth.currentUser;
+  if (!user) return null;
+  const { claims } = await user.getIdTokenResult();
+  return claims.role === 'kid' && typeof claims.familyUid === 'string' && typeof claims.kidId === 'string'
+    ? { familyUid: claims.familyUid, kidId: claims.kidId }
+    : null;
 }
 
 export async function signOutParent(): Promise<void> {

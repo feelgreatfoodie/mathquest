@@ -1,0 +1,315 @@
+import { initializeApp, getApps } from 'firebase-admin/app';
+import { getFirestore, type Firestore } from 'firebase-admin/firestore';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  LIMITS,
+  LOCKED_MESSAGE,
+  MISMATCH_MESSAGE,
+  kidLockStatus,
+  kidSignIn,
+  parentPinHash,
+  setKidPin,
+  unlockKidSignIn,
+  type AuthContext,
+  type Deps,
+} from '../src/core.js';
+
+// All names, ids, addresses and PINs below are made up for the tests.
+const FAM = 'fam-uid-1';
+const FAM2 = 'fam-uid-2';
+const PARENT: AuthContext = { uid: FAM, email: 'parent-one@example.com', emailVerified: true };
+const PARENT2: AuthContext = { uid: FAM2, email: 'parent-two@example.com', emailVerified: true };
+const PARENT_PIN = '4821';
+const PIN = '7305';
+const PIN_B = '2946';
+
+const users: Record<string, { email: string; emailVerified: boolean }> = {
+  [FAM]: { email: 'parent-one@example.com', emailVerified: true },
+  [FAM2]: { email: 'parent-two@example.com', emailVerified: true },
+};
+
+let db: Firestore;
+let clock = 1_700_000_000_000;
+
+function deps(): Deps {
+  return {
+    db,
+    now: () => clock,
+    allowedEmails: ['parent-one@example.com', 'parent-two@example.com'],
+    auth: {
+      createCustomToken: async (uid, claims) => JSON.stringify({ uid, claims }),
+      getUser: async (uid) => {
+        const u = users[uid];
+        if (!u) throw new Error('no such user');
+        return u;
+      },
+    },
+  };
+}
+
+async function seedKid(fam: string, id: string, name: string) {
+  await db.doc(`families/${fam}/kids/${id}`).set({ id, name, createdAt: 1, settings: {}, game: {} });
+}
+
+async function clearAll() {
+  for (const col of ['families', 'pinIndex']) {
+    await db.recursiveDelete(db.collection(col));
+  }
+}
+
+const signIn = (name: string, pin: string, ip = '10.0.0.1') => kidSignIn(deps(), { name, pin, ip });
+const claimsOf = (r: { token: string }) => JSON.parse(r.token) as { uid: string; claims: Record<string, string> };
+
+async function fail(p: Promise<unknown>) {
+  try {
+    await p;
+  } catch (e) {
+    return e as { code: string; message: string };
+  }
+  throw new Error('expected a failure');
+}
+
+beforeAll(() => {
+  if (!getApps().length) initializeApp({ projectId: 'demo-mathquest' });
+  db = getFirestore();
+});
+
+beforeEach(async () => {
+  await clearAll();
+  clock = 1_700_000_000_000;
+  await db.doc(`families/${FAM}`).set({ pinHash: parentPinHash(FAM, PARENT_PIN), createdAt: 1 });
+  await seedKid(FAM, 'kid-bastian', 'Bastian');
+  await seedKid(FAM, 'kid-maya', 'Maya');
+  await seedKid(FAM, 'kid-leo', 'Leo');
+  await seedKid(FAM, 'kid-zed', 'Zed');
+  await setKidPin(deps(), PARENT, { kidId: 'kid-bastian', pin: PIN });
+  await setKidPin(deps(), PARENT, { kidId: 'kid-maya', pin: PIN_B });
+  await setKidPin(deps(), PARENT, { kidId: 'kid-leo', pin: PIN });
+  await setKidPin(deps(), PARENT, { kidId: 'kid-zed', pin: PIN });
+});
+
+describe('kidSignIn: name and PIN', () => {
+  it.each(['Bastian', 'bastian', ' BASTIAN '])('signs in as %j with the right claims', async (name) => {
+    const t = claimsOf(await signIn(name, PIN));
+    expect(t.uid).toBe('kid_kid-bastian');
+    expect(t.claims).toEqual({ role: 'kid', familyUid: FAM, kidId: 'kid-bastian' });
+  });
+
+  it('treats composed and decomposed accents as one name', async () => {
+    await seedKid(FAM, 'kid-rene', 'Renée');
+    await setKidPin(deps(), PARENT, { kidId: 'kid-rene', pin: PIN_B });
+    expect(claimsOf(await signIn('Renée', PIN_B)).claims.kidId).toBe('kid-rene');
+  });
+
+  it('lets two kids share a PIN, because the name tells them apart', async () => {
+    expect(claimsOf(await signIn('leo', PIN)).claims.kidId).toBe('kid-leo');
+    expect(claimsOf(await signIn('bastian', PIN)).claims.kidId).toBe('kid-bastian');
+  });
+
+  it('returns the same error for a wrong PIN and an unknown name', async () => {
+    const wrong = await fail(signIn('Bastian', '0000', '10.0.0.2'));
+    const unknown = await fail(signIn('Nobody', PIN, '10.0.0.3'));
+    expect(wrong.code).toBe('permission-denied');
+    expect(wrong.message).toBe(MISMATCH_MESSAGE);
+    expect(unknown.code).toBe(wrong.code);
+    expect(unknown.message).toBe(wrong.message);
+  });
+
+  it("rejects a PIN that isn't 4 digits, and a missing name", async () => {
+    expect((await fail(signIn('Bastian', '12'))).code).toBe('invalid-argument');
+    expect((await fail(signIn('', PIN))).code).toBe('invalid-argument');
+    expect((await fail(kidSignIn(deps(), { name: 5, pin: PIN, ip: '1.1.1.1' }))).code).toBe('invalid-argument');
+  });
+
+  it('refuses a kid whose doc was deleted', async () => {
+    await db.doc(`families/${FAM}/kids/kid-bastian`).delete();
+    expect((await fail(signIn('Bastian', PIN))).message).toBe(MISMATCH_MESSAGE);
+  });
+
+  it('refuses a family whose parent is no longer on the allowlist', async () => {
+    users[FAM] = { email: 'someone-else@example.com', emailVerified: true };
+    try {
+      expect((await fail(signIn('Bastian', PIN))).message).toBe(MISMATCH_MESSAGE);
+    } finally {
+      users[FAM] = { email: 'parent-one@example.com', emailVerified: true };
+    }
+  });
+});
+
+describe('setKidPin', () => {
+  it('rejects callers who are not allowlisted parents', async () => {
+    const d = deps();
+    expect((await fail(setKidPin(d, undefined, { kidId: 'kid-zed', pin: PIN }))).code).toBe('unauthenticated');
+    expect((await fail(setKidPin(d, { ...PARENT, emailVerified: false }, { kidId: 'kid-zed', pin: PIN }))).code).toBe('permission-denied');
+    expect((await fail(setKidPin(d, { uid: FAM, email: 'stranger@example.com', emailVerified: true }, { kidId: 'kid-zed', pin: PIN }))).code).toBe('permission-denied');
+    // A kid's own token has no email, so it cannot set PINs either.
+    expect((await fail(setKidPin(d, { uid: 'kid_kid-zed' }, { kidId: 'kid-zed', pin: PIN }))).code).toBe('permission-denied');
+  });
+
+  it('rejects the parent PIN and bad PIN shapes', async () => {
+    const d = deps();
+    const e = await fail(setKidPin(d, PARENT, { kidId: 'kid-zed', pin: PARENT_PIN }));
+    expect(e.code).toBe('invalid-argument');
+    expect(e.message).toMatch(/parent PIN/);
+    expect((await fail(setKidPin(d, PARENT, { kidId: 'kid-zed', pin: '12345' }))).code).toBe('invalid-argument');
+    expect((await fail(setKidPin(d, PARENT, { kidId: 'kid-zed', pin: 'abcd' }))).code).toBe('invalid-argument');
+    expect((await fail(setKidPin(d, PARENT, { kidId: '../x', pin: PIN }))).code).toBe('invalid-argument');
+  });
+
+  it('refuses a kid in another family', async () => {
+    expect((await fail(setKidPin(deps(), PARENT2, { kidId: 'kid-zed', pin: PIN }))).code).toBe('not-found');
+  });
+
+  it('refuses a duplicate name inside the family, in any capitalization', async () => {
+    await seedKid(FAM, 'kid-bastian2', ' BASTIAN');
+    expect((await fail(setKidPin(deps(), PARENT, { kidId: 'kid-bastian2', pin: PIN_B }))).code).toBe('already-exists');
+  });
+
+  it('refuses a name another allowlisted family already uses', async () => {
+    await seedKid(FAM2, 'other-bastian', 'bastian');
+    expect((await fail(setKidPin(deps(), PARENT2, { kidId: 'other-bastian', pin: PIN_B }))).code).toBe('already-exists');
+  });
+
+  it('stores a hash and salt server-side, and only hasPin on the kid doc', async () => {
+    const row = (await db.doc(`pinIndex/${FAM}/kids/kid-bastian`).get()).data()!;
+    expect(row.nameKey).toBe('bastian');
+    expect(row.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(row.salt).toMatch(/^[0-9a-f]{32}$/);
+    expect(JSON.stringify(row)).not.toContain(PIN);
+    const kid = (await db.doc(`families/${FAM}/kids/kid-bastian`).get()).data()!;
+    expect(kid.hasPin).toBe(true);
+    expect(JSON.stringify(kid)).not.toContain(row.hash);
+    expect(JSON.stringify(kid)).not.toContain(row.salt);
+  });
+
+  it('uses a different salt for each kid, so equal PINs hash differently', async () => {
+    const a = (await db.doc(`pinIndex/${FAM}/kids/kid-bastian`).get()).data()!;
+    const b = (await db.doc(`pinIndex/${FAM}/kids/kid-leo`).get()).data()!;
+    expect(a.salt).not.toBe(b.salt);
+    expect(a.hash).not.toBe(b.hash);
+  });
+
+  it('replaces the old PIN when a parent sets a new one', async () => {
+    await setKidPin(deps(), PARENT, { kidId: 'kid-bastian', pin: PIN_B });
+    expect((await fail(signIn('bastian', PIN, '10.1.1.1'))).message).toBe(MISMATCH_MESSAGE);
+    expect(claimsOf(await signIn('bastian', PIN_B, '10.1.1.2')).claims.kidId).toBe('kid-bastian');
+  });
+});
+
+describe('brute-force limits', () => {
+  const wrong = (name: string, ip: string) => fail(signIn(name, '0000', ip));
+
+  it('refuses the 6th failure from one IP, even with the right PIN', async () => {
+    for (let i = 0; i < LIMITS.ip.max; i++) expect((await wrong('Bastian', '9.9.9.9')).code).toBe('permission-denied');
+    const e = await fail(signIn('Bastian', PIN, '9.9.9.9'));
+    expect(e.code).toBe('resource-exhausted');
+    expect(e.message).toBe(LOCKED_MESSAGE);
+    // The 6th is refused for a different name from that IP too, and a clean IP still works.
+    expect((await fail(signIn('Maya', PIN_B, '9.9.9.9'))).code).toBe('resource-exhausted');
+    expect(claimsOf(await signIn('Bastian', PIN, '9.9.9.10')).claims.kidId).toBe('kid-bastian');
+  });
+
+  it('lets the IP back in after 15 minutes', async () => {
+    for (let i = 0; i < LIMITS.ip.max; i++) await wrong('Bastian', '9.9.9.9');
+    expect((await fail(signIn('Bastian', PIN, '9.9.9.9'))).code).toBe('resource-exhausted');
+    clock += 15 * 60_000 + 1;
+    expect(claimsOf(await signIn('Bastian', PIN, '9.9.9.9')).claims.kidId).toBe('kid-bastian');
+  });
+
+  it('counts unknown names against the IP too', async () => {
+    for (let i = 0; i < LIMITS.ip.max; i++) await wrong(`Ghost${i}`, '8.8.8.8');
+    expect((await fail(signIn('Bastian', PIN, '8.8.8.8'))).code).toBe('resource-exhausted');
+  });
+
+  it('locks a name after 10 failures from different IPs for an hour', async () => {
+    for (let i = 0; i < LIMITS.name.max; i++) await wrong('Bastian', `7.7.7.${i}`);
+    expect((await fail(signIn('bastian', PIN, '7.7.7.200'))).code).toBe('resource-exhausted');
+    // Another kid is not affected by that name lock.
+    expect(claimsOf(await signIn('Maya', PIN_B, '7.7.7.201')).claims.kidId).toBe('kid-maya');
+    clock += 60 * 60_000 + 1;
+    expect(claimsOf(await signIn('bastian', PIN, '7.7.7.200')).claims.kidId).toBe('kid-bastian');
+  });
+
+  it('locks a name that does not exist exactly like one that does', async () => {
+    for (let i = 0; i < LIMITS.name.max; i++) await wrong('Ghost', `6.6.6.${i}`);
+    const e = await fail(signIn('Ghost', PIN, '6.6.6.200'));
+    expect(e.code).toBe('resource-exhausted');
+    expect(e.message).toBe(LOCKED_MESSAGE);
+  });
+
+  it('locks the family after 20 failures, so the 21st is refused even with a right PIN', async () => {
+    // 7 + 7 + 6 failures across three names and 20 different IPs: no IP or name limit is reached.
+    const names = ['Bastian', 'Maya', 'Leo'];
+    let n = 0;
+    for (const [i, name] of names.entries()) {
+      for (let j = 0; j < (i === 2 ? 6 : 7); j++) expect((await wrong(name, `5.5.5.${n++}`)).code).toBe('permission-denied');
+    }
+    expect(n).toBe(LIMITS.family.max);
+    const e = await fail(signIn('Zed', PIN, '5.5.5.250'));
+    expect(e.code).toBe('resource-exhausted');
+    expect(e.message).toBe(LOCKED_MESSAGE);
+    const row = (await db.doc(`pinIndex/${FAM}/attempts/family`).get()).data()!;
+    expect(row.entries).toHaveLength(LIMITS.family.max);
+    expect(row.lockedUntil).toBeGreaterThan(clock);
+  });
+
+  it('does not reset the counters on a success', async () => {
+    for (let i = 0; i < 4; i++) await wrong('Bastian', '4.4.4.4');
+    expect(claimsOf(await signIn('Bastian', PIN, '4.4.4.4')).claims.kidId).toBe('kid-bastian');
+    expect((await wrong('Bastian', '4.4.4.4')).code).toBe('permission-denied'); // the 5th failure
+    expect((await fail(signIn('Bastian', PIN, '4.4.4.4'))).code).toBe('resource-exhausted');
+  });
+
+  it('counts parallel guesses, so a burst cannot skip the limit', async () => {
+    const results = await Promise.allSettled(Array.from({ length: 8 }, () => signIn('Bastian', '0000', '3.3.3.3')));
+    const codes = results.map((r) => (r.status === 'rejected' ? (r.reason as { code: string }).code : 'ok'));
+    expect(codes.filter((c) => c === 'permission-denied')).toHaveLength(LIMITS.ip.max);
+    expect(codes.filter((c) => c === 'resource-exhausted')).toHaveLength(8 - LIMITS.ip.max);
+  });
+});
+
+describe('parent lock status and unlock', () => {
+  async function lockFamily() {
+    const names = ['Bastian', 'Maya', 'Leo'];
+    let n = 0;
+    for (const [i, name] of names.entries()) {
+      for (let j = 0; j < (i === 2 ? 6 : 7); j++) await fail(signIn(name, '0000', `2.2.2.${n++}`));
+    }
+  }
+
+  it('shows the lock and the failure count to the parent', async () => {
+    await lockFamily();
+    const s = await kidLockStatus(deps(), PARENT);
+    expect(s.locked).toBe(true);
+    expect(s.failures).toBe(20);
+  });
+
+  it('clears the lock when the parent unlocks', async () => {
+    await lockFamily();
+    expect((await fail(signIn('Zed', PIN, '2.2.2.250'))).code).toBe('resource-exhausted');
+    await unlockKidSignIn(deps(), PARENT);
+    expect(claimsOf(await signIn('Zed', PIN, '2.2.2.250')).claims.kidId).toBe('kid-zed');
+    const s = await kidLockStatus(deps(), PARENT);
+    expect(s.locked).toBe(false);
+    expect(s.failures).toBe(0);
+  });
+
+  it('clears an IP lock and a name lock on unlock', async () => {
+    for (let i = 0; i < LIMITS.ip.max; i++) await fail(signIn('Bastian', '0000', '1.2.3.4'));
+    expect((await kidLockStatus(deps(), PARENT)).locked).toBe(true);
+    await unlockKidSignIn(deps(), PARENT);
+    expect(claimsOf(await signIn('Bastian', PIN, '1.2.3.4')).claims.kidId).toBe('kid-bastian');
+  });
+
+  it('refuses status and unlock for anyone who is not a parent', async () => {
+    expect((await fail(unlockKidSignIn(deps(), undefined))).code).toBe('unauthenticated');
+    expect((await fail(unlockKidSignIn(deps(), { uid: 'kid_kid-zed' }))).code).toBe('permission-denied');
+    expect((await fail(kidLockStatus(deps(), { uid: 'x', email: 'stranger@example.com', emailVerified: true }))).code).toBe('permission-denied');
+  });
+
+  it("does not let one family's unlock clear another family's lock", async () => {
+    await lockFamily();
+    await unlockKidSignIn(deps(), PARENT2);
+    expect((await fail(signIn('Zed', PIN, '2.2.2.251'))).code).toBe('resource-exhausted');
+  });
+});

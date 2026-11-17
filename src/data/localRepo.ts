@@ -36,6 +36,10 @@ export class LocalRepo implements Repo {
     return read<Kid[]>('kids', []).sort((a, b) => a.createdAt - b.createdAt);
   }
 
+  async getKid(kidId: string): Promise<Kid | null> {
+    return read<Kid[]>('kids', []).find((k) => k.id === kidId) ?? null;
+  }
+
   async saveKid(kid: Kid): Promise<void> {
     const kids = read<Kid[]>('kids', []).filter((k) => k.id !== kid.id);
     write('kids', [...kids, kid]);

@@ -6,6 +6,7 @@ export interface Repo {
   getFamily(): Promise<Family | null>;
   saveFamily(family: Family): Promise<void>;
   listKids(): Promise<Kid[]>;
+  getKid(kidId: string): Promise<Kid | null>;
   saveKid(kid: Kid): Promise<void>;
   deleteKid(kidId: string): Promise<void>;
   loadCards(kidId: string): Promise<CardMap>;

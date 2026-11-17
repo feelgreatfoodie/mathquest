@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Keypad } from './Keypad';
 
 interface PinPadProps {
   title: string;
   subtitle?: string;
+  /** Rendered under the title, above the dots (the kid sign-in name field). */
+  header?: ReactNode;
+  /** Rendered under the keypad (the "Parent" link). */
+  footer?: ReactNode;
   error?: string | null;
   onComplete: (pin: string) => void;
   onCancel?: () => void;
 }
 
-export function PinPad({ title, subtitle, error, onComplete, onCancel }: PinPadProps) {
+export function PinPad({ title, subtitle, header, footer, error, onComplete, onCancel }: PinPadProps) {
   const [pin, setPin] = useState('');
   const digit = useCallback((d: number) => setPin((p) => (p + d).slice(0, 4)), []);
   useEffect(() => {
@@ -28,6 +32,7 @@ export function PinPad({ title, subtitle, error, onComplete, onCancel }: PinPadP
       <div className="panel pin-panel">
         <h2 className="pixel">{title}</h2>
         {subtitle ? <p className="muted">{subtitle}</p> : null}
+        {header}
         <div className="pin-dots" aria-label={`${pin.length} of 4 digits`}>
           {[0, 1, 2, 3].map((i) => (
             <span key={i} className={`pin-dot ${i < pin.length ? 'is-on' : ''}`} />
@@ -35,6 +40,7 @@ export function PinPad({ title, subtitle, error, onComplete, onCancel }: PinPadP
         </div>
         {error ? <p className="error">{error}</p> : null}
         <Keypad onDigit={digit} onBack={back} onSubmit={submit} canSubmit={false} />
+        {footer}
         {onCancel ? (
           <button type="button" className="btn btn-ghost" onClick={onCancel}>
             Cancel
