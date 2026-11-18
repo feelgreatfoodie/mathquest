@@ -76,6 +76,8 @@ export function planSession({ cards, available, now, size, maxNew, rng }: PlanIn
 }
 
 export interface Entry {
+  /** Unique within one runner. A mode that lets the kid pick the order answers by this id. */
+  id: string;
   cardId: string;
   /** teach = show a worked example (new skills); graded = first scored attempt; practice = in-run retry */
   kind: 'teach' | 'graded' | 'practice';
@@ -131,6 +133,8 @@ export class SessionRunner {
   private stats = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0 };
   private missed = new Set<string>();
   private faster = new Set<string>();
+  private nextId = 0;
+  private resolved = new Set<string>();
 
   constructor(
     plan: PlanItem[],
@@ -148,12 +152,16 @@ export class SessionRunner {
       if (!def) continue;
       const problem = this.make(item.cardId, rng);
       if (item.isNew && def.kind === 'skill') {
-        this.queue.push({ cardId: item.cardId, kind: 'teach', isNew: true, problem });
-        this.queue.push({ cardId: item.cardId, kind: 'graded', isNew: true, problem: this.make(item.cardId, rng) });
+        this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'teach', isNew: true, problem });
+        this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: true, problem: this.make(item.cardId, rng) });
       } else {
-        this.queue.push({ cardId: item.cardId, kind: 'graded', isNew: item.isNew, problem });
+        this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: item.isNew, problem });
       }
     }
+  }
+
+  private mintId(): string {
+    return `e${this.nextId++}`;
   }
 
   /** Builds a problem and gives picture problems a different icon from the one before. */
@@ -191,11 +199,36 @@ export class SessionRunner {
   }
 
   /**
-   * Grades one answer. `peeked` is for pre-readers who hid the pictures and looked: a peek grades Hard at best.
+   * Grades the entry at the current position. `peeked` is for pre-readers who hid the pictures and looked:
+   * a peek grades Hard at best.
    */
   answer(input: AnswerInput, ms: number, opts: { peeked?: boolean } = {}): Feedback {
     const entry = this.current();
     if (!entry || entry.kind === 'teach') throw new Error('No question to answer');
+    return this.grade(entry, this.index, input, ms, opts);
+  }
+
+  /**
+   * Grades a chosen entry, for modes where the kid picks the order. It runs the same `grade()` as
+   * `answer()`, so card states do not depend on the order. Each entry can be answered once.
+   * Retries land after the answered entry. Walk the queue with `pending()`, not `advance()`.
+   */
+  answerEntry(entryId: string, input: AnswerInput, ms: number, opts: { peeked?: boolean } = {}): Feedback {
+    const at = this.queue.findIndex((e) => e.id === entryId);
+    const entry = this.queue[at];
+    if (!entry) throw new Error(`No entry ${entryId}`);
+    if (entry.kind === 'teach') throw new Error('No question to answer');
+    if (this.resolved.has(entry.id)) throw new Error(`Entry ${entryId} was already answered`);
+    return this.grade(entry, at, input, ms, opts);
+  }
+
+  /** Entries still waiting for an answer: not yet answered, and not teach cards. */
+  pending(): Entry[] {
+    return this.queue.filter((e) => e.kind !== 'teach' && !this.resolved.has(e.id));
+  }
+
+  private grade(entry: Entry, at: number, input: AnswerInput, ms: number, opts: { peeked?: boolean }): Feedback {
+    this.resolved.add(entry.id);
     const def = getCardDef(entry.cardId)!;
     const mod = moduleOfCard(entry.cardId);
     const now = this.clock();
@@ -236,8 +269,9 @@ export class SessionRunner {
     const learningSkill = correct && entry.kind === 'graded' && def.kind === 'skill' && cardLevel(prev, this.baseline, this.pace) < 3;
     if ((!correct || slow || learningSkill) && tries < MAX_RETRIES) {
       this.retries.set(entry.cardId, tries + 1);
-      const at = Math.min(this.queue.length, this.index + 1 + this.retryGap);
-      this.queue.splice(at, 0, {
+      const insertAt = Math.min(this.queue.length, at + 1 + this.retryGap);
+      this.queue.splice(insertAt, 0, {
+        id: this.mintId(),
         cardId: entry.cardId,
         kind: 'practice',
         isNew: false,

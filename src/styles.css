@@ -564,3 +564,16 @@ legend { padding: 0 6px; color: var(--muted); }
 /* The update screen: one huge button for a pre-reader, a panel for everyone else. */
 .update-screen { gap: 24px; }
 .update-screen .play-btn:disabled { opacity: 0.7; }
+
+/* A question floating over a world that pauses behind it (modes that walk; not used by the two runs yet). */
+.question-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(10, 12, 24, 0.72);
+}
