@@ -7,11 +7,14 @@ import {
   limit,
   orderBy,
   query,
+  runTransaction,
   setDoc,
+  updateDoc,
   writeBatch,
   type Firestore,
 } from 'firebase/firestore';
-import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type SessionLog } from '../engine/models';
+import { applyDelta, type GameDelta } from '../engine/game';
+import { normalizeGame, normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type SessionLog } from '../engine/models';
 import type { Repo } from './repo';
 
 const BATCH_MAX = 450;
@@ -67,8 +70,40 @@ export class FirestoreRepo implements Repo {
     return snap.exists() ? normalizeKid(snap.data() as Kid) : null;
   }
 
-  async saveKid(kid: Kid): Promise<void> {
-    await setDoc(doc(this.kids(), kid.id), kid);
+  async createKid(kid: Kid): Promise<void> {
+    const ref = doc(this.kids(), kid.id);
+    await runTransaction(this.db, async (tx) => {
+      if ((await tx.get(ref)).exists()) throw new Error('That player already exists.');
+      tx.set(ref, kid);
+    });
+  }
+
+  async saveKidSettings(kidId: string, settings: KidSettings): Promise<void> {
+    await updateDoc(doc(this.kids(), kidId), { settings });
+  }
+
+  async setKidFlags(kidId: string, flags: { hasPin?: boolean }): Promise<void> {
+    const update: Record<string, unknown> = {};
+    if (flags.hasPin !== undefined) update.hasPin = flags.hasPin;
+    if (Object.keys(update).length) await updateDoc(doc(this.kids(), kidId), update);
+  }
+
+  async applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog }): Promise<KidGame> {
+    const ref = doc(this.kids(), kidId);
+    const sessionRef = opts?.session ? doc(this.sessions(kidId), opts.session.id) : null;
+    return runTransaction(this.db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error('That player was removed.');
+      const current = normalizeGame((snap.data() as { game?: unknown }).game);
+      if (sessionRef && opts?.session) {
+        // The log is written with the delta, so a stored log means this delta already landed.
+        if ((await tx.get(sessionRef)).exists()) return current;
+        tx.set(sessionRef, opts.session);
+      }
+      const next = applyDelta(current, delta);
+      tx.update(ref, { game: next });
+      return next;
+    });
   }
 
   async deleteKid(kidId: string): Promise<void> {

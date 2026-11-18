@@ -1,4 +1,5 @@
-import type { CardMap, CardState, Family, Kid, SessionLog } from '../engine/models';
+import type { GameDelta } from '../engine/game';
+import type { CardMap, CardState, Family, Kid, KidGame, KidSettings, SessionLog } from '../engine/models';
 
 /** Storage boundary. Firestore in production; localStorage for offline demos and dev. */
 export interface Repo {
@@ -7,7 +8,19 @@ export interface Repo {
   saveFamily(family: Family): Promise<void>;
   listKids(): Promise<Kid[]>;
   getKid(kidId: string): Promise<Kid | null>;
-  saveKid(kid: Kid): Promise<void>;
+  /** Creates a kid. Fails when the id exists, so a stale copy can never replace a stored kid. */
+  createKid(kid: Kid): Promise<void>;
+  /** Writes `settings` and nothing else. Fails when the kid was removed. */
+  saveKidSettings(kidId: string, settings: KidSettings): Promise<void>;
+  /** Writes the named flags and nothing else. */
+  setKidFlags(kidId: string, flags: { hasPin?: boolean }): Promise<void>;
+  /**
+   * The only writer of `game`. Reads the stored game inside a transaction, applies the delta and writes
+   * `game` back, so a stale screen cannot overwrite newer totals. With `session`, the run's log is written
+   * in the same transaction, and a log that is already stored means the delta was already applied (a safe retry).
+   * Returns the game as stored. Throws GameDeltaError when the delta cannot apply.
+   */
+  applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog }): Promise<KidGame>;
   deleteKid(kidId: string): Promise<void>;
   loadCards(kidId: string): Promise<CardMap>;
   saveCards(kidId: string, cards: CardState[]): Promise<void>;

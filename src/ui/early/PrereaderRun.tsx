@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cardLevel } from '../../engine/mastery';
-import { learnerParams, paceOf, type Kid } from '../../engine/models';
+import { learnerParams, paceOf, type Kid, type KidGame } from '../../engine/models';
 import { word } from '../../engine/modules/early';
 import type { Token, Visual } from '../../engine/problems';
 import type { Feedback, RunSummary } from '../../engine/session';
 import type { SessionRunner } from '../../engine/session';
 import type { Repo } from '../../data/repo';
+import { reportFailure } from '../failures';
 import { loadRunner, saveRun } from '../runShared';
 import { MONSTERS, Sprite, UiIcon } from '../sprites';
 import { ChoiceButtons } from './ChoiceButtons';
@@ -19,6 +20,8 @@ interface Props {
   repo: Repo;
   kid: Kid;
   onDone: (summary: RunSummary, kid: Kid) => void;
+  /** The stored game after a Try again succeeds. */
+  onSynced?: (game: KidGame) => void;
   onExit: () => void;
 }
 
@@ -80,7 +83,7 @@ function numeral(t: Token): string | number {
 }
 
 /** The screen for kids who cannot read yet: pictures, a voice, big buttons. Same SessionRunner as the reader screen. */
-export function PrereaderRun({ repo, kid, onDone, onExit }: Props) {
+export function PrereaderRun({ repo, kid, onDone, onExit, onSynced }: Props) {
   const block = learnerParams('prereader').blockSize;
   const pace = paceOf(kid.settings);
   const runnerRef = useRef<SessionRunner | null>(null);
@@ -175,13 +178,13 @@ export function PrereaderRun({ repo, kid, onDone, onExit }: Props) {
     finishing.current = true;
     countTurn.current++;
     stopSpeaking();
-    const saved = await saveRun(repo, kid, r, startedAt.current);
+    const saved = await saveRun(repo, kid, r, startedAt.current, onSynced);
     if (!saved) {
       onExit();
       return;
     }
     onDone(saved.summary, saved.updated);
-  }, [kid, repo, onDone, onExit]);
+  }, [kid, repo, onDone, onExit, onSynced]);
 
   const next = useCallback(() => {
     const r = runnerRef.current;
@@ -230,7 +233,7 @@ export function PrereaderRun({ repo, kid, onDone, onExit }: Props) {
       setFeedback(fb);
       setPicked(value);
       const card = r.getCard(e.cardId);
-      if (card) void repo.saveCards(kid.id, [card]).catch(() => undefined);
+      if (card) void repo.saveCards(kid.id, [card]).catch((e) => reportFailure('An answer was not saved.', e, () => repo.saveCards(kid.id, [card])));
       const speech = e.problem.speech ?? '';
       if (fb.verdict === 'correct') {
         chime();

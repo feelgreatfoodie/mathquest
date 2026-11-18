@@ -45,13 +45,13 @@ describe('kid with game {} through the repo and the screens', () => {
   });
   it('shows no NaN on the picker or the kid home', async () => {
     const repo = new LocalRepo();
-    await repo.saveKid(bare({}));
+    await repo.createKid(bare({}));
     const [listed] = await repo.listKids();
     const got = await repo.getKid('k1');
     expect(listed?.game).toEqual(DEFAULT_GAME);
     expect(got?.game).toEqual(DEFAULT_GAME);
     const noop = () => {};
-    const home = renderToStaticMarkup(createElement(KidHome, { kid: got!, onStart: noop, onSave: noop, onBack: noop }));
+    const home = renderToStaticMarkup(createElement(KidHome, { kid: got!, onStart: noop, onGame: async () => {}, onBack: noop }));
     const pick = renderToStaticMarkup(createElement(Picker, { kids: [listed!], onPick: noop, onParent: noop }));
     expect(home).not.toContain('NaN');
     expect(pick).not.toContain('NaN');

@@ -1,4 +1,5 @@
-import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type SessionLog } from '../engine/models';
+import { applyDelta, type GameDelta } from '../engine/game';
+import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type SessionLog } from '../engine/models';
 import type { Repo } from './repo';
 
 const PREFIX = 'mathquest:v1';
@@ -41,9 +42,41 @@ export class LocalRepo implements Repo {
     return k ? normalizeKid(k) : null;
   }
 
-  async saveKid(kid: Kid): Promise<void> {
-    const kids = read<Kid[]>('kids', []).filter((k) => k.id !== kid.id);
+  private patchKid(kidId: string, patch: (k: Kid) => Kid): void {
+    const kids = read<Kid[]>('kids', []);
+    if (!kids.some((k) => k.id === kidId)) throw new Error('That player was removed.');
+    write('kids', kids.map((k) => (k.id === kidId ? patch(k) : k)));
+  }
+
+  async createKid(kid: Kid): Promise<void> {
+    const kids = read<Kid[]>('kids', []);
+    if (kids.some((k) => k.id === kid.id)) throw new Error('That player already exists.');
     write('kids', [...kids, kid]);
+  }
+
+  async saveKidSettings(kidId: string, settings: KidSettings): Promise<void> {
+    this.patchKid(kidId, (k) => ({ ...k, settings }));
+  }
+
+  async setKidFlags(kidId: string, flags: { hasPin?: boolean }): Promise<void> {
+    this.patchKid(kidId, (k) => ({ ...k, ...(flags.hasPin !== undefined ? { hasPin: flags.hasPin } : {}) }));
+  }
+
+  async applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog }): Promise<KidGame> {
+    const stored = read<Kid[]>('kids', []).find((k) => k.id === kidId);
+    if (!stored) throw new Error('That player was removed.');
+    const current = normalizeKid(stored).game;
+    if (opts?.session) {
+      const logs = read<SessionLog[]>(`sessions:${kidId}`, []);
+      if (logs.some((l) => l.id === opts.session!.id)) return current;
+      const next = applyDelta(current, delta);
+      write(`sessions:${kidId}`, [...logs, opts.session].slice(-200));
+      this.patchKid(kidId, (k) => ({ ...k, game: next }));
+      return next;
+    }
+    const next = applyDelta(current, delta);
+    this.patchKid(kidId, (k) => ({ ...k, game: next }));
+    return next;
   }
 
   async deleteKid(kidId: string): Promise<void> {

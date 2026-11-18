@@ -1,9 +1,10 @@
-import { applyRun } from '../engine/game';
+import { applyRun, type GameDelta } from '../engine/game';
 import { availableCards } from '../engine/mastery';
-import { learnerOf, type Kid, type SessionLog } from '../engine/models';
+import { learnerOf, type Kid, type KidGame, type SessionLog } from '../engine/models';
 import { moduleOfCard } from '../engine/modules';
 import { SessionRunner, planSession, type RunSummary } from '../engine/session';
 import { newId, type Repo } from '../data/repo';
+import { reportFailure } from './failures';
 
 /** Loads the kid's cards, plans a run and returns a runner. Both run screens start here. */
 export async function loadRunner(repo: Repo, kid: Kid): Promise<{ runner: SessionRunner; startedAt: number }> {
@@ -25,10 +26,19 @@ export async function loadRunner(repo: Repo, kid: Kid): Promise<{ runner: Sessio
 }
 
 /**
- * Saves the run: changed cards, the session log, and the kid doc with the new game totals.
- * Returns null when nothing was answered. A failed save is logged and retried from the offline cache.
+ * Saves the run: changed cards, then the session log and the game totals in one transaction
+ * (applyGameDelta). Returns null when nothing was answered. A failed write is logged and shown with a
+ * Try again button, and the run still ends: `saved` says whether the totals reached the server. The
+ * retry is safe to repeat because the stored session log marks the delta as applied.
+ * `onSynced` gets the stored game after a retry succeeds.
  */
-export async function saveRun(repo: Repo, kid: Kid, runner: SessionRunner, startedAt: number): Promise<{ summary: RunSummary; updated: Kid } | null> {
+export async function saveRun(
+  repo: Repo,
+  kid: Kid,
+  runner: SessionRunner,
+  startedAt: number,
+  onSynced?: (game: KidGame) => void,
+): Promise<{ summary: RunSummary; updated: Kid; saved: boolean } | null> {
   const summary = runner.summary();
   if (summary.answered === 0) return null;
   const now = Date.now();
@@ -47,13 +57,34 @@ export async function saveRun(repo: Repo, kid: Kid, runner: SessionRunner, start
     bestCombo: summary.bestCombo,
     missed: summary.missed,
   };
-  const updated: Kid = { ...kid, game: applyRun(kid.game, summary, now) };
+  const delta: GameDelta = { xp: summary.xp, gems: summary.gems, bestCombo: summary.bestCombo, playedAt: now };
+
+  const cards = runner.changedCards();
   try {
-    await repo.saveCards(kid.id, runner.changedCards());
-    await repo.addSession(kid.id, log);
-    await repo.saveKid(updated);
+    await repo.saveCards(kid.id, cards);
   } catch (e) {
-    console.error('Saving the run failed; it will retry from the offline cache.', e);
+    reportFailure('Some of this run was not saved.', e, () => repo.saveCards(kid.id, cards));
   }
-  return { summary, updated };
+
+  const attempt = async (): Promise<KidGame> => {
+    const game = await repo.applyGameDelta(kid.id, delta, { session: log });
+    onSynced?.(game);
+    return game;
+  };
+  try {
+    const game = await attempt();
+    return { summary, updated: { ...kid, game }, saved: true };
+  } catch (e) {
+    reportFailure('Your gems and XP from this run were not saved.', e, async () => {
+      await attempt();
+    });
+    // Show the totals the run earned, even though the server does not have them yet.
+    let shown = kid.game;
+    try {
+      shown = applyRun(kid.game, summary, now);
+    } catch {
+      // The delta cannot apply to this copy; keep the old totals on screen.
+    }
+    return { summary, updated: { ...kid, game: shown }, saved: false };
+  }
 }
