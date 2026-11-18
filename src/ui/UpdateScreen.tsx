@@ -4,8 +4,8 @@ import { speak, stopSpeaking, unlockSpeech } from './early/useSpeech';
 import { UiIcon } from './sprites';
 
 /**
- * Shown instead of the app when this bundle is older than config/app.minVersion. It blocks every run and every
- * write, so an old bundle never plays a run that cannot be saved. A pre-reader gets one big button with a
+ * Shown on the home screen when this bundle is older than config/app.minVersion. It starts no new run. It never
+ * replaces a round or a save: the summary shows UpdatePrompt after the run is saved. A pre-reader gets one big button with a
  * picture and a voice, no words. Everyone else gets two lines of text and a button.
  */
 export function UpdateScreen({ picture }: { picture: boolean }) {
@@ -51,6 +51,34 @@ export function UpdateScreen({ picture }: { picture: boolean }) {
         <button type="button" className="btn btn-big" disabled={busy} onClick={tap}>
           {busy ? 'Updating…' : 'Update'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** A strip on the summary screen, after the run is saved: a new version is out. One tap updates. */
+export function UpdatePrompt({ picture }: { picture: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const tap = () => {
+    unlockSpeech();
+    setBusy(true);
+    void applyUpdate();
+  };
+  return (
+    <div className="toasts" data-testid="update-prompt">
+      <div className="toast">
+        {picture ? (
+          <button type="button" className={`icon-btn ${busy ? 'blink' : ''}`} aria-label="Get the new version" disabled={busy} onClick={tap}>
+            <UiIcon name="refresh" size={48} />
+          </button>
+        ) : (
+          <>
+            <span>New version ready.</span>
+            <button type="button" className="btn btn-small" disabled={busy} onClick={tap}>
+              {busy ? 'Updating…' : 'Update'}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

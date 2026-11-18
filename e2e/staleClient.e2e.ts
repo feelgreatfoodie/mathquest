@@ -174,7 +174,7 @@ test.describe('a release during a run', () => {
         .toBe(true);
     }
     await expect(page.locator('.big-stars')).toBeVisible();
-    await expect(page.locator('.toast')).toHaveCount(0); // no "Couldn't save"
+    await expect(page.locator('.toast', { hasText: /save/i })).toHaveCount(0); // no "Couldn't save"
     await expect(page.getByTestId('update-prompt')).toBeVisible(); // after the summary
     const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('mathquest:v1:kids')!)[0].game.xp as number);
     expect(stored).toBeGreaterThan(0); // the run saved

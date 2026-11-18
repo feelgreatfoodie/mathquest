@@ -2,6 +2,8 @@
 // If the reload is still behind (the worker never changed), the second tap drops the worker and every cache,
 // so the reload fetches the bundle fresh from the network.
 
+import { isBehind } from './version';
+
 const TRIED_KEY = 'mathquest:update-tried';
 
 function storage(): Storage | null {
@@ -19,6 +21,16 @@ export function clearUpdateAttempt(): void {
   } catch {
     // ignore
   }
+}
+
+/**
+ * Call with this bundle's build and the latest minVersion. A bundle at or above minVersion is current: the update
+ * attempt is cleared, so the next stale episode starts with the soft update. Returns true while still behind.
+ */
+export function settleUpdate(build: number, min: number | null): boolean {
+  const behind = isBehind(build, min);
+  if (!behind) clearUpdateAttempt();
+  return behind;
 }
 
 function activated(reg: ServiceWorkerRegistration, ms: number): Promise<void> {

@@ -53,11 +53,11 @@ function playedRun() {
 describe('save first', () => {
   it('minVersion bumped during a run: the run still saves', async () => {
     let min = 50; // this build is 100: current when the run starts
-    const guard = new VersionGuard(null, { build: 100, maxAgeMs: 0, read: async () => min });
+    const guard = new VersionGuard(null, { build: 100, read: async () => min });
     await guard.refresh();
     expect(guard.stale).toBe(false);
     const db = env.authenticatedContext(FAM, { email: 'parent@example.com', email_verified: true }).firestore();
-    const repo = new FirestoreRepo(db, FAM, guard);
+    const repo = new FirestoreRepo(db, FAM);
     const run = playedRun();
     min = 200; // a deploy lands mid-run
     await guard.refresh();
