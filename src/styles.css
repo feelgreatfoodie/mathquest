@@ -1044,3 +1044,4 @@ legend { padding: 0 6px; color: var(--muted); }
   .early-top .path-dots { order: 3; flex: 1 0 100%; justify-content: center; }
   .early-top-right { gap: 6px; }
 }
+.hear-btn { color: var(--gold); border-color: var(--gold); }
