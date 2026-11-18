@@ -16790,7 +16790,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873605000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -16819,7 +16819,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873602000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -16849,7 +16849,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873603000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -16876,7 +16876,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873604000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -16906,7 +16906,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873606000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -16937,7 +16937,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873607000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -16964,7 +16964,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873608000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -16995,7 +16995,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873609000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17026,7 +17026,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873610000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17053,7 +17053,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873611000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17084,7 +17084,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873612000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17115,12 +17115,12 @@
    ],
    "lastRating": 1,
    "updatedAt": 1794873617000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     false
    ],
-   "missDay": "2026-11-16"
+   "missDay": "TODAY"
   },
   {
    "id": "mul:3x9",
@@ -17143,7 +17143,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873614000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17173,7 +17173,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873615000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17203,7 +17203,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873616000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17230,7 +17230,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873618000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17261,7 +17261,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873619000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17292,7 +17292,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873620000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17319,7 +17319,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873621000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17349,7 +17349,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873622000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17379,7 +17379,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873623000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17406,12 +17406,12 @@
    ],
    "lastRating": 1,
    "updatedAt": 1794873632000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     false
    ],
-   "missDay": "2026-11-16"
+   "missDay": "TODAY"
   },
   {
    "id": "mul:4x8",
@@ -17437,7 +17437,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873625000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17468,7 +17468,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873626000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17498,7 +17498,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873627000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17529,7 +17529,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873629000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17560,7 +17560,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873630000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17591,7 +17591,7 @@
    ],
    "lastRating": 4,
    "updatedAt": 1794873631000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
@@ -17622,12 +17622,12 @@
    ],
    "lastRating": 1,
    "updatedAt": 1794873635000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     false
    ],
-   "missDay": "2026-11-16"
+   "missDay": "TODAY"
   },
   {
    "id": "mul:3x5",
@@ -17654,7 +17654,7 @@
    ],
    "lastRating": 3,
    "updatedAt": 1794873634000,
-   "day": "2026-11-16",
+   "day": "TODAY",
    "dayGraded": 1,
    "lastResults": [
     true
