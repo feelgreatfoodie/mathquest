@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 /**
  * Visual baselines for the Dungeon run and the pre-reader run.
- * Baselines were taken on main 610a543 (before the mode layer) and must not change in PR 1a.
+ * Baselines were re-taken on main e6b5e0a (after #12 added the hold bubble button, before the mode layer) and must not change in PR 1a.
  * Math.random is seeded so the questions, icons and monsters are the same every run.
  * Update on purpose with `npx playwright test visual --update-snapshots`.
  */
