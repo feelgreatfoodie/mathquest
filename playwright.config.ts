@@ -17,13 +17,17 @@ export default defineConfig({
   expect: { toHaveScreenshot: { threshold: 0.1, maxDiffPixelRatio: 0.001, animations: 'disabled' } },
   use: {
     baseURL: `http://localhost:${PORT}`,
-    channel: 'chrome',
     viewport: { width: 1024, height: 768 },
     hasTouch: true,
     deviceScaleFactor: 2,
     userAgent:
       'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
   },
+  // Two projects: system Chrome for every spec, and WebKit (the engine of Safari on iPad) for the specs that name it.
+  projects: [
+    { name: 'chrome', use: { channel: 'chrome' }, testIgnore: '**/*.webkit.e2e.ts' },
+    { name: 'webkit', use: { browserName: 'webkit' }, testMatch: '**/*.webkit.e2e.ts' },
+  ],
   webServer: [
     {
       command: `VITE_DATA_MODE=local npx vite --port ${PORT} --strictPort`,

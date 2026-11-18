@@ -629,7 +629,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       const map = MAPS[w.region];
       const h = hero.current;
       const dpr = canvas.width / Math.max(1, canvas.clientWidth);
-      const scale = Math.max(2, Math.min(6, Math.round(canvas.clientWidth / (TILE * 14)))) * Math.round(dpr);
+      // Tile size in CSS pixels: about 14 tiles across, never fewer than 11 by 7 in view (shrink the tiles before the buttons).
+      const want = Math.max(2, Math.min(6, Math.round(canvas.clientWidth / (TILE * 14))));
+      const fit = Math.max(1, Math.floor(Math.min(canvas.clientWidth / (11 * TILE), canvas.clientHeight / (7 * TILE))));
+      const scale = Math.min(want, fit) * Math.round(dpr);
+      canvas.dataset.tile = String(TILE * Math.min(want, fit)); // CSS px per tile, for the layout tests
       const k = kidRef.current.game;
       const worn = k.equipped?.pet;
       const scene: Scene = {
@@ -733,9 +737,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(size) : null;
     ro?.observe(stage);
     window.addEventListener('resize', size);
+    window.addEventListener('orientationchange', size);
     return () => {
       ro?.disconnect();
       window.removeEventListener('resize', size);
+      window.removeEventListener('orientationchange', size);
     };
   }, [loaded]);
 
@@ -798,7 +804,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const adventureItems = items.filter((i) => i.startsWith('a-'));
 
   return (
-    <div className="screen overworld" data-testid="overworld" data-region={region}>
+    <div className={`screen overworld${learner === 'prereader' ? ' ow-pre' : ''}`} data-testid="overworld" data-region={region}>
       <div className="ow-hud">
         <HoldButton onHold={() => void finishTrip()} ms={CAMP_HOLD_MS} label="Hold to go to camp">
           <UiIcon name="house" size={44} />
