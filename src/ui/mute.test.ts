@@ -1,27 +1,64 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { soundsOf, voiceOf } from '../engine/models';
+import { audioPolicy } from './audioPolicy';
 
 describe('parent voice and sounds settings', () => {
-  it('a missing value reads as on', () => {
-    expect(voiceOf({})).toBe('on');
+  it('a missing voice reads as kid (the kid\'s mute button works), a missing sounds reads as on', () => {
+    expect(voiceOf({})).toBe('kid');
+    expect(voiceOf(undefined)).toBe('kid');
+    expect(voiceOf(null)).toBe('kid');
     expect(soundsOf({})).toBe('on');
-    expect(voiceOf(undefined)).toBe('on');
     expect(soundsOf(null)).toBe('on');
+  });
+  it("voice 'kid' reads as kid", () => {
+    expect(voiceOf({ voice: 'kid' })).toBe('kid');
+  });
+  it("voice 'on' reads as on (the parent pins the voice)", () => {
+    expect(voiceOf({ voice: 'on' })).toBe('on');
+  });
+  it("voice 'off' reads as off", () => {
+    expect(voiceOf({ voice: 'off' })).toBe('off');
   });
   it('the old parent lock reads as voice off, and keeps the chimes off, without a migration', () => {
     expect(voiceOf({ sound: false })).toBe('off');
     expect(soundsOf({ sound: false })).toBe('off');
-    expect(voiceOf({ sound: true })).toBe('on');
+    expect(voiceOf({ sound: true })).toBe('kid');
   });
   it('an explicit value wins over the old lock', () => {
     expect(voiceOf({ sound: false, voice: 'kid' })).toBe('kid');
+    expect(voiceOf({ sound: false, voice: 'on' })).toBe('on');
     expect(soundsOf({ sound: false, sounds: 'on' })).toBe('on');
-    expect(voiceOf({ voice: 'off' })).toBe('off');
     expect(soundsOf({ sounds: 'off' })).toBe('off');
   });
   it('an unknown value reads as the default', () => {
-    expect(voiceOf({ voice: 'loud' })).toBe('on');
+    expect(voiceOf({ voice: 'loud' })).toBe('kid');
     expect(soundsOf({ sounds: 'maybe' })).toBe('on');
+  });
+});
+
+describe('audioPolicy: what each voice value does', () => {
+  it("missing voice reads as 'kid': the kid's mute silences the voice and the chimes", () => {
+    expect(audioPolicy({}, false)).toMatchObject({ voiceMuted: false, soundsMuted: false, locked: false, chimesOnly: false });
+    expect(audioPolicy({}, true)).toMatchObject({ voiceMuted: true, voiceLocked: false, soundsMuted: true, locked: false, chimesOnly: false });
+  });
+  it("'kid' is the same as missing", () => {
+    expect(audioPolicy({ voice: 'kid' }, true)).toEqual(audioPolicy({}, true));
+  });
+  it("'on' pins the voice: the kid's mute silences the chimes only, and the button shows the chime-off state", () => {
+    expect(audioPolicy({ voice: 'on' }, true)).toMatchObject({ voiceMuted: false, voiceLocked: false, soundsMuted: true, locked: false, chimesOnly: true });
+    expect(audioPolicy({ voice: 'on' }, false)).toMatchObject({ voiceMuted: false, soundsMuted: false });
+    expect(audioPolicy({ voice: 'on', sounds: 'off' }, false)).toMatchObject({ voiceMuted: false, soundsMuted: true, locked: true });
+  });
+  it("'off' is silent whatever the kid does: no voice, no Hear it, the button only touches the chimes", () => {
+    expect(audioPolicy({ voice: 'off' }, false)).toMatchObject({ voiceMuted: true, voiceLocked: true, soundsMuted: false, locked: false, chimesOnly: true });
+    expect(audioPolicy({ voice: 'off' }, true)).toMatchObject({ voiceMuted: true, voiceLocked: true, soundsMuted: true });
+    expect(audioPolicy({ voice: 'off', sounds: 'off' }, false)).toMatchObject({ locked: true });
+  });
+  it('the old sound:false lock is voice off and chimes off, and the button is hidden', () => {
+    expect(audioPolicy({ sound: false }, false)).toMatchObject({ voiceMuted: true, voiceLocked: true, soundsMuted: true, locked: true });
+  });
+  it("sounds 'off' with voice 'kid' silences the chimes but not the voice", () => {
+    expect(audioPolicy({ sounds: 'off' }, false)).toMatchObject({ voiceMuted: false, soundsMuted: true, locked: false });
   });
 });
 

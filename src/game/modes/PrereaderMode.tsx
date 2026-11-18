@@ -143,7 +143,7 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
         <PathDots done={done} />
         <div className="early-top-right">
           <HearButton text={entry.problem.speech ?? ''} muted={mute.voiceMuted} disabled={solved} big />
-          <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big />
+          <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big chimesOnly={mute.chimesOnly} />
         </div>
       </div>
 

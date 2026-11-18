@@ -881,11 +881,11 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onAudio, onPinSet
               void onAudio({ voice });
             }}
           >
-            <option value="on">On</option>
-            <option value="kid">Player's choice</option>
+            <option value="kid">Player's choice (default)</option>
+            <option value="on">On (always on; the mute button silences the chimes only)</option>
             <option value="off">Off (silent, the player cannot turn it on)</option>
           </select>
-          <span className="hint">The voice that reads questions aloud. Saves as soon as you pick. The player can also mute from the top bar of a round. With Off, there is no mute or Hear it button for the voice.</span>
+          <span className="hint">The voice that reads questions aloud. Saves as soon as you pick. Player's choice: the mute button in the top bar silences the voice and the chimes, and Hear it speaks a question once. On: the voice always speaks, and the mute button silences the chimes only. Off: no voice and no Hear it.</span>
         </label>
         <label>
           Sounds

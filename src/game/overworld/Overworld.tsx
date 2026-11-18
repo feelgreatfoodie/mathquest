@@ -798,7 +798,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           {waiting.length === 0 ? <span className="ow-camp-lit" data-testid="camp-lit"><UiIcon name="flame" size={30} /> Camp is lit!</span> : null}
         </span>
         {adventureItems.map((id) => <Sprite key={id} name={id} size={28} className="ow-item" />)}
-        <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} />
+        <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} chimesOnly={mute.chimesOnly} />
       </div>
       <div className="ow-stage" ref={stageRef}>
         <canvas ref={canvasRef} className="ow-canvas" data-testid="ow-canvas" onPointerUp={onCanvasTap} aria-label="The map. Tap a tile to walk there." role="img" />

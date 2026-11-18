@@ -174,7 +174,7 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
       if ((e.target as HTMLElement).closest('button') || Date.now() - openedAt.current < TAP_GUARD_MS) return;
       setAt(last);
     }}>
-      <div className="early-sum-mute"><MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big /></div>
+      <div className="early-sum-mute"><MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big chimesOnly={mute.chimesOnly} /></div>
       <div className="big-stars" role="img" aria-label={`${stars} of ${total} stars`}>
         {Array.from({ length: total }, (_, i) => (
           <svg key={i} width="64" height="64" viewBox="0 0 24 24" aria-hidden="true" className={i < stars ? 'star on' : 'star'}>

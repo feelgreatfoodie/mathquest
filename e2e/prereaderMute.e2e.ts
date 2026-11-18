@@ -166,6 +166,19 @@ test('sounds off with the voice on: the voice speaks and the chimes do not', asy
   expect(await tones(page)).toBe(0);
 });
 
+test("voice 'on' pins the voice: the kid's button mutes the chimes only and shows a chime-off state", async ({ page }) => {
+  await seed(page, { voice: 'on' });
+  await toRun(page);
+  await expect(mute(page)).toHaveAttribute('aria-label', 'Chimes are on. Turn them off');
+  await mute(page).click();
+  await expect(mute(page)).toHaveAttribute('aria-label', 'Chimes are off. Turn them on');
+  const t0 = await tones(page);
+  const said = (await spoken(page)).length;
+  await answerRight(page);
+  await expect.poll(async () => (await spoken(page)).length).toBeGreaterThan(said);
+  expect(await tones(page)).toBe(t0);
+});
+
 for (const vp of [{ w: 820, h: 1180 }, { w: 393, h: 852 }]) {
   test(`Picture Run muted at ${vp.w}x${vp.h}: mute and Hear it are 120 px, the top bar fits`, async ({ page }) => {
     await page.setViewportSize({ width: vp.w, height: vp.h });
