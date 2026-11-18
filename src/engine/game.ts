@@ -1,4 +1,4 @@
-import { earnedTodayOf, gemsForRun, type GemRunStats, type GemSettings } from './gems';
+import { GEM_RUN_MAX, earnedTodayOf, gemsForRun, type GemRunStats, type GemSettings } from './gems';
 import type { KidGame, Learner } from './models';
 import type { RunSummary } from './session';
 
@@ -66,9 +66,18 @@ export class GameDeltaError extends Error {
   }
 }
 
-/** The gems a delta adds to `game`: the throttled run gems when `gemRun` is set, else `delta.gems`. */
+/**
+ * The gems a delta adds to `game`: the throttled run gems when `gemRun` is set, else `delta.gems`.
+ * A run delta from a bundle older than the gem economy has an absolute `gems` (11 or 12 on a long run) and no
+ * `gemRun`. The rules refuse a raise above GEM_RUN_MAX, so a positive `gems` on a run delta is clamped to it. A negative `gems`
+ * (a price) is unchanged.
+ */
 export function awardedGems(game: KidGame, delta: GameDelta): number {
-  if (!delta.gemRun) return delta.gems ?? 0;
+  if (!delta.gemRun) {
+    const g = delta.gems ?? 0;
+    // Only a run (it carries playedAt) is clamped. A bare grant, as the tests and the parent tools write, is not.
+    return delta.playedAt !== undefined && g > GEM_RUN_MAX ? GEM_RUN_MAX : g;
+  }
   if (delta.playedAt === undefined) throw new GameDeltaError('A run needs the time it finished.');
   const { stats, learner, settings } = delta.gemRun;
   return gemsForRun(stats, learner, settings, earnedTodayOf(game, delta.playedAt));

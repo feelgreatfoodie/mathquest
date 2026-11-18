@@ -11,6 +11,7 @@ import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
 import { hashPin, type Repo } from '../../data/repo';
+import { outbox, type ParkedRun } from '../../data/outbox';
 import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { reportFailure } from '../failures';
 import { PinPad } from '../PinPad';
@@ -126,6 +127,34 @@ interface ParentProps {
   onSignOut?: () => void;
 }
 
+/** Rounds the server refused 3 times. They stay on this device, are never retried, and the parent sees their date and values. */
+export function ParkedRounds({ kids }: { kids: Kid[] }) {
+  const [parked, setParked] = useState<ParkedRun[]>([]);
+  useEffect(() => {
+    let live = true;
+    outbox.listParked().then((p) => live && setParked(p)).catch((e) => console.error('Could not read the parked rounds.', e));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (parked.length === 0) return null;
+  const name = (id: string) => kids.find((k) => k.id === id)?.name ?? 'A player';
+  return (
+    <section className="panel" role="alert">
+      <h2 className="pixel">{parked.length === 1 ? "1 round couldn't be saved" : `${parked.length} rounds couldn't be saved`}</h2>
+      <ul>
+        {parked.map((r) => (
+          <li key={r.runId}>
+            {name(r.kidId)}, {new Date(r.sessionLog.endedAt ?? r.savedAt).toLocaleString()}: {r.gameDelta.xp ?? 0} XP, {r.gameDelta.gems ?? 0} gems
+            {' '}
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => void outbox.removeParked(r.runId).then(() => setParked((p) => p.filter((x) => x.runId !== r.runId)))}>Dismiss</button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut }: ParentProps) {
   const [selected, setSelected] = useState<string | 'add'>(kids[0]?.id ?? 'add');
   const [changingPin, setChangingPin] = useState(false);
@@ -161,6 +190,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
         </div>
       </header>
       <LockBanner />
+      <ParkedRounds kids={kids} />
       <nav className="tabs" aria-label="Players">
         {kids.map((k) => (
           <button key={k.id} type="button" className={`tab ${selected === k.id ? 'is-active' : ''}`} onClick={() => setSelected(k.id)}>

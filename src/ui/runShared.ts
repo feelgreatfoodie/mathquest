@@ -3,7 +3,8 @@ import { earnedTodayOf, gemsForRun } from '../engine/gems';
 import { learnerOf, type Kid, type KidGame, type SessionLog } from '../engine/models';
 import { SessionRunner, buildPlan, type RunSummary } from '../engine/session';
 import { newId, type Repo } from '../data/repo';
-import { putQuietly, removeQuietly, replayOutbox } from '../data/outbox';
+import { noteDenied, putQuietly, removeQuietly, replayOutbox } from '../data/outbox';
+import { isSaveDenied } from '../version';
 import { reportFailure } from './failures';
 
 /** Loads the kid's cards, plans a run and returns a runner. Both run screens start here. */
@@ -64,7 +65,13 @@ export async function saveRun(
 
   await putQuietly({ runId: log.id, kidId: kid.id, sessionLog: log, gameDelta: delta, savedAt: now });
   const write = async (): Promise<KidGame> => {
-    const game = await repo.applyGameDelta(kid.id, delta, { session: log });
+    let game: KidGame;
+    try {
+      game = await repo.applyGameDelta(kid.id, delta, { session: log });
+    } catch (e) {
+      if (isSaveDenied(e)) await noteDenied(log.id); // the third refusal parks the run on replay
+      throw e;
+    }
     await removeQuietly(log.id); // both writes are confirmed
     return game;
   };
