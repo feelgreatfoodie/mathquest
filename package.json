@@ -12,6 +12,7 @@
     "test": "vitest run",
     "emulators": "firebase emulators:start --only auth,firestore,hosting",
     "deploy": "npm run build && firebase deploy --only hosting,functions,firestore:rules,firestore:indexes",
+    "leak-scan": "node scripts/check-private-ids.mjs",
     "release:min-version": "node scripts/set-min-version.mjs --from-firebaserc",
     "test:emulator": "firebase emulators:exec --only firestore --project demo-mathquest \"vitest run -c vitest.emulator.config.ts\"",
     "test:all": "npm test && npm run test:emulator",
