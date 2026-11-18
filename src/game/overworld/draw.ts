@@ -161,6 +161,8 @@ export interface Scene {
   time: number;
   /** The tile the last tap pointed at. */
   marker: Point | null;
+  /** The walk from the hero to the campfire, drawn as a pulse while the camp is lit. */
+  campGuide?: Point[] | null;
 }
 
 const variantOf = (x: number, y: number) => (x * 7 + y * 13) % VARIANTS;
@@ -235,6 +237,30 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
   });
   items.sort((a, b) => a.y - b.y).forEach((i) => i.draw());
 
+  if (s.campGuide?.length) {
+    // A wave of gold runs along the path toward the camp; the first step also gets an arrow.
+    s.campGuide.forEach((p, i) => {
+      if (p.x < x0 - 1 || p.x > x1 + 1 || p.y < y0 - 1 || p.y > y1 + 1) return;
+      const pulse = 0.5 + 0.5 * Math.sin(s.time * 5 - i * 0.7);
+      g.fillStyle = `rgba(251,191,36,${(0.18 + 0.45 * pulse).toFixed(3)})`;
+      const inset = t * 0.18;
+      g.fillRect(Math.round(p.x * t - left + inset), Math.round(p.y * t - top + inset), Math.round(t - 2 * inset), Math.round(t - 2 * inset));
+    });
+    const from = { x: Math.round(s.hero.x), y: Math.round(s.hero.y) };
+    const next = s.campGuide[0]!;
+    const dx = next.x - from.x;
+    const dy = next.y - from.y;
+    const cx = next.x * t - left + t / 2;
+    const cy = next.y * t - top + t / 2;
+    const r = t * 0.32 * (1 + 0.15 * Math.sin(s.time * 6));
+    g.fillStyle = '#fbbf24';
+    g.beginPath();
+    g.moveTo(cx + dx * r, cy + dy * r);
+    g.lineTo(cx - dx * r * 0.2 + dy * r, cy - dy * r * 0.2 + dx * r);
+    g.lineTo(cx - dx * r * 0.2 - dy * r, cy - dy * r * 0.2 - dx * r);
+    g.closePath();
+    g.fill();
+  }
   if (s.marker) {
     g.strokeStyle = '#fbbf24';
     g.lineWidth = Math.max(2, scale);

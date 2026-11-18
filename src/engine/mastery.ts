@@ -43,15 +43,21 @@ export function groupProgress(mod: ModuleDef, groupIndex: number, cards: CardMap
   return ok / group.cardIds.length;
 }
 
+/** Share of these cards that were seen and whose last two graded answers were both right. */
+export function steadyShare(cardIds: readonly string[], cards: CardMap): number {
+  if (!cardIds.length) return 1;
+  const ok = cardIds.filter((id) => {
+    const r = cards[id]?.lastResults;
+    return !!r && r.length >= 2 && r.every(Boolean);
+  }).length;
+  return ok / cardIds.length;
+}
+
 /** Share of a group whose facts were seen and whose last two graded answers were both right. */
 export function groupSteady(mod: ModuleDef, groupIndex: number, cards: CardMap): number {
   const group = mod.groups?.[groupIndex];
   if (!group || !group.cardIds.length) return 1;
-  const ok = group.cardIds.filter((id) => {
-    const r = cards[id]?.lastResults;
-    return !!r && r.length >= 2 && r.every(Boolean);
-  }).length;
-  return ok / group.cardIds.length;
+  return steadyShare(group.cardIds, cards);
 }
 
 type GroupSettings = Pick<KidSettings, 'factGroupsUnlocked'> & Partial<Pick<KidSettings, 'groupsUnlocked'>>;

@@ -1,4 +1,4 @@
-import { cardLevel, unlockedFactGroups } from '../../engine/mastery';
+import { cardLevel, steadyShare, unlockedFactGroups } from '../../engine/mastery';
 import { DEFAULT_PACE, modulesOf, type CardMap, type KidSettings } from '../../engine/models';
 import { FACTS } from '../../engine/modules/facts';
 import type { RegionId } from './maps';
@@ -43,11 +43,49 @@ export function gateInfo(region: RegionId, cards: CardMap, settings: KidSettings
   return { open: unlockedFactGroups(cards, settings) >= first, ...base };
 }
 
-export const BOSS_SHARE = 0.8;
+/** The region's card ids, in group order. */
+export function regionCardIds(region: RegionId): string[] {
+  return groupCards(region);
+}
 
-/** The share of a region's cards that are Reviewing or better. */
-export function regionProgress(region: RegionId, cards: CardMap): { done: number; total: number; share: number } {
+export interface RegionCount {
+  /** Cards at cardLevel 2 or more (Reviewing or better). */
+  reviewing: number;
+  /** Cards seen whose last 2 graded answers were both right. */
+  steady: number;
+  /** The larger of the two: what the lair gate and its bar show. */
+  done: number;
+  total: number;
+  share: number;
+}
+
+/**
+ * How ready a region is. A card counts as ready by either rule: its FSRS stability has reached Reviewing, or it was seen
+ * and its last two graded answers were right. The two are counted apart and the larger count is the one that shows,
+ * because the steady rule is the second way a group opens in `unlockedGroups`.
+ */
+export function regionProgress(region: RegionId, cards: CardMap): RegionCount {
   const ids = groupCards(region);
-  const done = ids.filter((id) => reviewing(cards, id)).length;
-  return { done, total: ids.length, share: ids.length ? done / ids.length : 0 };
+  const reviewingN = ids.filter((id) => reviewing(cards, id)).length;
+  const steadyN = ids.length ? Math.round(steadyShare(ids, cards) * ids.length) : 0;
+  const done = Math.max(reviewingN, steadyN);
+  return { reviewing: reviewingN, steady: steadyN, done, total: ids.length, share: ids.length ? done / ids.length : 0 };
+}
+
+/** The facts of a region in words: "6s, 7s, 8s and 12x12". A group of one card is named by its fact. */
+export function regionFactsText(region: RegionId): string {
+  const [from, to] = REGION_GROUPS[region];
+  const parts = (FACTS.groups ?? []).slice(from - 1, to).flatMap((g) => {
+    if (g.cardIds.length === 1) {
+      const m = /^mul:(\d+)x(\d+)$/.exec(g.cardIds[0]!);
+      if (m) return [`${m[1]}x${m[2]}`];
+    }
+    return g.label.split(/,\s*|\s+and\s+/).filter(Boolean);
+  });
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts.join('');
+}
+
+/** The words the locked lair shows a reader. */
+export function lairMessage(region: RegionId, ready: number, total: number): string {
+  return `Answer the ${REGION_NAMES[region]} facts to wake the dragon: ${regionFactsText(region)}. ${ready} of ${total} ready.`;
 }
