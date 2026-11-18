@@ -2,6 +2,7 @@ import { applyRun, type GameDelta } from '../engine/game';
 import type { Kid, KidGame, SessionLog } from '../engine/models';
 import { SessionRunner, buildPlan, type RunSummary } from '../engine/session';
 import { newId, type Repo } from '../data/repo';
+import { putQuietly, removeQuietly, replayOutbox } from '../data/outbox';
 import { reportFailure } from './failures';
 
 /** Loads the kid's cards, plans a run and returns a runner. Both run screens start here. */
@@ -13,10 +14,11 @@ export async function loadRunner(repo: Repo, kid: Kid): Promise<{ runner: Sessio
 }
 
 /**
- * Saves the run: changed cards, then the session log and the game totals in one transaction
- * (applyGameDelta). Returns null when nothing was answered. A failed write is logged and shown with a
- * Try again button, and the run still ends: `saved` says whether the totals reached the server. The
- * retry is safe to repeat because the stored session log marks the delta as applied.
+ * Saves the run: the run goes into the IndexedDB outbox first, then changed cards, then the session log and
+ * the game totals in one transaction (applyGameDelta), then it leaves the outbox. Returns null when nothing was
+ * answered. A failed write is logged and shown with a Try again button, and the run still ends: `saved` says
+ * whether the totals reached the server. The run stays in the outbox, so Try again, or the next launch, replays
+ * it. A replay is safe to repeat because the stored session log marks the delta as applied.
  * `onSynced` gets the stored game after a retry succeeds.
  */
 export async function saveRun(
@@ -53,13 +55,21 @@ export async function saveRun(
     reportFailure('Some of this run was not saved.', e, () => repo.saveCards(kid.id, cards));
   }
 
-  const attempt = async (): Promise<KidGame> => {
+  await putQuietly({ runId: log.id, kidId: kid.id, sessionLog: log, gameDelta: delta, savedAt: now });
+  const write = async (): Promise<KidGame> => {
     const game = await repo.applyGameDelta(kid.id, delta, { session: log });
+    await removeQuietly(log.id); // both writes are confirmed
+    return game;
+  };
+  const attempt = async (): Promise<KidGame> => {
+    // Try again: replay every run of this kid still in the outbox, then this run (a stored log makes it a no-op).
+    await replayOutbox(repo, kid.id, (_id, g) => onSynced?.(g));
+    const game = await write();
     onSynced?.(game);
     return game;
   };
   try {
-    const game = await attempt();
+    const game = await write();
     return { summary, updated: { ...kid, game }, saved: true };
   } catch (e) {
     reportFailure('Your gems and XP from this run were not saved.', e, async () => {

@@ -3,7 +3,6 @@ import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestE
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FirestoreRepo } from '../src/data/firestoreRepo';
-import { VersionGuard } from '../src/data/versionGate';
 
 // Purchase-backed gem drops. A decrease of game.gems is legal only in the write that also creates exactly one
 // purchases doc: its id is game.lastPurchaseId (new), its cost equals the drop, its heroId is the hero added.
@@ -179,7 +178,7 @@ describe('the free knight and the parent path', () => {
 
 describe('through the repo', () => {
   it('applyGameDelta purchase writes the game, lastPurchaseId and exactly one purchases doc with that id', async () => {
-    const repo = new FirestoreRepo(kidDb(), FAM, new VersionGuard(null, { build: 100 }));
+    const repo = new FirestoreRepo(kidDb(), FAM);
     const game = await repo.applyGameDelta(KID, { purchase: 'wizard' });
     expect(game).toMatchObject({ gems: 71, heroes: ['knight', 'wizard'], hero: 'wizard' });
     const stored = (await getDoc(kidRef(parentDb()))).data() as { game: { lastPurchaseId?: string } };
@@ -191,7 +190,7 @@ describe('through the repo', () => {
 
   it('a run, an equip and two purchases in a row all pass through the rules', async () => {
     await seed({ gems: 200 });
-    const repo = new FirestoreRepo(kidDb(), FAM, new VersionGuard(null, { build: 100 }));
+    const repo = new FirestoreRepo(kidDb(), FAM);
     await repo.applyGameDelta(KID, { xp: 504, gems: 9, bestCombo: 12, playedAt: Date.now() });
     await repo.applyGameDelta(KID, { purchase: 'wizard' });
     await repo.applyGameDelta(KID, { purchase: 'ranger' });
@@ -203,7 +202,7 @@ describe('through the repo', () => {
   });
 
   it('a double confirm still buys once', async () => {
-    const repo = new FirestoreRepo(kidDb(), FAM, new VersionGuard(null, { build: 100 }));
+    const repo = new FirestoreRepo(kidDb(), FAM);
     const r = await Promise.allSettled([repo.applyGameDelta(KID, { purchase: 'wizard' }), repo.applyGameDelta(KID, { purchase: 'wizard' })]);
     expect(r.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
     expect((await getDocs(collection(parentDb(), `families/${FAM}/kids/${KID}/purchases`))).size).toBe(1);

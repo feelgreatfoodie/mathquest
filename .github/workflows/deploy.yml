@@ -76,6 +76,3 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
       - run: npx firebase-tools@latest deploy --only hosting,firestore:rules,firestore:indexes --project ${{ vars.VITE_FIREBASE_PROJECT_ID }} --non-interactive
-      # The release step: tell old bundles to update. Only after the new bundle is live (the script waits for /version.json).
-      - run: npm --prefix functions ci
-      - run: node scripts/set-min-version.mjs --project ${{ vars.VITE_FIREBASE_PROJECT_ID }} --url ${{ vars.APP_URL }}

@@ -3,7 +3,6 @@ import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/
 import { disableNetwork, doc, enableNetwork, getDoc, setDoc } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FirestoreRepo } from '../src/data/firestoreRepo';
-import { VersionGuard } from '../src/data/versionGate';
 
 // A stale copy of a kid doc, queued as a full-document write while offline and flushed on reconnect. Every
 // name, id and number is made up. The loss this models was one stale full-doc write over a kid's totals.
@@ -64,7 +63,7 @@ async function storedGame(e: RulesTestEnvironment) {
 async function flushStaleCopy(e: RulesTestEnvironment, who: 'kid' | 'parent', stale: Record<string, unknown>) {
   const b = who === 'kid' ? kidDb(e) : parentDb(e);
   expect(((await getDoc(kidRef(b))).data() as { game: { xp: number } }).game.xp).toBe(3801);
-  const a = new FirestoreRepo(kidDb(e), FAM, new VersionGuard(null, { build: 100 }));
+  const a = new FirestoreRepo(kidDb(e), FAM);
   await a.applyGameDelta(KID, { xp: 60, gems: 6, bestCombo: 22, playedAt: Date.parse('2026-11-18T01:00:00Z') });
   expect(await storedGame(e)).toMatchObject({ xp: 3861, gems: 62 });
   await disableNetwork(b);
