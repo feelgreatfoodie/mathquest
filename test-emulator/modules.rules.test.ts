@@ -126,8 +126,10 @@ describe('a whole pre-reader run, written by the kid token through the real repo
     const s = run.summary();
     await assertSucceeds(repo.saveCards(KID, run.changedCards()));
     await assertSucceeds(repo.addSession(KID, { id: 'run1', startedAt: 1, endedAt: 2, answered: s.answered, graded: s.graded, correct: s.correct, fast: s.fast, newLearned: s.newLearned, medianMs: s.medianMs, xp: s.xp, gems: s.gems, bestCombo: s.bestCombo, missed: s.missed }));
-    const updated: Kid = { ...read, game: { ...read.game, xp: read.game.xp + s.xp, gems: read.game.gems + s.gems, streakDays: 1, lastPlayedDay: '2026-11-17' } };
-    await assertSucceeds(repo.saveKid(updated)); // affectedKeys must be only ['game']
+    // The run's game write is a field-level update of `game` only (affectedKeys must be only ['game']).
+    const game = await assertSucceeds(repo.applyGameDelta(KID, { xp: s.xp, gems: s.gems, bestCombo: s.bestCombo, playedAt: Date.parse('2026-11-17T12:00:00Z') }));
+    expect(game.xp).toBe(read.game.xp + s.xp);
+    const updated: Kid = { ...read, game };
 
     const back = await repo.loadCards(KID);
     expect(Object.keys(back).every((id) => /^add:\d\+\d$/.test(id))).toBe(true);
@@ -135,6 +137,6 @@ describe('a whole pre-reader run, written by the kid token through the real repo
     expect(cardLevel(back[Object.keys(back)[0]!], 3500, 3)).toBeGreaterThanOrEqual(0);
 
     // And a changed settings block in the same write is refused, so the check above is not vacuous.
-    await assertFails(repo.saveKid({ ...updated, settings: { ...updated.settings, learner: 'reader' } }));
+    await assertFails(setDoc(doc(db, `families/${FAM}/kids/${KID}`), { ...updated, settings: { ...updated.settings, learner: 'reader' } }));
   });
 });

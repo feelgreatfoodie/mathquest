@@ -3,9 +3,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { FirestoreRepo } from './data/firestoreRepo';
 import { LocalRepo } from './data/localRepo';
 import { hashPin, type Repo } from './data/repo';
-import type { Family, Kid } from './engine/models';
+import { GameDeltaError, type GameDelta } from './engine/game';
+import type { Family, Kid, KidGame } from './engine/models';
 import type { RunSummary } from './engine/session';
 import { dataMode, getFirebase, kidClaims, registerParent, signInKid, signInParent, signOutParent } from './firebase';
+import { FailureToasts } from './ui/FailureToasts';
+import { reportFailure } from './ui/failures';
 import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
 import { ParentArea, Setup } from './ui/screens/Parent';
@@ -104,14 +107,35 @@ export function App() {
 
   const kid = 'kidId' in screen ? kids.find((k) => k.id === screen.kidId) : undefined;
 
-  const saveKid = useCallback(
-    async (k: Kid) => {
-      setKids((ks) => ks.map((x) => (x.id === k.id ? k : x)));
-      await repo?.saveKid(k);
+  /** Puts the stored game on screen for one kid. */
+  const showGame = useCallback((kidId: string, game: KidGame) => {
+    setKids((ks) => ks.map((x) => (x.id === kidId ? { ...x, game } : x)));
+  }, []);
+
+  /** The shop's writes. The screen shows the stored result, so a failed purchase never looks bought. */
+  const applyGame = useCallback(
+    async (kidId: string, delta: GameDelta) => {
+      if (!repo) return;
+      const attempt = async () => showGame(kidId, await repo.applyGameDelta(kidId, delta));
+      try {
+        await attempt();
+      } catch (e) {
+        if (e instanceof GameDeltaError) reportFailure(e.message, e);
+        else reportFailure('That was not saved.', e, attempt);
+      }
     },
-    [repo],
+    [repo, showGame],
   );
 
+  const body = renderScreen();
+  return (
+    <>
+      {body}
+      <FailureToasts />
+    </>
+  );
+
+  function renderScreen() {
   if (screen.name === 'boot') return <div className="screen center"><p className="pixel blink">Loading…</p></div>;
   if (screen.name === 'kidsignin' || screen.name === 'signin')
     return (
@@ -180,7 +204,7 @@ export function App() {
       return kid ? (
         <KidHome
           kid={kid}
-          onSave={(k) => void saveKid(k)}
+          onGame={(d) => applyGame(kid.id, d)}
           onStart={() => setScreen({ name: 'run', kidId: kid.id, key: Date.now() })}
           onBack={() => (kidSession ? void signOutParent() : setScreen({ name: 'picker' }))}
         />
@@ -192,6 +216,7 @@ export function App() {
           repo={repo}
           kid={kid}
           onExit={() => setScreen({ name: 'home', kidId: kid.id })}
+          onSynced={(game) => showGame(kid.id, game)}
           onDone={(summary, updated) => {
             setKids((ks) => ks.map((x) => (x.id === updated.id ? updated : x)));
             setScreen({ name: 'summary', kidId: kid.id, summary });
@@ -216,6 +241,8 @@ export function App() {
           onComplete={async (p) => {
             if ((await hashPin(salt, p)) === family?.pinHash) {
               setPinError(null);
+              // Parent copies of kids can be old by now. Reload them so the area shows stored totals.
+              void repo.listKids().then(setKids).catch((e) => reportFailure('Could not load the latest player data.', e));
               setScreen({ name: 'parent' });
             } else setPinError('Wrong PIN. Try again.');
           }}
@@ -234,4 +261,5 @@ export function App() {
         />
       );
   }
+}
 }

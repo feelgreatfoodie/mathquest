@@ -43,6 +43,21 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['game']);
     }
 
+    // The most gems any hero costs (HEROES in src/engine/game.ts; a unit test keeps the two equal).
+    function maxHeroPrice() {
+      return 100;
+    }
+
+    // A write may not take away more gems than the dearest hero costs, unless the hero list grows in the
+    // same write (a purchase). A stale copy written back over a kid's totals fails this when it wipes a
+    // big balance. A missing game, gems or heroes reads as empty, so wiping game is a drop too.
+    function gemsDropOk() {
+      let before = resource.data.get('game', {});
+      let after = request.resource.data.get('game', {});
+      return before.get('gems', 0) - after.get('gems', 0) <= maxHeroPrice()
+        || after.get('heroes', []).size() > before.get('heroes', []).size();
+    }
+
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
     // touches them.
     match /parents/{document=**} {
@@ -70,8 +85,8 @@ service cloud.firestore {
         allow read: if isParent(uid) || isKid(uid, kidId);
         allow delete: if isParent(uid);
         allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId;
-        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId)
-          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame());
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropOk())
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame() && gemsDropOk());
 
         match /cards/{cardId} {
           allow read: if isParent(uid) || isKid(uid, kidId);
