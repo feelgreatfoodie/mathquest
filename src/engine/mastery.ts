@@ -42,19 +42,32 @@ export function groupProgress(mod: ModuleDef, groupIndex: number, cards: CardMap
   return ok / group.cardIds.length;
 }
 
+type GroupSettings = Pick<KidSettings, 'factGroupsUnlocked'> & Partial<Pick<KidSettings, 'groupsUnlocked'>>;
+
+/**
+ * The parent's floor for a module: groups up to it count as open (and as known by prereqMet). It is
+ * `groupsUnlocked[module]` when that is a whole number of 1 or more, else the old rule: `factGroupsUnlocked`
+ * for times tables, group 1 for everything else. A bad stored value falls back, so it can never close group 1.
+ */
+export function groupFloor(mod: ModuleDef, settings: GroupSettings): number {
+  const set = settings.groupsUnlocked?.[mod.id];
+  if (typeof set === 'number' && Number.isInteger(set) && set >= 1) return set;
+  return mod.id === 'facts' ? Math.max(1, settings.factGroupsUnlocked) : 1;
+}
+
 /**
  * How many of a module's groups are open: group 1, plus any earned by progress (80% of the group
  * before it in review). For times tables the parent's "start at" setting also counts.
  */
-export function unlockedGroups(mod: ModuleDef, cards: CardMap, settings: Pick<KidSettings, 'factGroupsUnlocked'>): number {
+export function unlockedGroups(mod: ModuleDef, cards: CardMap, settings: GroupSettings): number {
   const total = mod.groups?.length ?? 0;
-  let n = mod.id === 'facts' ? Math.max(1, Math.min(total, settings.factGroupsUnlocked)) : Math.min(1, total);
+  let n = Math.min(total, groupFloor(mod, settings));
   while (n < total && groupProgress(mod, n - 1, cards) >= GROUP_UNLOCK_SHARE) n++;
   return n;
 }
 
 /** How many fact groups are open: the parent's setting, plus any earned by progress. */
-export function unlockedFactGroups(cards: CardMap, settings: Pick<KidSettings, 'factGroupsUnlocked'>): number {
+export function unlockedFactGroups(cards: CardMap, settings: GroupSettings): number {
   return unlockedGroups(FACTS, cards, settings);
 }
 
@@ -70,7 +83,7 @@ export function prereqMet(ref: string, cards: CardMap, settings: KidSettings): b
   if (mod?.groups) {
     if (!modulesOf(settings)[mod.id]) return true; // that module is handled outside the app
     const idx = mod.groups.findIndex((g) => g.id === groupId);
-    if (mod.id === 'facts' && idx < settings.factGroupsUnlocked - 1) return true; // parent says these are known
+    if (idx < groupFloor(mod, settings) - 1) return true; // parent says these are known
     return groupProgress(mod, idx, cards) >= GROUP_UNLOCK_SHARE;
   }
   return skillReady(ref, cards);
