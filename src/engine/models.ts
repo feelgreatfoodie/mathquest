@@ -2,6 +2,7 @@ import type { Track } from './content';
 import { MODULE_IDS, type ModuleId } from './modules/types';
 import { DEFAULT_GAME as GAME_DEFAULTS } from './gameDefaults';
 import { slotOf } from '../game/shop/catalog';
+import type { VaultPointer, VaultSettings } from '../game/vault';
 
 /** ts-fsrs Card, flattened to JSON-safe numbers (epoch ms) for Firestore and localStorage. */
 export interface StoredFsrs {
@@ -59,6 +60,8 @@ export interface KidSettings {
   paceMultiplier?: number;
   /** The item shop (weapons, gear, pets, adventure, camp): off until a parent turns it on. A missing value reads as off. Read it through `shop2On`. */
   shop2?: boolean;
+  /** The gem vault: off until a parent turns it on, with editable bonus rates per 10 gems (d3, d7, d14). A missing value reads as off with the default rates. Read it through `vaultOn` and `rateOf` in game/vault.ts. */
+  vault?: VaultSettings;
   /** Gem speed: 0.5 (Slow), 1 (Normal) or 1.5 (Fast). A missing value reads as 1. Read it through `gemSpeedOf` in gems.ts. */
   gemSpeed?: number;
   /** Gems earned today at full rate (half to twice this, a quarter after). A missing value reads as 25 (reader) or 15 (pre-reader). Read it through `gemFullRateOf`. */
@@ -132,6 +135,11 @@ export interface Kid {
    * live outside `game` so a save from an old bundle, which writes `game` without them, stays valid.
    */
   inventory?: Inventory;
+  /**
+   * The vault pointers (active count, newest deposit id, last closed id). The deposits are in the vault/ subcollection.
+   * Kept out of `game` so a save from a bundle that predates the vault stays valid. Absent until the first deposit.
+   */
+  vault?: VaultPointer;
   /** Set by the setKidPin function. The PIN hash itself lives server-side only. */
   hasPin?: boolean;
   /**

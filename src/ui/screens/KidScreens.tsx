@@ -10,7 +10,6 @@ import { enabledModes, modeFor } from '../../game/modes/registry';
 import { readLastMode, writeLastMode } from '../../game/modes/lastMode';
 import type { GameModeId } from '../../game/modes/types';
 import type { Repo } from '../../data/repo';
-import { UiIcon } from '../sprites';
 import { readerMapLine } from '../../engine/summaryView';
 import { avatarOf, learnerOf, shop2On, type CardMap, type Kid } from '../../engine/models';
 import { PrereaderHome } from '../early/PrereaderScreens';
@@ -20,7 +19,9 @@ import { HeroShop, type OnGame } from '../HeroShop';
 import type { RunSummary } from '../../engine/session';
 import { TABS, readTab, tabForKey, writeTab, type LandingTab } from '../landingTab';
 import { PinPad } from '../PinPad';
-import { Sprite } from '../sprites';
+import { Sprite, UiIcon } from '../sprites';
+import { looksReady, owedOf, vaultBalance, vaultOn } from '../../game/vault';
+import { useDeposits, type VaultApi } from '../vaultApi';
 
 function LandingTabs({ tab, onTab }: { tab: LandingTab; onTab: (t: LandingTab, viaKeyboard?: boolean) => void }) {
   const labels: Record<LandingTab, string> = { kid: 'Kid', parent: 'Parent' };
@@ -211,14 +212,18 @@ function WeekStars({ days, streak }: { days: ReturnType<typeof weekDays>; streak
   );
 }
 
-export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onBack: () => void }) {
+export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onBack: () => void; vault?: VaultApi }) {
   return learnerOf(props.kid.settings) === 'prereader'
-    ? <PrereaderHome kid={props.kid} onStart={() => props.onStart()} onBack={props.onBack} onGame={props.onGame} />
+    ? <PrereaderHome kid={props.kid} onStart={() => props.onStart()} onBack={props.onBack} onGame={props.onGame} vault={props.vault} />
     : <ReaderHome {...props} />;
 }
 
-function ReaderHome({ kid, repo, onStart, onGame, onBack }: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onBack: () => void }) {
+function ReaderHome({ kid, repo, onStart, onGame, onBack, vault }: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onBack: () => void; vault?: VaultApi }) {
   const [shop, setShop] = useState(false);
+  const [shopVault, setShopVault] = useState(false);
+  const hasVault = !!vault && vaultOn(kid.settings);
+  const dep = useDeposits(vault, hasVault, kid.game.gems);
+  const ready = hasVault && dep.deposits.some((d) => (d.status !== 'active' && owedOf(d) > 0) || looksReady(d, Date.now()));
   const [played, setPlayed] = useState<string[]>([]);
   const lv = levelFor(kid.game.xp);
   const modes = enabledModes(kid);
@@ -250,7 +255,13 @@ function ReaderHome({ kid, repo, onStart, onGame, onBack }: { kid: Kid; repo: Re
           <Stat icon="flame" label="day streak" value={displayStreak(kid.game.streakDays, playedAll, today)} />
           <Stat icon="gem" label="gems" value={kid.game.gems} />
           <Stat icon="bolt" label="best combo" value={kid.game.bestCombo} />
+          {hasVault ? <Stat label="in the vault" value={vaultBalance(dep.deposits)} /> : null}
         </div>
+        {ready ? (
+          <button type="button" className="btn vault-ready" data-testid="home-vault-ready" onClick={() => { setShopVault(true); setShop(true); }}>
+            <UiIcon name="chest" size={28} /> Your vault is ready to collect
+          </button>
+        ) : null}
         <GoalJar game={kid.game} learner="reader" onClick={() => setShop(true)} />
         <CampRow game={kid.game} />
         {modes.length >= 2 ? (
@@ -268,11 +279,11 @@ function ReaderHome({ kid, repo, onStart, onGame, onBack }: { kid: Kid; repo: Re
           <button type="button" className="btn btn-big btn-start" onClick={() => start(modes[0]?.id ?? 'dungeon')}>Start Quest</button>
         )}
         <div className="row">
-          <button type="button" className="btn btn-ghost" onClick={() => setShop(true)}>{shop2On(kid.settings) ? 'Shop' : 'Hero shop'}</button>
+          <button type="button" className="btn btn-ghost" onClick={() => { setShopVault(false); setShop(true); }}>{shop2On(kid.settings) ? 'Shop' : 'Hero shop'}</button>
           <button type="button" className="btn btn-ghost" onClick={onBack}>Switch player</button>
         </div>
       </div>
-      {shop ? <HeroShop kid={kid} learner="reader" onGame={onGame} onClose={() => setShop(false)} /> : null}
+      {shop ? <HeroShop kid={kid} learner="reader" onGame={onGame} vault={vault} openVault={shopVault} onClose={() => { setShop(false); setShopVault(false); }} /> : null}
     </div>
   );
 }
