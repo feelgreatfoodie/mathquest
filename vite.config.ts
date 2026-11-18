@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig, type Plugin } from 'vitest/config';
@@ -6,6 +7,16 @@ import { defineConfig, type Plugin } from 'vitest/config';
 // script's tests). The bundle compares it with config/app.minVersion; dist/version.json carries the same number
 // for scripts/set-min-version.mjs, which sets minVersion after the deploy.
 const BUILD = Number(process.env.APP_BUILD) || Math.floor(Date.now() / 1000);
+
+// The short commit shown in the parent area footer. APP_SHA overrides it; a build with no git says "dev".
+function shortSha(): string {
+  if (process.env.APP_SHA) return process.env.APP_SHA.slice(0, 7);
+  try {
+    return execSync('git rev-parse --short HEAD', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || 'dev';
+  } catch {
+    return 'dev';
+  }
+}
 
 function versionJson(): Plugin {
   return {
@@ -17,7 +28,7 @@ function versionJson(): Plugin {
 }
 
 export default defineConfig({
-  define: { __APP_BUILD__: JSON.stringify(BUILD) },
+  define: { __APP_BUILD__: JSON.stringify(BUILD), __APP_SHA__: JSON.stringify(shortSha()) },
   plugins: [
     react(),
     versionJson(),

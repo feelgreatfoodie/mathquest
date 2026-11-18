@@ -17,6 +17,7 @@
 }
 
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 html, body, #root { height: 100%; }
 body {
   margin: 0;
@@ -585,6 +586,91 @@ legend { padding: 0 6px; color: var(--muted); }
   background: rgba(10, 12, 24, 0.72);
 }
 
+/* ---- Zoom: the viewport allows it for parents. Kid screens keep pinch-zoom off with touch-action (pan only). ---- */
+.screen:not(.parent) { touch-action: pan-x pan-y; }
+
+/* ---- Parent area on phones (iPhone SE 375 to Pro Max 430). iPad layouts above 600 px are untouched. ---- */
+.heatmap { max-width: 100%; }
+.hm-cell { cursor: pointer; }
+.hm-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px max(16px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: var(--panel-2); border-top: 3px solid var(--line); font-weight: 700; overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .parent { gap: 12px; }
+  .parent .panel { padding: 14px; border-width: 2px; box-shadow: 0 4px 0 #0d1020; min-width: 0; }
+  .parent h1, .parent h2, .parent h3, .parent p, .parent label, .parent .kid-name { overflow-wrap: anywhere; }
+  .parent input, .parent select { font-size: 16px; max-width: 100%; }
+  .parent fieldset { min-width: 0; }
+
+  .parent-head { flex-direction: column; align-items: stretch; }
+  .parent-head .row { flex-direction: column; align-items: stretch; }
+  .parent-head .btn, .lock-banner .btn, .pin-set .btn { width: 100%; min-height: 48px; }
+
+  /* Player picker: one scrolling chip row that stays at the top. */
+  .tabs {
+    position: sticky; top: env(safe-area-inset-top); z-index: 10;
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    margin: 0 -16px; padding: 6px 16px; background: var(--bg);
+    border-bottom: 2px solid var(--line);
+  }
+  .tab { flex: 0 0 auto; max-width: calc(100vw - 32px); min-height: 48px; padding: 8px 14px; overflow-wrap: anywhere; text-align: center; }
+
+  /* Stat tiles: two columns. XP and hero span both. */
+  .summary-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .summary-row .stat { min-width: 0; padding: 8px; text-align: center; }
+  .summary-row .stat-xp, .summary-row .stat-hero { grid-column: 1 / -1; min-width: 0; }
+  .stat-value { font-size: 22px; }
+  .stat-label { overflow-wrap: anywhere; }
+
+  /* Grids fill the width: 14 columns for the times table, 12 for the sum grids. */
+  .heatmap { display: flex; width: 100%; overflow-x: visible; gap: 2px; }
+  .hm-row { gap: 2px; width: 100%; }
+  .hm-head, .hm-cell { flex: 1 1 0; min-width: 0; width: auto; height: 24px; font-size: 10px; border-radius: 3px; }
+  .leech { outline-width: 2px; outline-offset: -2px; }
+
+  .two-col { grid-template-columns: 1fr; }
+  .chip { overflow-wrap: anywhere; }
+
+  /* Tables become stacked rows. */
+  .table, .table tbody, .table tr, .table td { display: block; width: 100%; }
+  .table thead { display: none; }
+  .table tr { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .table td { border: 0; padding: 2px 0; text-align: left; min-width: 0; overflow-wrap: anywhere; }
+  .table td:first-child { grid-column: 1 / -1; font-weight: 700; }
+  .table td::before { content: attr(data-label); display: block; color: var(--muted); font-size: 13px; font-weight: 400; }
+  .table td:first-child::before { display: none; }
+  .table .num { text-align: left; }
+
+  .gem-history li { grid-template-columns: auto 1fr; gap: 4px 12px; }
+  .gem-history li > span { min-width: 0; overflow-wrap: anywhere; }
+  .gem-history li > .muted { grid-column: 1 / -1; font-size: 15px; }
+
+  /* Settings: labels above full-width controls, 44 px toggles, Save apart from Remove. */
+  .settings select, .add-kid input { width: 100%; }
+  .check { min-height: 48px; align-items: center; }
+  .check input { flex: 0 0 auto; margin: 0; }
+  .check { min-width: 0; }
+  .settings .row { flex-direction: column; align-items: stretch; gap: 40px; justify-content: flex-start; }
+  .settings .row .btn { width: 100%; min-height: 52px; }
+  .add-kid .btn { width: 100%; }
+  .pin-set { align-items: stretch; flex-direction: column; }
+  .pin-set input { width: 100%; font-size: 16px; min-height: 48px; }
+  .parent .lock-banner { flex-direction: column; align-items: stretch; }
+  .legend { gap: 8px 14px; font-size: 14px; }
+}
+
 /* Coverage line in the parent area, and the hint above a preview question. */
 .coverage { list-style: none; margin: 0 0 12px; padding: 0 4px; display: grid; gap: 4px; color: var(--muted, #aab); }
 .preview-hint { margin: 0 0 8px; font-size: 18px; }
+
+/* ---- Parent footer: build version and What's new ---- */
+.version-footer { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 0 16px; }
+.version-line { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.whatsnew { margin: 0; padding-left: 22px; display: grid; gap: 8px; line-height: 1.4; }
+.whatsnew li { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .version-footer .btn { width: 100%; min-height: 48px; }
+}
