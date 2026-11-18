@@ -18,6 +18,7 @@ Math Quest keeps its game economy on the device. This file names what Firestore 
 
 - Grading runs on the device. A kid token can claim any run, so it can earn gems and xp up to the bound on every write, and it can repeat writes. The bound limits one tampered write, not the rate.
 - Every gem drop has a purchases entry, so the log is complete for gems spent. Gems earned have no log: sessions record runs, and a kid token can still raise gems up to the bound per write.
+- Card writes are not in the save-first outbox (IndexedDB). A failed card write relies on its own Try again toast and is not retried in the background. Ruling: VECTOR.
 - Deleting a kid leaves its purchases docs behind, since the rules forbid deletes. They stay readable by the parent only.
 
 ## Why
@@ -41,3 +42,6 @@ The product is a family practice app. Moving grading server-side would add a ser
   parent of that family or a kid token for that exact kid. The ids are not repeated here.
 - **A first name in an old test.** `functions/test/kidpin.test.ts` uses a real first name as test data. It predates
   these rules. Replace it with a made-up name in a later change; the CI check only looks at lines a PR adds.
+- **11-18, a first name in two PR 20 commits.** Commits `5bd80e6` and `e99d189` on the PR 20 branch
+  (parent-mobile) contain one child's first name and nothing else (no ids, no pin data, no game data). Accepted by
+  Flynn on 11-18. The name is not repeated here.
