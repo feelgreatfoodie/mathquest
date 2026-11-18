@@ -32,6 +32,7 @@ export function creditCheckpoint(
     newLearned: grow(stored?.newLearned, log.newLearned),
     xp: grow(stored?.xp, log.xp),
     bestCombo: grow(stored?.bestCombo, log.bestCombo),
+    ...(grow(stored?.practiceCorrect, log.practiceCorrect ?? 0) ? { practiceCorrect: grow(stored?.practiceCorrect, log.practiceCorrect ?? 0) } : {}),
     mode: 'overworld',
     finished: closes,
     xpCredited: credited + xpDelta,

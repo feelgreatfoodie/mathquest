@@ -199,6 +199,8 @@ export interface SessionLog {
   gems: number;
   bestCombo: number;
   missed: string[];
+  /** Right answers on ungraded fill practice. A log from before this field reads as 0. */
+  practiceCorrect?: number;
   /** Which mode played it. A log from before this field reads as 'dungeon' for a reader and 'prereader' for a pre-reader (`sessionModeOf`). */
   mode?: SessionMode;
   /** Adventure only: the region the trip was in at its last checkpoint. */

@@ -21,7 +21,7 @@ import { reportFailure } from '../failures';
 import { buildLabel, entryText, recentChanges } from '../../whatsnew';
 import { AvatarPicker } from '../AvatarPicker';
 import { InsightsPanel, clearInsightsCache } from '../InsightsPanel';
-import { adventureLine, runLabel } from '../../engine/runLabel';
+import { adventureLine, fillLine, runLabel } from '../../engine/runLabel';
 import { UiIcon } from '../sprites';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
@@ -772,6 +772,7 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPictu
                   <td data-label="When">{new Date(s.startedAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                   <td data-label="Mode" data-testid="run-mode" data-mode={runLabel(s, learnerOf(kid.settings)).mode}>
                     {runLabel(s, learnerOf(kid.settings)).mode === 'overworld' ? <UiIcon name="map" size={18} /> : null} {runLabel(s, learnerOf(kid.settings)).text}
+                    {fillLine(s) ? <div className="muted" data-testid="run-counts">{fillLine(s)}</div> : null}
                   </td>
                   <td className="num" data-label="Questions">{s.graded}</td>
                   <td className="num" data-label="Correct">{s.graded ? `${Math.round((s.correct / s.graded) * 100)}%` : '–'}</td>

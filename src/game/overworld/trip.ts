@@ -21,6 +21,8 @@ export interface TripTotals {
   bestCombo: number;
   medianMs: number;
   missed: string[];
+  /** Right answers on fill practice. A trip stored before this field reads as 0. */
+  practiceCorrect?: number;
 }
 
 export interface TripState {
@@ -78,6 +80,7 @@ export function addRun(base: TripTotals, run: RunSummary): TripTotals {
     bestCombo: Math.max(base.bestCombo, run.bestCombo),
     medianMs: run.medianMs || base.medianMs,
     missed: [...new Set([...base.missed, ...run.missed])].slice(0, MISSED_MAX),
+    ...((base.practiceCorrect ?? 0) + (run.practiceCorrect ?? 0) ? { practiceCorrect: (base.practiceCorrect ?? 0) + (run.practiceCorrect ?? 0) } : {}),
   };
 }
 
@@ -97,6 +100,7 @@ export function tripLog(trip: Pick<TripState, 'tripId' | 'startedAt'>, t: TripTo
     gems: 0,
     bestCombo: t.bestCombo,
     missed: t.missed,
+    ...(t.practiceCorrect ? { practiceCorrect: t.practiceCorrect } : {}),
     mode: 'overworld',
     region,
     finished: end === 'camp',

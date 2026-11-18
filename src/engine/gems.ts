@@ -7,6 +7,8 @@ export const GEM_RUN_MAX = 10;
 /** What a run reports to the economy. */
 export interface GemRunStats {
   correct: number;
+  /** Right answers on ungraded fill practice. A missing value reads as 0, so old payloads work. */
+  practiceCorrect?: number;
   graded: number;
   bestCombo: number;
   newLearned: number;
@@ -53,21 +55,22 @@ export function earnedTodayOf(game: { gemsEarnedToday?: number; gemsDay?: string
   return game.gemsDay === key && typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** Gems before speed and throttle. Reader: 1 per 3 correct, +3 combo of 10, +2 for 3 new facts, +2 perfect. Pre-reader: 1 per 2 correct, +1 perfect. */
+/** Gems before speed and throttle. Right answers are graded plus fill practice. Reader: 1 per 3 right, +3 combo of 10, +2 for 3 new facts, +2 perfect. Pre-reader: 1 per 2 right, +1 perfect. Perfect, the combo and new facts read graded answers only. */
 export function baseGems(stats: GemRunStats, learner: Learner): number {
   const perfect = stats.graded > 0 && stats.correct === stats.graded;
-  if (learner === 'prereader') return Math.floor(stats.correct / 2) + (perfect ? 1 : 0);
-  return Math.floor(stats.correct / 3) + (stats.bestCombo >= 10 ? 3 : 0) + (stats.newLearned >= 3 ? 2 : 0) + (perfect ? 2 : 0);
+  const right = stats.correct + (stats.practiceCorrect ?? 0);
+  if (learner === 'prereader') return Math.floor(right / 2) + (perfect ? 1 : 0);
+  return Math.floor(right / 3) + (stats.bestCombo >= 10 ? 3 : 0) + (stats.newLearned >= 3 ? 2 : 0) + (perfect ? 2 : 0);
 }
 
 /**
  * The one place a run's gems are decided. base x Gem speed x tier rate, rounded down, at most GEM_RUN_MAX.
- * A run with 1 or more correct answers earns at least 1; a run with none earns 0. There is no hard cap:
+ * A run with 1 or more right answers (graded or fill practice) earns at least 1; a run with none earns 0. There is no hard cap:
  * the tier only slows the rate, and the kid sees no message about it. The tier is read from `earnedToday`
  * at the start of the run, so one run is never split across two rates.
  */
 export function gemsForRun(stats: GemRunStats, learner: Learner, settings: GemSettings | undefined | null, earnedToday: number): number {
-  if (stats.correct < 1) return 0;
+  if (stats.correct + (stats.practiceCorrect ?? 0) < 1) return 0;
   return throttledGems(baseGems(stats, learner), learner, settings, earnedToday);
 }
 

@@ -203,6 +203,8 @@ export interface RunSummary {
   gems: number;
   bestCombo: number;
   missed: string[];
+  /** Right answers on ungraded fill practice. Present only when above 0, so the golden summary keeps its shape; a missing value reads as 0. */
+  practiceCorrect?: number;
   /** Facts whose time this run beat their previous median. */
   faster: string[];
 }
@@ -230,6 +232,7 @@ export class SessionRunner {
   private times: number[] = [];
   private stats = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0 };
   private newIds: string[] = [];
+  private practiceCorrect = 0;
   private missed = new Set<string>();
   private faster = new Set<string>();
   private nextId = 0;
@@ -392,6 +395,8 @@ export class SessionRunner {
       if (!correct && !free) this.missed.add(entry.cardId);
     } else {
       next = practice(prev, ms, correct, now);
+      // Fill practice only: an in-run retry of a missed card is not a new answer, and a teach card is not an answer.
+      if (correct && entry.fill) this.practiceCorrect++;
     }
     this.cards[entry.cardId] = next;
     this.changed.add(entry.cardId);
@@ -449,7 +454,7 @@ export class SessionRunner {
 
   summary(): RunSummary {
     // Gems at Normal speed and full rate. saveRun re-works them with the parent settings and today's count (gemsForRun).
-    const gems = gemsForRun({ ...this.stats, bestCombo: this.bestCombo }, this.learner, {}, 0);
+    const gems = gemsForRun({ ...this.stats, practiceCorrect: this.practiceCorrect, bestCombo: this.bestCombo }, this.learner, {}, 0);
     return {
       ...this.stats,
       medianMs: this.times.length ? Math.round(median(this.times)) : 0,
@@ -458,6 +463,7 @@ export class SessionRunner {
       bestCombo: this.bestCombo,
       missed: [...this.missed],
       faster: [...this.faster],
+      ...(this.practiceCorrect ? { practiceCorrect: this.practiceCorrect } : {}),
     };
   }
 }

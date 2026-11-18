@@ -18,6 +18,19 @@ export function runLabel(log: SessionLog, learner: Learner): RunLabel {
   return { mode, text: parts.join(' · ') };
 }
 
+/**
+ * The counts line for a run that holds practice fill answers (ungraded, so the Questions column leaves them out).
+ * A run with none of them returns null. An all-fill run reads "52 answers · 49 right · practice"; a mixed run reads
+ * "30 graded · 27 right · 22 practice · 20 right". A log from before practiceCorrect reads as 0 right.
+ */
+export function fillLine(log: Pick<SessionLog, 'answered' | 'graded' | 'correct' | 'practiceCorrect'>): string | null {
+  const fill = log.answered - log.graded;
+  if (fill <= 0) return null;
+  const right = log.practiceCorrect ?? 0;
+  if (log.graded === 0) return `${log.answered} ${log.answered === 1 ? 'answer' : 'answers'} · ${right} right · practice`;
+  return `${log.graded} graded · ${log.correct} right · ${fill} practice · ${right} right`;
+}
+
 const ORDER = ['meadow', 'forest', 'castle'];
 
 /** One line about the kid's map, from world/main: how far they got, chests opened, bosses beaten. Null before the first Adventure save. */
