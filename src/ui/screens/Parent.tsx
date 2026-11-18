@@ -7,7 +7,7 @@ import { GEM_SPEEDS, earnedTodayOf, gemFullRateOf, gemSpeedOf, gemTier } from '.
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
-import { learnerOf, modulesOf, paceOf, shop2On, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
+import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modulesOf, paceOf, shop2On, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
@@ -16,6 +16,7 @@ import { outbox, type ParkedRun } from '../../data/outbox';
 import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { reportFailure } from '../failures';
 import { buildLabel, entryText, recentChanges } from '../../whatsnew';
+import { AvatarPicker } from '../AvatarPicker';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
 
@@ -59,8 +60,8 @@ export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone
       <div className="panel">
         <h2 className="pixel">Add a player</h2>
         <AddKidForm
-          onAdd={async (name, type) => {
-            const kid = makeKid(name, type);
+          onAdd={async (name, type, avatar) => {
+            const kid = makeKid(name, type, avatar);
             try {
               await repo.createKid(kid);
             } catch (e) {
@@ -80,7 +81,18 @@ export function nameKey(name: string): string {
   return name.trim().normalize('NFC').toLowerCase();
 }
 
-function AddKidForm({ onAdd, existing = [] }: { onAdd: (name: string, type: Learner) => Promise<void> | void; existing?: string[] }) {
+/** A new player starts with a hero and color that the other players do not have yet, so two kids never look the same. */
+function freshAvatar(taken: KidAvatar[]): KidAvatar {
+  const used = new Set(taken.map((a) => `${a.hero}/${a.color}`));
+  for (let i = 0; i < AVATAR_HEROES.length * AVATAR_COLORS.length; i++) {
+    const a = { hero: AVATAR_HEROES[i % AVATAR_HEROES.length]!, color: AVATAR_COLORS[Math.floor(i / AVATAR_HEROES.length) % AVATAR_COLORS.length]! };
+    if (!used.has(`${a.hero}/${a.color}`) && !taken.some((t) => t.hero === a.hero)) return a;
+  }
+  return { hero: AVATAR_HEROES[taken.length % AVATAR_HEROES.length]!, color: AVATAR_COLORS[taken.length % AVATAR_COLORS.length]! };
+}
+
+function AddKidForm({ onAdd, existing = [], taken: takenAvatars = [] }: { onAdd: (name: string, type: Learner, avatar: KidAvatar) => Promise<void> | void; existing?: string[]; taken?: KidAvatar[] }) {
+  const [avatar, setAvatar] = useState<KidAvatar>(() => freshAvatar(takenAvatars));
   const [name, setName] = useState('');
   const [type, setType] = useState<Learner>('reader');
   const taken = !!name.trim() && existing.some((n) => nameKey(n) === nameKey(name));
@@ -90,9 +102,10 @@ function AddKidForm({ onAdd, existing = [] }: { onAdd: (name: string, type: Lear
       onSubmit={async (e) => {
         e.preventDefault();
         if (!name.trim() || taken) return;
-        await onAdd(name, type);
+        await onAdd(name, type, avatar);
         setName('');
         setType('reader');
+        setAvatar(freshAvatar([...takenAvatars, avatar]));
       }}
     >
       <label htmlFor="kid-name">Player name</label>
@@ -113,6 +126,7 @@ function AddKidForm({ onAdd, existing = [] }: { onAdd: (name: string, type: Lear
             : 'Times tables, multi-digit multiplication and fractions, with a keypad.'}
         </p>
       </fieldset>
+      <AvatarPicker value={avatar} onChange={setAvatar} />
       {taken ? <p className="error">Another player already has that name. Names are how kids sign in, so each needs its own.</p> : null}
       <button type="submit" className="btn" disabled={!name.trim() || taken}>Add player</button>
     </form>
@@ -205,8 +219,9 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
         <section className="panel">
           <AddKidForm
             existing={kids.map((x) => x.name)}
-            onAdd={async (name, type) => {
-              const k = makeKid(name, type);
+            taken={kids.map(avatarOf)}
+            onAdd={async (name, type, avatar) => {
+              const k = makeKid(name, type, avatar);
               try {
                 await repo.createKid(k);
               } catch (e) {
@@ -232,6 +247,17 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
               await save();
             } catch (e) {
               reportFailure('The settings were not saved.', e, save);
+            }
+          }}
+          onAvatar={async (avatar) => {
+            const save = async () => {
+              await repo.setKidFlags(kid.id, { avatar });
+              onKids(kids.map((x) => (x.id === kid.id ? { ...x, avatar } : x)));
+            };
+            try {
+              await save();
+            } catch (e) {
+              reportFailure('The picture was not saved.', e, save);
             }
           }}
           onPinSet={async () => {
@@ -442,7 +468,7 @@ function GemHistory({ changes }: { changes: ReturnType<typeof gemHistory> }) {
   );
 }
 
-function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onPinSet: () => Promise<void>; onDelete: () => Promise<void> }) {
+function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onPinSet: () => Promise<void>; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   const [purchases, setPurchases] = useState<PurchaseLog[]>([]);
@@ -524,6 +550,10 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
         <div className="stat"><span className="stat-value">{week.length}</span><span className="stat-label">runs this week</span></div>
         <div className="stat"><span className="stat-value">{minutes}</span><span className="stat-label">minutes this week</span></div>
         {on.facts || learner === 'reader' ? <div className="stat"><span className="stat-value">{fmtSec(baseline)}</span><span className="stat-label">typical fact time</span></div> : null}
+      </section>
+
+      <section className="panel">
+        <AvatarPicker value={avatarOf(kid)} onChange={(a) => void onAvatar(a)} />
       </section>
 
       <ul className="coverage" aria-label="Coverage">

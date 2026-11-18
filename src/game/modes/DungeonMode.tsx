@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { HeroFigure } from '../../ui/HeroFigure';
 import { learnerParams } from '../../engine/models';
 import type { Feedback, SessionRunner } from '../../engine/session';
-import { loadRunner, saveRun } from '../../ui/runShared';
+import { finishRun } from '../../ui/finishRun';
+import { loadRunner } from '../../ui/runShared';
 import { HoldButton } from '../../ui/early/HoldButton';
 import { MONSTERS, Sprite, UiIcon } from '../../ui/sprites';
 import { QuestionPanel } from '../QuestionPanel';
@@ -51,19 +52,8 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
     const r = runnerRef.current;
     if (!r || finishing.current) return;
     finishing.current = true;
-    // Whatever the save does, the player leaves the run.
-    let left = false;
-    try {
-      const done = await saveRun(repo, kid, r, startedAt.current, onSynced);
-      if (done) {
-        left = true;
-        onDone(done.summary, done.updated, done.info);
-      }
-    } catch (e) {
-      console.error('Leaving the run: saving threw.', e);
-    } finally {
-      if (!left) onExit();
-    }
+    // Whatever the save does, the kid leaves the run.
+    await finishRun({ repo, kid, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit });
   }, [kid, repo, onDone, onExit, onSynced]);
 
   const next = useCallback(() => {
@@ -119,7 +109,7 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
 
   const monster =
     runner.position >= runner.length - BLOCK ? 'boss' : MONSTERS[Math.floor(runner.position / BLOCK) % MONSTERS.length]!;
-  const progress = Math.min(1, runner.position / Math.max(1, runner.length));
+  const progress = runner.progress();
   const hp = Math.max(0, 1 - hits / BLOCK);
   const panel = (
     <QuestionPanel
