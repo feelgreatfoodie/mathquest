@@ -6,7 +6,7 @@ import { newCardState } from '../src/engine/scheduler';
 /**
  * Parent area on iPhone widths (375x667, 390x844, 430x932), system Chrome with iPhone emulation.
  * WebKit is not used: its download is blocked on this host.
- * Also: kid screens keep touch-action that blocks pinch-zoom, and the 820x1180 kid screens stay pixel-identical.
+ * Also: kid screens keep touch-action that blocks pinch-zoom. The 820x1180 kid screens are guarded by visual.e2e.ts (baselines in e2e/__baselines__).
  * Names, ids and the parent PIN are made up per run. SCREENSHOTS=1 writes PNGs under docs/screenshots/parent-mobile/.
  */
 const IPHONE_UA =
@@ -89,7 +89,7 @@ async function seed(page: Page, opts: { family?: boolean } = {}) {
   );
 }
 
-async function shot(page: Page, w: number, name: string, fullPage = true) {
+async function shot(page: Page, w: number, name: string, fullPage = false) {
   if (SHOTS && w === 390) await page.screenshot({ path: `${SHOTS}/${name}-390.png`, fullPage });
 }
 async function enterPin(page: Page, pin: string) {
@@ -356,46 +356,5 @@ test.describe('kid screens block pinch-zoom with touch-action', () => {
     await page.getByRole('button', { name: 'Play' }).click();
     await expect(page.locator('.early-run')).toBeVisible();
     expect(await page.evaluate(blocksPinch), 'pre-reader run').toEqual([]);
-  });
-});
-
-/** 820x1180 kid screens stay pixel-identical. Baselines were recorded on main (e2e/parentMobile.e2e.ts-snapshots). */
-test.describe('820x1180 kid screens are unchanged', () => {
-  test.use({
-    viewport: { width: 820, height: 1180 }, hasTouch: true, deviceScaleFactor: 2,
-    userAgent: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-  });
-  const still = { animations: 'disabled' as const, maxDiffPixels: 0 };
-
-  test('picker, reader home, pre-reader home', async ({ page }) => {
-    await page.addInitScript(() => {
-      let s = 12345;
-      Math.random = () => ((s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296);
-    });
-    await seed(page);
-    await page.goto('/');
-    await expect(page.locator('.kid-card').first()).toBeVisible();
-    await page.evaluate(() => document.fonts.ready);
-    await expect(page).toHaveScreenshot('kid-picker-820.png', still);
-    await page.locator('.kid-card', { hasText: READER_NAME }).click();
-    await page.locator('.btn-start').waitFor();
-    await expect(page).toHaveScreenshot('kid-home-820.png', still);
-    await page.locator('.btn-start').click();
-    await expect(page.locator('.screen.run')).toBeVisible();
-    await page.waitForTimeout(500);
-    await expect(page).toHaveScreenshot('kid-run-820.png', { ...still, mask: [page.locator('.run-top')] });
-  });
-
-  test('pre-reader home and run', async ({ page }) => {
-    await page.addInitScript(() => {
-      let s = 777;
-      Math.random = () => ((s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296);
-    });
-    await seed(page);
-    await page.goto('/');
-    await page.locator('.kid-card', { hasText: PRE_NAME }).click();
-    await expect(page.locator('.early-home')).toBeVisible();
-    await page.evaluate(() => document.fonts.ready);
-    await expect(page).toHaveScreenshot('prereader-home-820.png', still);
   });
 });
