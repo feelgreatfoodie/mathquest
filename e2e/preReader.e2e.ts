@@ -131,10 +131,14 @@ test('a pre-reader plays a first run, misses one, finishes, and the parent grid 
 
   let missedOne = false;
   let asked = 0;
+  let previews = 0;
   for (let guard = 0; guard < 40; guard++) {
     if (await page.locator('.big-stars').count()) break;
     const [a, b] = await readSum(page);
-    expect(a + b, `question ${asked + 1} is ${a}+${b}`).toBeLessThanOrEqual(5);
+    // coverage-1: one preview per run may come from the locked second group (sums up to 10).
+    const isPreview = (await page.locator('.early-question[data-preview="true"]').count()) > 0;
+    if (isPreview) previews++;
+    else expect(a + b, `question ${asked + 1} is ${a}+${b}`).toBeLessThanOrEqual(5);
     asked++;
     if (!missedOne && a + b >= 2) {
       missedOne = true;
@@ -168,6 +172,7 @@ test('a pre-reader plays a first run, misses one, finishes, and the parent grid 
   }
 
   expect(missedOne).toBe(true);
+  expect(previews).toBeLessThanOrEqual(1);
 
   // Summary: stars, gems, a spoken line.
   await expect(page.locator('.big-stars')).toBeVisible();
@@ -233,6 +238,9 @@ test('a reader profile still gets the keypad run and no pre-reader screen', asyn
   await page.locator('.kid-card', { hasText: KID_NAME }).click();
   await expect(page.getByRole('button', { name: 'Start Quest' })).toBeVisible();
   await page.getByRole('button', { name: 'Start Quest' }).click();
+  // The run may open on a new-skill teach card (the plan shuffles new cards in); go past it.
+  const teach = page.getByRole('button', { name: 'Let me try one!' });
+  if (await teach.count()) await teach.click();
   await expect(page.locator('.keypad')).toBeVisible();
   await expect(page.locator('.choices')).toHaveCount(0);
 });

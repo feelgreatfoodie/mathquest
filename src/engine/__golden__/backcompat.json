@@ -16789,7 +16789,12 @@
     9335
    ],
    "lastRating": 3,
-   "updatedAt": 1794873605000
+   "updatedAt": 1794873605000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "fr:sub",
@@ -16813,7 +16818,12 @@
     1933
    ],
    "lastRating": 4,
-   "updatedAt": 1794873602000
+   "updatedAt": 1794873602000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:4x7",
@@ -16838,7 +16848,12 @@
     1560
    ],
    "lastRating": 4,
-   "updatedAt": 1794873603000
+   "updatedAt": 1794873603000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:3x12",
@@ -16860,7 +16875,12 @@
     4687
    ],
    "lastRating": 3,
-   "updatedAt": 1794873604000
+   "updatedAt": 1794873604000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:4x9",
@@ -16885,7 +16905,12 @@
     8334
    ],
    "lastRating": 3,
-   "updatedAt": 1794873606000
+   "updatedAt": 1794873606000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "fr:add",
@@ -16911,7 +16936,12 @@
     2997
    ],
    "lastRating": 4,
-   "updatedAt": 1794873607000
+   "updatedAt": 1794873607000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:3x8",
@@ -16933,7 +16963,12 @@
     4787
    ],
    "lastRating": 3,
-   "updatedAt": 1794873608000
+   "updatedAt": 1794873608000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:0x4",
@@ -16959,7 +16994,12 @@
     7039
    ],
    "lastRating": 3,
-   "updatedAt": 1794873609000
+   "updatedAt": 1794873609000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:6x10",
@@ -16985,7 +17025,12 @@
     7318
    ],
    "lastRating": 3,
-   "updatedAt": 1794873610000
+   "updatedAt": 1794873610000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:3x6",
@@ -17007,7 +17052,12 @@
     7402
    ],
    "lastRating": 3,
-   "updatedAt": 1794873611000
+   "updatedAt": 1794873611000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:0x10",
@@ -17033,7 +17083,12 @@
     2429
    ],
    "lastRating": 4,
-   "updatedAt": 1794873612000
+   "updatedAt": 1794873612000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:0x12",
@@ -17059,7 +17114,13 @@
     8023
    ],
    "lastRating": 1,
-   "updatedAt": 1794873617000
+   "updatedAt": 1794873617000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    false
+   ],
+   "missDay": "TODAY"
   },
   {
    "id": "mul:3x9",
@@ -17081,7 +17142,12 @@
     4333
    ],
    "lastRating": 4,
-   "updatedAt": 1794873614000
+   "updatedAt": 1794873614000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:4x6",
@@ -17106,7 +17172,12 @@
     2052
    ],
    "lastRating": 4,
-   "updatedAt": 1794873615000
+   "updatedAt": 1794873615000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:4x11",
@@ -17131,7 +17202,12 @@
     9731
    ],
    "lastRating": 3,
-   "updatedAt": 1794873616000
+   "updatedAt": 1794873616000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:3x11",
@@ -17153,7 +17229,12 @@
     4787
    ],
    "lastRating": 3,
-   "updatedAt": 1794873618000
+   "updatedAt": 1794873618000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:0x8",
@@ -17179,7 +17260,12 @@
     7817
    ],
    "lastRating": 3,
-   "updatedAt": 1794873619000
+   "updatedAt": 1794873619000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:10x11",
@@ -17205,7 +17291,12 @@
     6268
    ],
    "lastRating": 3,
-   "updatedAt": 1794873620000
+   "updatedAt": 1794873620000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:3x4",
@@ -17227,7 +17318,12 @@
     3210
    ],
    "lastRating": 4,
-   "updatedAt": 1794873621000
+   "updatedAt": 1794873621000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:4x4",
@@ -17252,7 +17348,12 @@
     2564
    ],
    "lastRating": 4,
-   "updatedAt": 1794873622000
+   "updatedAt": 1794873622000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:4x12",
@@ -17277,7 +17378,12 @@
     3859
    ],
    "lastRating": 4,
-   "updatedAt": 1794873623000
+   "updatedAt": 1794873623000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:3x7",
@@ -17299,7 +17405,13 @@
     7764
    ],
    "lastRating": 1,
-   "updatedAt": 1794873632000
+   "updatedAt": 1794873632000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    false
+   ],
+   "missDay": "TODAY"
   },
   {
    "id": "mul:4x8",
@@ -17324,7 +17436,12 @@
     8331
    ],
    "lastRating": 3,
-   "updatedAt": 1794873625000
+   "updatedAt": 1794873625000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:0x0",
@@ -17350,7 +17467,12 @@
     2454
    ],
    "lastRating": 4,
-   "updatedAt": 1794873626000
+   "updatedAt": 1794873626000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "md:tens",
@@ -17375,7 +17497,12 @@
     9602
    ],
    "lastRating": 4,
-   "updatedAt": 1794873627000
+   "updatedAt": 1794873627000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:0x6",
@@ -17401,7 +17528,12 @@
     4891
    ],
    "lastRating": 3,
-   "updatedAt": 1794873629000
+   "updatedAt": 1794873629000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:4x5",
@@ -17427,7 +17559,12 @@
     8507
    ],
    "lastRating": 3,
-   "updatedAt": 1794873630000
+   "updatedAt": 1794873630000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:0x2",
@@ -17453,7 +17590,12 @@
     3689
    ],
    "lastRating": 4,
-   "updatedAt": 1794873631000
+   "updatedAt": 1794873631000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   },
   {
    "id": "mul:1x2",
@@ -17479,7 +17621,13 @@
     9639
    ],
    "lastRating": 1,
-   "updatedAt": 1794873635000
+   "updatedAt": 1794873635000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    false
+   ],
+   "missDay": "TODAY"
   },
   {
    "id": "mul:3x5",
@@ -17505,7 +17653,12 @@
     5136
    ],
    "lastRating": 3,
-   "updatedAt": 1794873634000
+   "updatedAt": 1794873634000,
+   "day": "TODAY",
+   "dayGraded": 1,
+   "lastResults": [
+    true
+   ]
   }
  ]
 }

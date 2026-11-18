@@ -1,8 +1,6 @@
 import { applyRun, type GameDelta } from '../engine/game';
-import { availableCards } from '../engine/mastery';
-import { learnerOf, type Kid, type KidGame, type SessionLog } from '../engine/models';
-import { moduleOfCard } from '../engine/modules';
-import { SessionRunner, planSession, type RunSummary } from '../engine/session';
+import type { Kid, KidGame, SessionLog } from '../engine/models';
+import { SessionRunner, buildPlan, type RunSummary } from '../engine/session';
 import { newId, type Repo } from '../data/repo';
 import { reportFailure } from './failures';
 
@@ -10,18 +8,7 @@ import { reportFailure } from './failures';
 export async function loadRunner(repo: Repo, kid: Kid): Promise<{ runner: SessionRunner; startedAt: number }> {
   const cards = await repo.loadCards(kid.id);
   const now = Date.now();
-  // A pre-reader only gets picture modules: a keypad question has nothing they could read.
-  const available = availableCards(cards, kid.settings).filter(
-    (c) => learnerOf(kid.settings) !== 'prereader' || moduleOfCard(c.id)?.input === 'choices',
-  );
-  const plan = planSession({
-    cards,
-    available,
-    now,
-    size: kid.settings.sessionSize,
-    maxNew: kid.settings.maxNew,
-    rng: Math.random,
-  });
+  const plan = buildPlan({ cards, settings: kid.settings, now, rng: Math.random });
   return { runner: new SessionRunner(plan, cards, Math.random, Date.now, kid.settings), startedAt: now };
 }
 

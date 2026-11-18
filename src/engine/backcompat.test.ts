@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ALL_CARDS, getCardDef } from './content';
 import { thresholdsFor } from './grading';
 import { availableCards, cardLevel } from './mastery';
+import { dayKey } from './game';
 import { DEFAULT_GAME, type CardMap, type KidSettings } from './models';
 import { generateProblem, mulberry32 } from './problems';
 import { newCardState, review } from './scheduler';
@@ -118,7 +119,9 @@ function compute() {
   }
   out.trace = trace;
   out.summary = runner.summary();
-  out.changed = runner.changedCards();
+  // The day fields are local-time keys; record them as TODAY so the golden does not depend on the machine's zone.
+  const today = dayKey(T0 + 1000);
+  out.changed = runner.changedCards().map((c) => ({ ...c, ...(c.day ? { day: c.day === today ? 'TODAY' : c.day } : {}), ...(c.missDay ? { missDay: c.missDay === today ? 'TODAY' : c.missDay } : {}) }));
   return JSON.parse(JSON.stringify(out));
 }
 

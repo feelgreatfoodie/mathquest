@@ -661,3 +661,7 @@ legend { padding: 0 6px; color: var(--muted); }
   .parent .lock-banner { flex-direction: column; align-items: stretch; }
   .legend { gap: 8px 14px; font-size: 14px; }
 }
+
+/* Coverage line in the parent area, and the hint above a preview question. */
+.coverage { list-style: none; margin: 0 0 12px; padding: 0 4px; display: grid; gap: 4px; color: var(--muted, #aab); }
+.preview-hint { margin: 0 0 8px; font-size: 18px; }

@@ -26,6 +26,13 @@ export interface CardState {
   recentMs: number[];
   lastRating: number;
   updatedAt: number;
+  /** Local day (YYYY-MM-DD) of the last graded answer, and how many graded answers that day. Absent on old cards. */
+  day?: string;
+  dayGraded?: number;
+  /** Outcomes of the last two graded answers, newest last. Absent on old cards. */
+  lastResults?: boolean[];
+  /** Local day of the last miss. */
+  missDay?: string;
 }
 
 export type CardMap = Record<string, CardState>;
@@ -38,6 +45,12 @@ export interface KidSettings {
   maxNew: number;
   /** Fact groups a parent marks as already started (1 = only the first group). */
   factGroupsUnlocked: number;
+  /**
+   * A parent's floor per module: every group up to this number is open (1 = only the first). Optional on stored
+   * docs: a missing module reads as today's rule (times tables use `factGroupsUnlocked`, the others start at
+   * group 1). Progress can still open more. Read it through `groupFloor` in mastery.ts.
+   */
+  groupsUnlocked?: Partial<Record<ModuleId, number>>;
   /**
    * Multiplies every fast and slow time bar (3 = most time, 1 = the original bars).
    * Optional on stored docs: a missing value reads as 3. Read it through `paceOf`.

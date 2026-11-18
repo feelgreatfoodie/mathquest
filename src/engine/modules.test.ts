@@ -185,15 +185,21 @@ describe('settings migration', () => {
 });
 
 describe('unlocking', () => {
-  it('opens G2 when 80% of G1 is in review, not before', () => {
+  // coverage-1: a pre-reader's gate is "80% seen, last two answers right", not stability. The cards below are
+  // in review AND steady, so the test also still proves the 80% line.
+  const steady = (cards: ReturnType<typeof reviewAll>) =>
+    Object.fromEntries(Object.entries(cards).map(([id, c]) => [id, { ...c, lastResults: [true, true] }])) as ReturnType<typeof reviewAll>;
+  it('opens G2 when 80% of G1 is seen with the last two answers right, not before', () => {
     expect(availableCards({}, PRE).map((c) => c.id)).toEqual(g1());
-    const ten = reviewAll(g1().slice(0, 10)); // 10 of 12 = 83%
+    const ten = steady(reviewAll(g1().slice(0, 10))); // 10 of 12 = 83%
     expect(groupProgress(ADD10, 0, ten)).toBeCloseTo(10 / 12);
     expect(unlockedGroups(ADD10, ten, PRE)).toBe(2);
     expect(availableCards(ten, PRE)).toHaveLength(36);
-    const nine = reviewAll(g1().slice(0, 9)); // 75%
+    const nine = steady(reviewAll(g1().slice(0, 9))); // 75%
     expect(unlockedGroups(ADD10, nine, PRE)).toBe(1);
     expect(availableCards(nine, PRE)).toHaveLength(12);
+    // In review alone is no longer enough for a pre-reader.
+    expect(unlockedGroups(ADD10, reviewAll(g1().slice(0, 10)), PRE)).toBe(1);
   });
 
   it('keeps facts and add10 side by side, add10 first', () => {

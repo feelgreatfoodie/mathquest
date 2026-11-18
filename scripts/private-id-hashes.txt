@@ -1,0 +1,7 @@
+# SHA-256 of private values that must never appear in this public repo. Hashes only.
+# Tokens are hashed as written and in lower case. See scripts/check-private-ids.mjs.
+f3e2ddcf800a441d608ad9baa219362d22612b86a04b59f40e30e3fb67c6c396  kid doc id (older boy)
+7ddda10916a79591c0a100bf76aef09ce1db1bac564a4322ae44f38ca234da7f  kid doc id (younger boy)
+d23b98f24023161982898ffbf225e04afb3debb935da9282dd0b175a3bb3c799  family id
+1131204124b1c4a4f60262ad7312b91898340ec921df8a6c1e6529029c4567c9  first name (older boy), lower case
+19567a3aa6f2625b0bb9d74625b56b57f74d80d368dc3619bc2b2942ae007e8f  first name (younger boy), lower case
