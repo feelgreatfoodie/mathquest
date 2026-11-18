@@ -182,7 +182,7 @@ describe('gems drop guard in the rules', () => {
   });
 
   it('allows earning gems and writing settings with game unchanged', async () => {
-    await assertSucceeds(updateDoc(kidRef(kidDb()), { game: withGame({ gems: 120 }) }));
+    await assertSucceeds(updateDoc(kidRef(kidDb()), { game: withGame({ gems: 96 }) })); // +10, the most one run can earn
     await assertSucceeds(updateDoc(kidRef(parentDb()), { settings: { ...STORED_SETTINGS, sessionSize: 20 } }));
   });
 });

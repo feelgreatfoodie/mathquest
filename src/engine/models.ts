@@ -56,6 +56,10 @@ export interface KidSettings {
    * Optional on stored docs: a missing value reads as 3. Read it through `paceOf`.
    */
   paceMultiplier?: number;
+  /** Gem speed: 0.5 (Slow), 1 (Normal) or 1.5 (Fast). A missing value reads as 1. Read it through `gemSpeedOf` in gems.ts. */
+  gemSpeed?: number;
+  /** Gems earned today at full rate (half to twice this, a quarter after). A missing value reads as 25 (reader) or 15 (pre-reader). Read it through `gemFullRateOf`. */
+  gemFullRate?: number;
   /** Who plays: a missing value reads as 'reader'. Read it through `learnerOf`. */
   learner?: Learner;
   /**
@@ -77,6 +81,9 @@ export interface KidGame {
   hero: string;
   /** Set by the write that buys a hero: the id of its purchases doc, so the rules can find that doc. */
   lastPurchaseId?: string;
+  /** Gems earned from runs on `gemsDay` (local YYYY-MM-DD). Absent on a game from before the throttle. Read it through `earnedTodayOf`. */
+  gemsEarnedToday?: number;
+  gemsDay?: string;
 }
 
 /** One hero bought: written with the game change in the same transaction, never edited or deleted. */
@@ -213,6 +220,9 @@ export function normalizeGame(raw: unknown): KidGame {
     bestCombo: num(g.bestCombo, DEFAULT_GAME.bestCombo),
     heroes,
     hero: str(g.hero, DEFAULT_GAME.hero),
+    ...(typeof g.gemsDay === 'string' && typeof g.gemsEarnedToday === 'number' && Number.isFinite(g.gemsEarnedToday)
+      ? { gemsEarnedToday: g.gemsEarnedToday, gemsDay: g.gemsDay }
+      : {}),
   };
 }
 

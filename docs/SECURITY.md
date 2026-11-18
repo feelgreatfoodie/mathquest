@@ -10,7 +10,7 @@ Math Quest keeps its game economy on the device. This file names what Firestore 
 - `game.gems` goes down only in the write that buys one hero (`gemsDropBacked`, kid and parent branches). That write sets `game.lastPurchaseId` to a new id, creates the purchases doc with that id, adds exactly one hero, and the doc's cost equals the drop and its heroId is the hero added. A stale full-doc copy, a reused id, a wrong cost or a drop with no hero is refused.
 - `game.hero` changes only to a hero in `game.heroes` (`heroChangeOk`).
 - A kid token that adds a hero adds exactly one, a hero in the catalog, and pays exactly its catalog price (`heroPrices`, kept equal to `HEROES` by a unit test). The free knight (price 0) may be added with a gem rise, never with a drop.
-- A kid token raises `game.gems` by at most 50 and `game.xp` by at most 2000 per write (`kidRaiseOk`). The bounds come from 58 stored sessions (3 kids, 1 family) whose largest run earned 504 xp and 9 gems.
+- A kid token raises `game.gems` by at most 10 and `game.xp` by at most 2000 per write (`kidRaiseOk`). 10 is `GEM_RUN_MAX`, the most `gemsForRun` returns at any speed or tier. The xp bound comes from 58 stored sessions whose largest run earned 504 xp. There is no check against gems earned today: the throttle slows the rate in the app and never refuses a save.
 - The purchases log `families/{uid}/kids/{kidId}/purchases/{id}` is readable by the parent only. It has no update and no delete. An entry is created only in the write that adds the hero and spends its price, and its id must be that write's `game.lastPurchaseId`, so one buy has exactly one entry.
 - Parent and Admin SDK writes are not bounded by the kid rules. Support corrections run through the Admin SDK.
 
@@ -22,7 +22,7 @@ Math Quest keeps its game economy on the device. This file names what Firestore 
 
 ## Why
 
-The product is a family practice app. Moving grading server-side would add a service to run and does not change who can play. The bounds make a tampered write cost a few gems, not a whole economy. Raise or lower them in `kidRaiseOk` when session size or rewards change, and re-measure first.
+The product is a family practice app. Moving grading server-side would add a service to run and does not change who can play. The bounds make a tampered write cost a few gems, not a whole economy. Raise or lower them in `kidRaiseOk` when session size or rewards change (keep the gem bound equal to `GEM_RUN_MAX`), and re-measure first.
 
 ## Rules for this public repo
 

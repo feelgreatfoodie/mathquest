@@ -69,13 +69,15 @@ service cloud.firestore {
 
     // The game economy is client-trusted by design: grading runs on the device, so a kid token can write any
     // run it claims. This caps the damage of one tampered write. Measured on 58 stored sessions (3 kids, 1 family):
-    // at most 504 xp and 9 gems per session. A kid write may raise gems by at most 50 and xp by at most 2000
-    // (about 5x and 4x the measured maxima, room for longer sessions). A drop is not limited here (gemsDropBacked
+    // at most 504 xp per session. A kid write may raise xp by at most 2000 (about 4x the measured maximum, room
+    // for longer sessions). Gems: a run earns at most 10 (GEM_RUN_MAX in src/engine/gems.ts, after the Gem speed
+    // and the throttle), so a kid write may raise gems by at most 10. There is no check against gems earned today:
+    // the throttle slows the rate in the app and never stops a save. A drop is not limited here (gemsDropBacked
     // and kidHeroGrowthOk handle it). Only the kid branch uses this; parents and the Admin SDK are unchanged.
     function kidRaiseOk() {
       let before = resource.data.get('game', {});
       let after = request.resource.data.get('game', {});
-      return after.get('gems', 0) - before.get('gems', 0) <= 50
+      return after.get('gems', 0) - before.get('gems', 0) <= 10
         && after.get('xp', 0) - before.get('xp', 0) <= 2000;
     }
 

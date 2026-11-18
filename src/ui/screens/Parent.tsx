@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { HEROES, levelFor } from '../../engine/game';
 import { gemHistory } from '../../engine/gemHistory';
+import { GEM_SPEEDS, earnedTodayOf, gemFullRateOf, gemSpeedOf, gemTier } from '../../engine/gems';
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
@@ -409,6 +410,8 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
   const groups = unlockedFactGroups(cards, kid.settings);
   const on = modulesOf(kid.settings);
   const learner = learnerOf(kid.settings);
+  const earnedToday = earnedTodayOf(kid.game, Date.now());
+  const tier = gemTier(earnedToday, learner, kid.settings);
   const factStates = Object.values(cards).filter((c) => c.id.startsWith('mul:'));
   const leeches = factStates.filter((c) => c.fsrs.lapses >= 3).sort((a, b) => b.fsrs.lapses - a.fsrs.lapses);
   const slow = factStates
@@ -438,6 +441,10 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
           <div className="progress" role="img" aria-label={`${lv.into} of ${lv.span} xp to the next level`}><div className="progress-fill xp" style={{ width: `${(lv.into / lv.span) * 100}%` }} /></div>
         </div>
         <div className="stat stat-gems"><span className="stat-value">{kid.game.gems}</span><span className="stat-label">gems</span></div>
+        <div className="stat stat-earned">
+          <span className="stat-value">{earnedToday}</span>
+          <span className="stat-label">earned today · {TIER_LABELS[tier]}</span>
+        </div>
         <div className="stat stat-hero">
           <Sprite name={kid.game.hero} size={48} />
           <span className="stat-label">hero · {heroName} · {kid.game.heroes.length} of {HEROES.length}</span>
@@ -613,6 +620,19 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
             {PACE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
+        <label>
+          Gem speed
+          <select value={gemSpeedOf(settings)} onChange={(e) => setSettings({ ...settings, gemSpeed: Number(e.target.value) })}>
+            {GEM_SPEEDS.map((v) => <option key={v} value={v}>{GEM_SPEED_LABELS[v]}</option>)}
+          </select>
+        </label>
+        <label>
+          Full-rate gems per day
+          <select value={gemFullRateOf(learner, settings)} onChange={(e) => setSettings({ ...settings, gemFullRate: Number(e.target.value) })}>
+            {gemRateOptions(gemFullRateOf(learner, settings)).map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <span className="hint">After {gemFullRateOf(learner, settings)} gems today, new gems come at half speed. After {2 * gemFullRateOf(learner, settings)}, a quarter. Runs always earn at least 1.</span>
+        </label>
         {MODULES.filter((m) => m.status === 'live' && m.groups && m.id !== 'facts' && modulesOf(settings)[m.id]).map((m) => (
           <label key={m.id}>
             Start {m.name} at
@@ -672,6 +692,11 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
     </div>
   );
 }
+
+const TIER_LABELS = { full: 'full rate', half: 'half rate', quarter: 'quarter rate' } as const;
+const GEM_SPEED_LABELS: Record<(typeof GEM_SPEEDS)[number], string> = { 0.5: 'Slow (0.5x)', 1: 'Normal (1x)', 1.5: 'Fast (1.5x)' };
+/** The full-rate choices, plus the stored value when it is not one of them. */
+const gemRateOptions = (current: number) => [...new Set([5, 10, 15, 20, 25, 30, 40, 50, 75, 100, current])].sort((a, b) => a - b);
 
 const PACE_OPTIONS = [
   { value: 3, label: '3x: most time (default)' },

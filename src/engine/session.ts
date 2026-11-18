@@ -4,7 +4,8 @@ import { getCardDef, moduleOfCard, type CardDef } from './modules';
 import { factBaseline, gradeAnswer, thresholdsFor } from './grading';
 import { cardLevel, availableCards, previewPool } from './mastery';
 import { dayKey } from './game';
-import { learnerOf, learnerParams, paceOf, type CardMap, type CardState, type KidSettings } from './models';
+import { gemsForRun } from './gems';
+import { learnerOf, learnerParams, paceOf, type CardMap, type CardState, type KidSettings, type Learner } from './models';
 import { answerText, checkAnswer, generateProblem, ICON_IDS, type AnswerInput, type IconId, type Problem, type Rng, type Verdict } from './problems';
 import { DAILY_GRADED_CAP, gradedToday, isDue, median, newCardState, noteGraded, practice, retrievability, review } from './scheduler';
 
@@ -193,6 +194,7 @@ export class SessionRunner {
   private baseline: number;
   private pace: number;
   private retryGap: number;
+  private learner: Learner;
   private lastIcon: IconId | null = null;
   private combo = 0;
   private bestCombo = 0;
@@ -212,6 +214,7 @@ export class SessionRunner {
     settings?: Pick<KidSettings, 'paceMultiplier' | 'learner'>,
   ) {
     this.pace = paceOf(settings);
+    this.learner = learnerOf(settings);
     this.retryGap = learnerParams(learnerOf(settings)).retryGap;
     this.cards = { ...cards };
     this.baseline = factBaseline(cards);
@@ -382,7 +385,8 @@ export class SessionRunner {
   }
 
   summary(): RunSummary {
-    const gems = Math.floor(this.stats.correct / 5) + (this.bestCombo >= 10 ? 2 : 0) + (this.stats.newLearned >= 3 ? 1 : 0);
+    // Gems at Normal speed and full rate. saveRun re-works them with the parent settings and today's count (gemsForRun).
+    const gems = gemsForRun({ ...this.stats, bestCombo: this.bestCombo }, this.learner, {}, 0);
     return {
       ...this.stats,
       medianMs: this.times.length ? Math.round(median(this.times)) : 0,

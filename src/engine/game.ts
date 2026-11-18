@@ -1,4 +1,5 @@
-import type { KidGame } from './models';
+import { earnedTodayOf, gemsForRun, type GemRunStats, type GemSettings } from './gems';
+import type { KidGame, Learner } from './models';
 import type { RunSummary } from './session';
 
 export interface Hero {
@@ -42,6 +43,11 @@ export interface GameDelta {
   xp?: number;
   /** Gems earned (positive) or spent (negative). The total may not go below 0. */
   gems?: number;
+  /**
+   * A finished run's gems, worked out from the game this delta is applied to (so a stale screen or a second
+   * device cannot skip the throttle). When set it replaces `gems`. Needs `playedAt`.
+   */
+  gemRun?: { stats: GemRunStats; learner: Learner; settings: GemSettings };
   /** A combo from this run. The stored best only moves up. */
   bestCombo?: number;
   /** When a run finished (epoch ms). Moves the day streak. Leave it out for a shop action. */
@@ -60,13 +66,22 @@ export class GameDeltaError extends Error {
   }
 }
 
+/** The gems a delta adds to `game`: the throttled run gems when `gemRun` is set, else `delta.gems`. */
+export function awardedGems(game: KidGame, delta: GameDelta): number {
+  if (!delta.gemRun) return delta.gems ?? 0;
+  if (delta.playedAt === undefined) throw new GameDeltaError('A run needs the time it finished.');
+  const { stats, learner, settings } = delta.gemRun;
+  return gemsForRun(stats, learner, settings, earnedTodayOf(game, delta.playedAt));
+}
+
 export function applyDelta(game: KidGame, delta: GameDelta): KidGame {
   const xp = delta.xp ?? 0;
   const bestCombo = delta.bestCombo ?? 0;
   if (!Number.isFinite(xp) || xp < 0) throw new GameDeltaError('XP cannot go down.');
   if (!Number.isFinite(bestCombo) || bestCombo < 0) throw new GameDeltaError('Best combo cannot go down.');
   let next: KidGame = { ...game, xp: game.xp + xp, bestCombo: Math.max(game.bestCombo, bestCombo), heroes: [...game.heroes] };
-  let gems = game.gems + (delta.gems ?? 0);
+  const earned = awardedGems(game, delta);
+  let gems = game.gems + earned;
   if (!Number.isFinite(gems)) throw new GameDeltaError('Gems must be a number.');
 
   if (delta.playedAt !== undefined) {
@@ -76,6 +91,10 @@ export function applyDelta(game: KidGame, delta: GameDelta): KidGame {
       streakDays = game.lastPlayedDay === previousDay(today) ? streakDays + 1 : 1;
     }
     next = { ...next, streakDays, lastPlayedDay: today };
+    // A run's gems count toward today. A replay older than the stored day leaves the count alone.
+    if (earned > 0 && (game.gemsDay === undefined || game.gemsDay <= today)) {
+      next = { ...next, gemsEarnedToday: earnedTodayOf(game, delta.playedAt) + earned, gemsDay: today };
+    }
   }
   if (delta.purchase !== undefined) {
     const hero = HEROES.find((h) => h.id === delta.purchase);
