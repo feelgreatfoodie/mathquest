@@ -210,6 +210,48 @@ describe('a kid token cannot add a hero on the kid doc except at the catalog pri
   });
 });
 
+// Measured on 58 stored sessions (3 kids, 1 family): max 504 xp and 9 gems per session. Bounds: +2000 xp, +50 gems per write.
+describe('a kid token write raises gems and xp by a bounded amount', () => {
+  const write = (db: Db, over: Record<string, unknown>) => updateDoc(kidRef(db), { game: { ...storedKid(KID).game, ...over } });
+  const base = storedKid(KID).game as { xp: number; gems: number };
+
+  it('a real-size run (+504 xp, +9 gems) passes', async () => {
+    await assertSucceeds(write(kidDb(), { xp: base.xp + 504, gems: base.gems + 9 }));
+  });
+
+  it('the bound itself passes (+2000 xp, +50 gems)', async () => {
+    await assertSucceeds(write(kidDb(), { xp: base.xp + 2000, gems: base.gems + 50 }));
+  });
+
+  it('gems +51 is refused', async () => {
+    await assertFails(write(kidDb(), { gems: base.gems + 51 }));
+  });
+
+  it('xp +2001 is refused', async () => {
+    await assertFails(write(kidDb(), { xp: base.xp + 2001 }));
+  });
+
+  it('a huge gem or xp jump is refused (gems +100000, xp +1000000)', async () => {
+    await assertFails(write(kidDb(), { gems: base.gems + 100_000 }));
+    await assertFails(write(kidDb(), { xp: base.xp + 1_000_000 }));
+  });
+
+  it('a hero buy at the catalog price still passes with the bounds in place', async () => {
+    await assertSucceeds(write(kidDb(), { gems: base.gems - 15, heroes: ['knight', 'wizard'], hero: 'wizard' }));
+  });
+
+  it('the repo path (applyGameDelta run and purchase) still passes', async () => {
+    const repo = new FirestoreRepo(kidDb(), FAM);
+    await repo.applyGameDelta(KID, { xp: 504, gems: 9, bestCombo: 12, playedAt: Date.now() });
+    await repo.applyGameDelta(KID, { purchase: 'wizard' });
+    expect(((await getDoc(kidRef(parentDb()))).data() as Kid).game).toMatchObject({ xp: 971, gems: 80 });
+  });
+
+  it('the parent path is unchanged: a parent can raise gems by 500', async () => {
+    await assertSucceeds(write(parentDb(), { gems: base.gems + 500 }));
+  });
+});
+
 describe('purchases through the repo', () => {
   it('a kid purchase writes the game and one log entry in one transaction', async () => {
     const repo = new FirestoreRepo(kidDb(), FAM);

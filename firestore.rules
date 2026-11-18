@@ -72,6 +72,18 @@ service cloud.firestore {
             || before.get('gems', 0) - after.get('gems', 0) == heroPrices()[afterHeroes[afterHeroes.size() - 1]]));
     }
 
+    // The game economy is client-trusted by design: grading runs on the device, so a kid token can write any
+    // run it claims. This caps the damage of one tampered write. Measured on 58 stored sessions (3 kids, 1 family):
+    // at most 504 xp and 9 gems per session. A kid write may raise gems by at most 50 and xp by at most 2000
+    // (about 5x and 4x the measured maxima, room for longer sessions). A drop is not limited here (gemsDropOk
+    // and kidHeroGrowthOk handle it). Only the kid branch uses this; parents and the Admin SDK are unchanged.
+    function kidRaiseOk() {
+      let before = resource.data.get('game', {});
+      let after = request.resource.data.get('game', {});
+      return after.get('gems', 0) - before.get('gems', 0) <= 50
+        && after.get('xp', 0) - before.get('xp', 0) <= 2000;
+    }
+
     // A write may not take away more gems than the dearest hero costs, unless the hero list grows in the
     // same write (a purchase). A stale copy written back over a kid's totals fails this when it wipes a
     // big balance. A missing game, gems or heroes reads as empty, so wiping game is a drop too.
@@ -142,7 +154,7 @@ service cloud.firestore {
         allow delete: if isParent(uid);
         allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId;
         allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropOk() && gameMonotonicOk())
-          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame() && gemsDropOk() && gameMonotonicOk() && kidHeroGrowthOk());
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame() && gemsDropOk() && gameMonotonicOk() && kidHeroGrowthOk() && kidRaiseOk());
 
         match /cards/{cardId} {
           allow read: if isParent(uid) || isKid(uid, kidId);
