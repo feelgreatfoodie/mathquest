@@ -13,8 +13,8 @@
 // It commits no uid, email, PIN or salt: every value is random per run and gone after it.
 
 import { randomBytes, randomInt, scryptSync } from 'node:crypto';
-// The add-kid defaults live in models.ts. Node strips the types on import (22.18+).
-import { DEFAULT_GAME } from '../src/engine/models.ts';
+// The add-kid defaults live in gameDefaults.ts (no imports). Node strips the types on import (22.18+).
+import { DEFAULT_GAME } from '../src/engine/gameDefaults.ts';
 
 export const MISMATCH_MESSAGE = "That name and PIN didn't match";
 const GLOBAL = '_global';

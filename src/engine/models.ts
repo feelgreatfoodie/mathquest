@@ -1,5 +1,6 @@
 import type { Track } from './content';
 import { MODULE_IDS, type ModuleId } from './modules/types';
+import { DEFAULT_GAME as GAME_DEFAULTS } from './gameDefaults';
 
 /** ts-fsrs Card, flattened to JSON-safe numbers (epoch ms) for Firestore and localStorage. */
 export interface StoredFsrs {
@@ -165,15 +166,8 @@ export function paceOf(settings: { paceMultiplier?: number } | undefined | null)
   return typeof p === 'number' && Number.isFinite(p) && p > 0 ? p : DEFAULT_PACE;
 }
 
-export const DEFAULT_GAME: KidGame = {
-  xp: 0,
-  gems: 0,
-  streakDays: 0,
-  lastPlayedDay: null,
-  bestCombo: 0,
-  heroes: ['knight'],
-  hero: 'knight',
-};
+/** Lives in gameDefaults.ts so plain-Node scripts can load it. The annotation fails typecheck if it drifts from KidGame. */
+export const DEFAULT_GAME: KidGame = GAME_DEFAULTS;
 
 /**
  * The one place a stored kid doc becomes a Kid. A doc written before a game field existed
