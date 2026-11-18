@@ -29,10 +29,37 @@ export interface PlanInput {
   locked?: CardDef[];
   /** Most previews in this run. */
   previewMax?: number;
+  /** Slots at the start of the run that hold no preview. At least 1: a run opens with a known fact. */
+  previewFloor?: number;
 }
+
+/** Slots at the start of a run with no preview: pre-readers 3, readers 2. */
+export const PREVIEW_FLOOR = { prereader: 3, reader: 2 } as const;
 
 /** Most new skill (procedure) cards per run; the rest of the new budget goes to facts. */
 const MAX_NEW_SKILLS = 2;
+
+/**
+ * Moves previews so none sits in the first `floor` slots and no two sit next to each other. Each preview moves
+ * the least it can, later only. The other items keep their order and slots. A run too short for both rules
+ * packs the previews at the end.
+ */
+export function placePreviews(items: PlanItem[], floor: number): PlanItem[] {
+  const n = items.length;
+  const from = items.flatMap((x, i) => (x.preview ? [i] : []));
+  const m = from.length;
+  if (!m) return items;
+  const pos: number[] = [];
+  from.forEach((at, k) => pos.push(Math.max(at, floor, k ? pos[k - 1]! + 2 : 0)));
+  for (let k = m - 1; k >= 0; k--) pos[k] = Math.min(pos[k]!, k === m - 1 ? n - 1 : pos[k + 1]! - 2);
+  if (pos.some((p, k) => p < floor || p < k)) pos.splice(0, m, ...from.map((_, k) => n - m + k));
+  const previews = items.filter((x) => x.preview);
+  const rest = items.filter((x) => !x.preview);
+  const at = new Set(pos);
+  let r = 0;
+  let q = 0;
+  return items.map((_, i) => (at.has(i) ? previews[q++]! : rest[r++]!));
+}
 
 function shuffle<T>(xs: T[], rng: Rng): T[] {
   const a = [...xs];
@@ -51,9 +78,9 @@ function shuffle<T>(xs: T[], rng: Rng): T[] {
  *  4. "practice ahead" on seen cards to fill the run: missed today, then least recently answered, then weakest
  * A card that already had DAILY_GRADED_CAP graded answers today is left out of 1 and 4: it can only come back
  * as an in-run retry. New cards and previews are spread through the first 70% of the run so misses can be
- * retried before the end.
+ * retried before the end. Then previews move later so none is in the first `previewFloor` slots or next to another.
  */
-export function planSession({ cards, available, now, size, maxNew, rng, locked = [], previewMax = 0 }: PlanInput): PlanItem[] {
+export function planSession({ cards, available, now, size, maxNew, rng, locked = [], previewMax = 0, previewFloor = 1 }: PlanInput): PlanItem[] {
   const today = dayKey(now);
   const seen = available.filter((d) => cards[d.id]);
   const open = seen.filter((d) => gradedToday(cards[d.id], now) < DAILY_GRADED_CAP);
@@ -111,7 +138,7 @@ export function planSession({ cards, available, now, size, maxNew, rng, locked =
     const pos = Math.min(out.length, Math.floor(((i + 0.5) * span) / spread.length) + i);
     out.splice(pos, 0, item);
   });
-  return out;
+  return placePreviews(out, previewFloor);
 }
 
 export interface BuildPlanInput {
@@ -135,6 +162,7 @@ export function buildPlan({ cards, settings, now, rng }: BuildPlanInput): PlanIt
     rng,
     locked: previewPool(cards, settings).filter(ok),
     previewMax: prereader ? 1 : 2,
+    previewFloor: prereader ? PREVIEW_FLOOR.prereader : PREVIEW_FLOOR.reader,
   });
 }
 
