@@ -48,3 +48,6 @@ The product is a family practice app. Moving grading server-side would add a ser
 - **11-18, a first name in two PR 20 commits.** Commits `5bd80e6` and `e99d189` on the PR 20 branch
   (parent-mobile) contain one child's first name and nothing else (no ids, no pin data, no game data). Accepted by
   Flynn on 11-18. The name is not repeated here.
+- **11-18, first names in four PR descriptions.** The bodies of PR 11, 13, 35 and 36 named a child. The current text
+  is scrubbed, but GitHub keeps the earlier revisions in the public edit history until they are deleted by hand in
+  the web UI. No ids, pin data or game data. `npm run leak-scan -- --pr <n>` now scans PR text for names.

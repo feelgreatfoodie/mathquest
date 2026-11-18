@@ -141,7 +141,21 @@ repository **variables** and remove the `if: false`:
 Deploy service account roles: Firebase Hosting Admin, Firebase Rules Admin,
 Cloud Datastore Index Admin, Service Usage Consumer.
 
-## How the adaptive engine works
+## PR checklist
+
+The repo is public. Run the leak scan before opening a PR and again before merging it:
+
+```
+npm run leak-scan -- --pr <number>
+```
+
+It fetches the PR title and body with `gh pr view`, then checks them for private ids (SHA-256 hashes in
+`scripts/private-id-hashes.txt`) and for kid first names. The names come from a local file outside the repo,
+`$MQ_PRIVATE_NAMES` or `~/.config/mathquest/private-names.txt`, one name per line. Without that file the name
+check is skipped with a warning. Never commit names, or hashes of names. CI runs the same id and name check on the
+diff and the commit messages, but cannot see PR text or your local names, so the PR text scan is only run by hand.
+GitHub keeps every earlier revision of a PR body in its public edit history, so check the text before the first save.
+
 
 All of it lives in `src/engine/` as pure TypeScript with no UI or Firebase imports, and is covered by `engine.test.ts`.
 
