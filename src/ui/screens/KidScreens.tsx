@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AVATAR_SWATCH } from '../AvatarPicker';
 import { GoalJar } from '../GoalJar';
+import { ShopMathEntry } from '../ShopMathCard';
 import { CampRow } from '../CampRow';
 import { HeroFigure } from '../HeroFigure';
 import { cardLabel } from '../../engine/modules';
@@ -11,7 +12,7 @@ import { lastModeOf, readLastMode, writeLastMode } from '../../game/modes/lastMo
 import type { GameModeId } from '../../game/modes/types';
 import type { Repo } from '../../data/repo';
 import { readerMapLine } from '../../engine/summaryView';
-import { avatarOf, learnerOf, shop2On, type CardMap, type Kid } from '../../engine/models';
+import { avatarOf, learnerOf, shop2On, type CardMap, type Kid, type KidGame } from '../../engine/models';
 import { PrereaderHome } from '../early/PrereaderScreens';
 import { PrereaderSummary } from '../early/PrereaderSummary';
 import type { RunInfo } from '../runShared';
@@ -259,13 +260,13 @@ function WeekStars({ days, streak }: { days: ReturnType<typeof weekDays>; streak
   );
 }
 
-export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onBack: () => void; vault?: VaultApi }) {
+export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; onBack: () => void; vault?: VaultApi }) {
   return learnerOf(props.kid.settings) === 'prereader'
-    ? <PrereaderHome kid={props.kid} onStart={() => props.onStart()} onBack={props.onBack} onGame={props.onGame} vault={props.vault} />
+    ? <PrereaderHome kid={props.kid} repo={props.repo} onStart={() => props.onStart()} onBack={props.onBack} onGame={props.onGame} onTipGame={props.onTipGame} vault={props.vault} />
     : <ReaderHome {...props} />;
 }
 
-function ReaderHome({ kid, repo, onStart, onGame, onBack, vault }: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onBack: () => void; vault?: VaultApi }) {
+function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault }: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; onBack: () => void; vault?: VaultApi }) {
   const [shop, setShop] = useState(false);
   const [shopVault, setShopVault] = useState(false);
   const hasVault = !!vault && vaultOn(kid.settings);
@@ -320,6 +321,7 @@ function ReaderHome({ kid, repo, onStart, onGame, onBack, vault }: { kid: Kid; r
           </button>
         ) : null}
         <GoalJar game={kid.game} learner="reader" onClick={() => setShop(true)} />
+        <ShopMathEntry kid={kid} repo={repo} onGame={onTipGame ?? (() => undefined)} />
         <CampRow game={kid.game} />
         {modes.length >= 2 ? (
           <div className="mode-cards" role="group" aria-label="Pick how to play">

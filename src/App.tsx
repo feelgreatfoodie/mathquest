@@ -342,6 +342,7 @@ export function App() {
           kid={kid}
           vault={vaultFor(kid.id)}
           onGame={(d) => applyGame(kid.id, d)}
+          onTipGame={(g) => showGame(kid.id, g)}
           repo={repo}
           onStart={(mode) => void startRun(kid.id, mode)}
           onBack={() => (kidSession ? void signOutParent() : setScreen({ name: 'picker' }))}

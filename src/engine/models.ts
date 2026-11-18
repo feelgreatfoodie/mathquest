@@ -60,6 +60,8 @@ export interface KidSettings {
   paceMultiplier?: number;
   /** The item shop (weapons, gear, pets, adventure, camp): off until a parent turns it on. A missing value reads as off. Read it through `shop2On`. */
   shop2?: boolean;
+  /** The shop math practice card (needs the item shop too): off until a parent turns it on. A missing value reads as off. Read it through `shopMathOn`. */
+  shopMath?: boolean;
   /** The gem vault: off until a parent turns it on, with editable bonus rates per 10 gems (d3, d7, d14). A missing value reads as off with the default rates. Read it through `vaultOn` and `rateOf` in game/vault.ts. */
   vault?: VaultSettings;
   /** Gem speed: 0.5 (Slow), 1 (Normal) or 1.5 (Fast). A missing value reads as 1. Read it through `gemSpeedOf` in gems.ts. */
@@ -104,6 +106,9 @@ export interface KidGame {
   /** Gems earned from runs on `gemsDay` (local YYYY-MM-DD). Absent on a game from before the throttle. Read it through `earnedTodayOf`. */
   gemsEarnedToday?: number;
   gemsDay?: string;
+  /** Shop math tips paid on `shopTipsDay` (same day key as `gemsDay`). At most SHOP_TIPS_PER_DAY a day, enforced by applyGameDelta against the stored game. Absent on a game from before the tip. */
+  shopTipsToday?: number;
+  shopTipsDay?: string;
 }
 
 /** The shop fields as stored in the kid doc's top-level `inventory` map. */
@@ -224,6 +229,10 @@ export function shop2On(settings: { shop2?: boolean } | undefined | null): boole
   return settings?.shop2 === true;
 }
 
+export function shopMathOn(settings: { shopMath?: boolean } | undefined | null): boolean {
+  return settings?.shopMath === true;
+}
+
 /** Sound effects are on unless a parent turned them off for this kid. */
 export function soundOf(settings: { sound?: boolean } | undefined | null): boolean {
   return settings?.sound !== false;
@@ -323,6 +332,9 @@ export function normalizeGame(raw: unknown): KidGame {
     ...(typeof g.goal === 'string' && g.goal ? { goal: g.goal } : {}),
     ...(typeof g.gemsDay === 'string' && typeof g.gemsEarnedToday === 'number' && Number.isFinite(g.gemsEarnedToday)
       ? { gemsEarnedToday: g.gemsEarnedToday, gemsDay: g.gemsDay }
+      : {}),
+    ...(typeof g.shopTipsDay === 'string' && typeof g.shopTipsToday === 'number' && Number.isFinite(g.shopTipsToday)
+      ? { shopTipsToday: g.shopTipsToday, shopTipsDay: g.shopTipsDay }
       : {}),
   };
 }

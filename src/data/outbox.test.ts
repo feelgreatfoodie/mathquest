@@ -58,7 +58,7 @@ describe('the outbox keeps a finished run until both writes are confirmed', () =
     expect(saved.saved).toBe(false);
     const queued = await outbox.list(kid.id);
     expect(queued).toHaveLength(1);
-    expect(queued[0]!.runId).toBe(queued[0]!.sessionLog.id);
+    expect(queued[0]!.runId).toBe(queued[0]!.sessionLog!.id);
     expect(queued[0]!.gameDelta.xp).toBe(run.summary().xp);
 
     // Next launch: a fresh repo on the same storage, the outbox read back from IndexedDB.
@@ -155,6 +155,21 @@ describe('a run the server always refuses', () => {
     await outbox.put({ runId: 'r2', kidId: 'k1', sessionLog: session, gameDelta: { xp: 3, gems: 1, playedAt: 5 }, savedAt: 5 });
     for (let i = 0; i < 5; i++) await expect(replayOutbox(repo)).rejects.toThrow();
     expect(await outbox.list()).toHaveLength(1);
+    expect(await outbox.listParked()).toHaveLength(0);
+  });
+  it('a tip the stored game refuses (the 4th of a day) is dropped, not retried, and does not block the queue', async () => {
+    const { GameDeltaError } = await import('../engine/game');
+    const apply = vi.fn(async (_id: string, d: { shopTip?: boolean }) => {
+      if (d.shopTip) throw new GameDeltaError('That is all the tips for today.');
+      return {} as never;
+    });
+    const repo = { applyGameDelta: apply } as unknown as Parameters<typeof replayOutbox>[0];
+    const tipDelta = { shopTip: true, gemGrant: { base: 1, learner: 'reader' as const, settings: {} }, playedAt: 5 };
+    await outbox.put({ runId: 't1', kidId: 'k1', gameDelta: tipDelta, savedAt: 5 });
+    await outbox.put({ runId: 't2', kidId: 'k1', gameDelta: { xp: 3, playedAt: 6 }, savedAt: 6 });
+    expect(await replayOutbox(repo)).toEqual({ replayed: 1 });
+    expect(await outbox.list()).toHaveLength(0);
+    expect(apply).toHaveBeenCalledTimes(2);
     expect(await outbox.listParked()).toHaveLength(0);
   });
 });

@@ -155,3 +155,59 @@ describe('applyDelta: map rewards (gemGrant) go through the throttle', () => {
     expect(() => applyDelta(rich, { gemGrant: { base: 10, learner: 'reader', settings: {} } })).toThrow(GameDeltaError);
   });
 });
+
+describe('applyDelta: shop math tips', () => {
+  const tip = (at: number) => ({
+    shopTip: true,
+    gemGrant: { base: 1, learner: 'reader' as const, settings: {} },
+    playedAt: at,
+  });
+
+  it('three tips a day pay 1 gem each and the 4th throws', () => {
+    let g = rich;
+    for (let i = 1; i <= 3; i++) {
+      g = applyDelta(g, tip(T0 + i));
+      expect(g).toMatchObject({ gems: 40 + i, shopTipsToday: i, shopTipsDay: dayKey(T0) });
+    }
+    expect(() => applyDelta(g, tip(T0 + 10))).toThrow(GameDeltaError);
+    expect(g.gems).toBe(43);
+  });
+
+  it('the count starts again on a new day', () => {
+    let g = rich;
+    for (let i = 0; i < 3; i++) g = applyDelta(g, tip(T0 + i));
+    g = applyDelta(g, tip(T0 + DAY));
+    expect(g).toMatchObject({ shopTipsToday: 1, shopTipsDay: dayKey(T0 + DAY) });
+  });
+
+  it('setting the clock back does not reset a full count', () => {
+    let g = applyDelta(rich, tip(T0 + DAY));
+    for (let i = 0; i < 2; i++) g = applyDelta(g, tip(T0 + DAY + i + 1));
+    expect(() => applyDelta(g, tip(T0))).toThrow(GameDeltaError);
+  });
+
+  it('a tip counts toward the soft throttle like chest gems', () => {
+    const throttled = { ...rich, gemsEarnedToday: 100, gemsDay: dayKey(T0) };
+    const g = applyDelta(throttled, tip(T0));
+    expect(g.gems).toBe(41); // one gem is the floor
+    expect(g.gemsEarnedToday).toBe(101);
+    expect(g.shopTipsToday).toBe(1);
+  });
+
+  it('a tip is one gem grant and nothing else', () => {
+    const base = tip(T0);
+    expect(() => applyDelta(rich, { shopTip: true, gems: 1, playedAt: T0 })).toThrow(GameDeltaError);
+    expect(() => applyDelta(rich, { ...base, gemGrant: { ...base.gemGrant, base: 5 } })).toThrow(GameDeltaError);
+    expect(() => applyDelta(rich, { ...base, xp: 10 })).toThrow(GameDeltaError);
+    expect(() => applyDelta(rich, { ...base, purchase: 'wizard' })).toThrow(GameDeltaError);
+    expect(() => applyDelta(rich, { shopTip: true, gemGrant: base.gemGrant })).toThrow(GameDeltaError);
+  });
+
+  it('other grants and runs leave the tip count alone and are not capped', () => {
+    const full = { ...rich, shopTipsToday: 3, shopTipsDay: dayKey(T0) };
+    const g = applyDelta(full, { gemGrant: { base: 1, learner: 'reader', settings: {} }, playedAt: T0 });
+    expect(g.shopTipsToday).toBe(3);
+    expect(applyDelta(rich, { gemGrant: { base: 1, learner: 'reader', settings: {} }, playedAt: T0 }).shopTipsToday).toBeUndefined();
+    expect(() => applyDelta(full, tip(T0))).toThrow(GameDeltaError);
+  });
+});

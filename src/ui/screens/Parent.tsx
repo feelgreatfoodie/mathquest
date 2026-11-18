@@ -8,7 +8,7 @@ import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
 import { RATE_MAX, VAULT_TERMS, maturesAtOf, owedOf, payoutOf, rateOf, vaultBalance, vaultOn, type VaultDeposit, type VaultTerm } from '../../game/vault';
-import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modesOnOf, modulesOf, paceOf, shop2On, soundOf, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
+import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modesOnOf, modulesOf, paceOf, shop2On, shopMathOn, soundOf, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
@@ -165,7 +165,7 @@ export function ParkedRounds({ kids }: { kids: Kid[] }) {
       <ul>
         {parked.map((r) => (
           <li key={r.runId}>
-            {name(r.kidId)}, {new Date(r.sessionLog.endedAt ?? r.savedAt).toLocaleString()}: {r.gameDelta.xp ?? 0} XP, {r.gameDelta.gems ?? 0} gems
+            {name(r.kidId)}, {new Date(r.sessionLog?.endedAt ?? r.savedAt).toLocaleString()}: {r.gameDelta.xp ?? 0} XP, {r.gameDelta.gems ?? 0} gems
             {' '}
             <button type="button" className="btn btn-ghost btn-small" onClick={() => void outbox.removeParked(r.runId).then(() => setParked((p) => p.filter((x) => x.runId !== r.runId)))}>Dismiss</button>
           </li>
@@ -825,6 +825,11 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPictu
           <input type="checkbox" checked={shop2On(settings)} onChange={(e) => setSettings({ ...settings, shop2: e.target.checked })} />
           Item shop (weapons, gear, pets, adventure items, camp)
           <span className="hint">Fixed prices, no random rewards. Turn it on after every device has updated.</span>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={shopMathOn(settings)} onChange={(e) => setSettings({ ...settings, shopMath: e.target.checked })} />
+          Shop math card (needs the item shop)
+          <span className="hint">A practice sum with the player's own gems and savings goal. A right first answer earns a 1-gem tip, up to 3 a day. It never changes the review schedule.</span>
         </label>
         {learnerOf(settings) === 'reader' ? (
           <label className="check">
