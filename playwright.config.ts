@@ -10,6 +10,9 @@ export default defineConfig({
   timeout: 90_000,
   workers: 1,
   reporter: [['list']],
+  // Visual baselines live beside the specs, one folder, no platform suffix (system Chrome on macOS).
+  snapshotPathTemplate: '{testDir}/__baselines__/{arg}{ext}',
+  expect: { toHaveScreenshot: { threshold: 0.1, maxDiffPixelRatio: 0.001, animations: 'disabled' } },
   use: {
     baseURL: `http://localhost:${PORT}`,
     channel: 'chrome',
