@@ -113,12 +113,14 @@ export class FirestoreRepo implements Repo {
         if ((await tx.get(sessionRef)).exists()) return current;
         tx.set(sessionRef, opts.session);
       }
-      const next = applyDelta(current, delta);
+      let next = applyDelta(current, delta);
       if (delta.purchase !== undefined) {
-        // The log entry rides in the same transaction as the hero and the gems it records.
+        // The log entry rides in the same transaction as the hero and the gems it records. The kid doc names it
+        // (lastPurchaseId) so the rules can find it: a gem drop is legal only with that one entry.
         const id = newId();
         const entry: PurchaseLog = { id, heroId: delta.purchase, cost: current.gems - next.gems, at: Date.now() };
         tx.set(doc(this.purchases(kidId), id), entry);
+        next = { ...next, lastPurchaseId: id };
       }
       tx.update(ref, { game: next });
       return next;

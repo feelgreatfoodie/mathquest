@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { HEROES, MAX_HERO_PRICE, GameDeltaError, applyDelta } from './game';
+import { HEROES, GameDeltaError, applyDelta } from './game';
 import { DEFAULT_GAME } from './models';
 
 const T0 = Date.parse('2026-11-17T20:00:00Z');
@@ -39,16 +39,6 @@ describe('applyDelta', () => {
     const copy = JSON.parse(JSON.stringify(rich));
     applyDelta(rich, { xp: 5, purchase: 'wizard' });
     expect(rich).toEqual(copy);
-  });
-});
-
-describe('the gems guard in firestore.rules', () => {
-  it('holds the same maximum as the dearest hero', () => {
-    const rules = readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8');
-    const m = /function maxHeroPrice\(\) \{\s*return (\d+);/.exec(rules);
-    expect(m).not.toBeNull();
-    expect(Number(m![1])).toBe(MAX_HERO_PRICE);
-    expect(MAX_HERO_PRICE).toBe(Math.max(...HEROES.map((h) => h.cost)));
   });
 });
 

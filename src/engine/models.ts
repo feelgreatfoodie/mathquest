@@ -62,6 +62,8 @@ export interface KidGame {
   bestCombo: number;
   heroes: string[];
   hero: string;
+  /** Set by the write that buys a hero: the id of its purchases doc, so the rules can find that doc. */
+  lastPurchaseId?: string;
 }
 
 /** One hero bought: written with the game change in the same transaction, never edited or deleted. */

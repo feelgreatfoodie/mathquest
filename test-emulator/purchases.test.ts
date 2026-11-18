@@ -48,7 +48,7 @@ beforeEach(async () => {
 /** The raw write a purchase makes: the game change and the log entry in one batch. */
 function buyBatch(db: Db, id: string, over: { entry?: Record<string, unknown>; game?: Record<string, unknown>; entryKid?: string; omit?: string } = {}) {
   const b = writeBatch(db);
-  b.update(kidRef(db, id), { game: { ...storedKid(id).game, gems: 71, heroes: ['knight', 'wizard'], hero: 'wizard', ...(over.game ?? {}) } });
+  b.update(kidRef(db, id), { game: { ...storedKid(id).game, gems: 71, heroes: ['knight', 'wizard'], hero: 'wizard', lastPurchaseId: (over.entry?.id as string | undefined) ?? 'p1', ...(over.game ?? {}) } });
   const e: Record<string, unknown> = entry(over.entry);
   if (over.omit) delete e[over.omit];
   b.set(doc(purchases(db, over.entryKid ?? id), 'p1'), e);
@@ -160,7 +160,7 @@ describe('purchase cost is bound to the hero catalog price', () => {
       });
       const db = kidDb();
       const b = writeBatch(db);
-      b.update(kidRef(db), { game: { ...storedKid(KID).game, gems: 200 - price, heroes: ['knight', id], hero: id } });
+      b.update(kidRef(db), { game: { ...storedKid(KID).game, gems: 200 - price, heroes: ['knight', id], hero: id, lastPurchaseId: `p-${id}` } });
       b.set(doc(purchases(db), `p-${id}`), { id: `p-${id}`, heroId: id, cost: price, at: 1 });
       await assertSucceeds(b.commit());
     }
@@ -190,14 +190,9 @@ describe('a kid token cannot add a hero on the kid doc except at the catalog pri
     await assertFails(grow(kidDb(), { gems: 90, heroes: ['knight', 'wizard'], hero: 'wizard' }));
   });
 
-  it('a buy at the catalog price passes on the kid doc, for each hero', async () => {
-    await assertSucceeds(grow(kidDb(), { gems: 71, heroes: ['knight', 'wizard'], hero: 'wizard' }));
-    for (const [id, price] of [['ranger', 35], ['robot', 60]] as const) {
-      await env.withSecurityRulesDisabled(async (ctx) => {
-        await updateDoc(kidRef(ctx.firestore()), { 'game.gems': 200, 'game.heroes': ['knight'], 'game.hero': 'knight' });
-      });
-      await assertSucceeds(grow(kidDb(), { gems: 200 - price, heroes: ['knight', id], hero: id }));
-    }
+  it('a buy on the kid doc alone, without its purchases doc, is refused even at the catalog price', async () => {
+    await assertFails(grow(kidDb(), { gems: 71, heroes: ['knight', 'wizard'], hero: 'wizard' }));
+    await assertFails(grow(kidDb(), { gems: 71, heroes: ['knight', 'wizard'], hero: 'wizard', lastPurchaseId: 'p1' }));
   });
 
   it('a run (xp and gems up) and an equip still pass for a kid', async () => {
@@ -237,7 +232,7 @@ describe('a kid token write raises gems and xp by a bounded amount', () => {
   });
 
   it('a hero buy at the catalog price still passes with the bounds in place', async () => {
-    await assertSucceeds(write(kidDb(), { gems: base.gems - 15, heroes: ['knight', 'wizard'], hero: 'wizard' }));
+    await assertSucceeds(buyBatch(kidDb(), KID));
   });
 
   it('the repo path (applyGameDelta run and purchase) still passes', async () => {
