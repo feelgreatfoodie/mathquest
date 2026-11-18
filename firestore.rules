@@ -58,6 +58,17 @@ service cloud.firestore {
         || after.get('heroes', []).size() > before.get('heroes', []).size();
     }
 
+    // xp and bestCombo only grow, and the hero list never loses an entry. gemsDropOk misses a stale copy that
+    // keeps gems but rewinds xp (a real loss: xp 1363 to 467). A missing field reads as 0 or empty, so a
+    // game {} doc can still be filled. Admin SDK writes skip rules, so a support reset stays possible.
+    function gameMonotonicOk() {
+      let before = resource.data.get('game', {});
+      let after = request.resource.data.get('game', {});
+      return after.get('xp', 0) >= before.get('xp', 0)
+        && after.get('bestCombo', 0) >= before.get('bestCombo', 0)
+        && after.get('heroes', []).hasAll(before.get('heroes', []));
+    }
+
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
     // touches them.
     match /parents/{document=**} {
@@ -85,8 +96,8 @@ service cloud.firestore {
         allow read: if isParent(uid) || isKid(uid, kidId);
         allow delete: if isParent(uid);
         allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId;
-        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropOk())
-          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame() && gemsDropOk());
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropOk() && gameMonotonicOk())
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame() && gemsDropOk() && gameMonotonicOk());
 
         match /cards/{cardId} {
           allow read: if isParent(uid) || isKid(uid, kidId);

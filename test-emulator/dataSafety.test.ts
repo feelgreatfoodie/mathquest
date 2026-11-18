@@ -174,6 +174,64 @@ describe('gems drop guard in the rules', () => {
   });
 });
 
+describe('monotonic game guards in the rules', () => {
+  const withGame = (g: Record<string, unknown>) => ({ ...storedKid().game, ...g });
+  const seed = async (g: Record<string, unknown>) =>
+    env.withSecurityRulesDisabled(async (ctx) => updateDoc(kidRef(ctx.firestore()), { game: withGame(g) }));
+  const clients = [['parent', parentDb] as const, ['kid', kidDb] as const];
+
+  for (const [who, db] of clients) {
+    it(`denies an xp decrease from the ${who} (1363 to 467)`, async () => {
+      await seed({ xp: 1363 });
+      await assertFails(updateDoc(kidRef(db()), { game: withGame({ xp: 467 }) }));
+      await assertFails(updateDoc(kidRef(db()), { game: withGame({ xp: 1362 }) }));
+      expect((await stored()).game.xp).toBe(1363);
+    });
+
+    it(`denies a bestCombo decrease from the ${who}`, async () => {
+      await seed({ bestCombo: 30 });
+      await assertFails(updateDoc(kidRef(db()), { game: withGame({ bestCombo: 16 }) }));
+      await assertFails(updateDoc(kidRef(db()), { game: withGame({ bestCombo: 29 }) }));
+    });
+
+    it(`denies dropping a hero from the ${who}`, async () => {
+      await assertFails(updateDoc(kidRef(db()), { game: withGame({ heroes: ['knight'] }) }));
+      await assertFails(updateDoc(kidRef(db()), { game: withGame({ heroes: ['knight', 'dragon'] }) })); // swap
+      await assertFails(updateDoc(kidRef(db()), { game: withGame({ heroes: [] }) }));
+    });
+
+    it(`allows a normal run, equal values and a hero purchase from the ${who}`, async () => {
+      await assertSucceeds(updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 90 }) }));
+      await assertSucceeds(updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 90 }) })); // no change
+      await assertSucceeds(
+        updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 75, heroes: ['knight', 'wizard', 'ranger'] }) }),
+      );
+    });
+  }
+
+  it('reads a missing xp, bestCombo or heroes as 0 or empty, so a game {} doc can be filled', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => updateDoc(kidRef(ctx.firestore()), { game: {} }));
+    await assertSucceeds(updateDoc(kidRef(kidDb()), { game: { xp: 10, bestCombo: 2, gems: 1, heroes: ['knight'], hero: 'knight' } }));
+  });
+
+  it('applyGameDelta still passes for a run, a purchase and a retry', async () => {
+    const kid = kidRepo() as unknown as { applyGameDelta?: (id: string, d: object, o?: object) => Promise<unknown> };
+    await seed({ gems: 40, heroes: ['knight'], hero: 'knight' });
+    await finishRun(kidRepo(), (await kidRepo().getKid(KID))!, { xp: 60, gems: 6, bestCombo: 5 });
+    await buy(kidRepo(), (await kidRepo().getKid(KID))!, 'wizard');
+    expect(kid.applyGameDelta).toBeTypeOf('function');
+    const after = (await stored()).game;
+    expect(after.xp).toBe(527);
+    expect(after.bestCombo).toBe(16);
+    expect(after.heroes).toEqual(['knight', 'wizard']);
+  });
+
+  it('an Admin write (rules disabled) can still reset xp, for support', async () => {
+    await seed({ xp: 0, bestCombo: 0, heroes: ['knight'] });
+    expect((await stored()).game.xp).toBe(0);
+  });
+});
+
 describe('kid-token run after normalization still writes game', () => {
   it('a kid loads the doc through normalizeKid and a run writes game, leaving every other key as stored', async () => {
     const before = await stored();
