@@ -1,5 +1,5 @@
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
-import { PAY_CHUNK, bonusFor, depositProblem, maturesAtOf, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultTerm } from '../game/vault';
+import { PAY_CHUNK, bonusFor, depositProblem, maturesAtOf, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { WorldState } from '../game/overworld/worldState';
 import { newId, type Repo } from './repo';
@@ -98,7 +98,7 @@ export class LocalRepo implements Repo {
     if (problem) throw new GameDeltaError(problem);
     const id = newId();
     const ratePer10 = rateOf(kid.settings, termDays);
-    const dep: VaultDeposit = { id, amount, termDays, ratePer10, bonus: bonusFor(amount, ratePer10), status: 'active', paid: 0, createdAt: Date.now() };
+    const dep: VaultDeposit = { id, amount, termDays, ratePer10, bonus: bonusFor(amount, ratePer10), status: 'active', paidOut: 0, createdAt: Date.now() };
     write(`vault:${kidId}`, [...read<VaultDeposit[]>(`vault:${kidId}`, []), dep]);
     const next: KidGame = { ...kid.game, gems: kid.game.gems - amount };
     this.patchKid(kidId, (k) => ({ ...k, game: next, vault: { ...pointer, active: pointer.active + 1, lastId: id } }));
@@ -111,18 +111,20 @@ export class LocalRepo implements Repo {
     const deps = read<VaultDeposit[]>(`vault:${kidId}`, []);
     const dep = deps.find((d) => d.id === depositId);
     if (!dep) throw new GameDeltaError('That deposit is not in the vault.');
+    if (dep.status === 'collected' || dep.status === 'broken') return { paid: 0, done: true };
     const closing = dep.status === 'active';
-    const status = closing ? (mode === 'break' ? 'broken' : 'collected') : dep.status;
-    if (closing && status === 'collected' && Date.now() < maturesAtOf(dep)) throw new GameDeltaError('The vault is not ready yet.');
-    const owed = owedOf({ ...dep, status });
-    if (owed <= 0) return { paid: 0, done: true };
+    const running: VaultStatus = closing ? (mode === 'break' ? 'breaking' : 'collecting') : dep.status;
+    if (closing && running === 'collecting' && Date.now() < maturesAtOf(dep)) throw new GameDeltaError('The vault is not ready yet.');
+    const owed = owedOf({ ...dep, status: running });
     const chunk = Math.min(PAY_CHUNK, owed);
+    const last = chunk === owed;
+    const status: VaultStatus = last ? (running === 'breaking' ? 'broken' : 'collected') : running;
     const kid = normalizeKid(stored);
     const pointer: VaultPointer = stored.vault ?? { active: 0 };
-    write(`vault:${kidId}`, deps.map((d) => (d.id === depositId ? { ...d, status, paid: d.paid + chunk, ...(closing ? { collectedAt: Date.now() } : {}) } : d)));
+    write(`vault:${kidId}`, deps.map((d) => (d.id === depositId ? { ...d, status, paidOut: d.paidOut + chunk, ...(closing ? { collectedAt: Date.now() } : {}) } : d)));
     const game: KidGame = { ...kid.game, gems: kid.game.gems + chunk };
     this.patchKid(kidId, (k) => ({ ...k, game, ...(closing ? { vault: { ...pointer, active: pointer.active - 1, closedId: depositId } } : {}) }));
-    return { paid: chunk, done: chunk === owed };
+    return { paid: chunk, done: last };
   }
 
   async listVault(kidId: string, max: number): Promise<VaultDeposit[]> {

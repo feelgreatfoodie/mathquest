@@ -1,7 +1,10 @@
 import { execSync } from 'node:child_process';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { loadEnv } from 'vite';
 import { defineConfig, type Plugin } from 'vitest/config';
+// @ts-expect-error plain .mjs script, no types
+import { buildEnvMessage, buildEnvProblems } from './scripts/build-env.mjs';
 
 // The build number: seconds since the epoch when this bundle was built (APP_BUILD overrides it for the release
 // script's tests). The bundle compares it with config/app.minVersion; dist/version.json carries the same number
@@ -27,7 +30,23 @@ function versionJson(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command, mode }) => {
+  // A production build with no Firebase config would ship a bundle that cannot sign a kid in (scripts/build-env.mjs).
+  if (command === 'build') {
+    const problems: string[] = buildEnvProblems({ ...loadEnv(mode, process.cwd(), 'VITE_'), ...pickViteEnv() });
+    if (problems.length) throw new Error(buildEnvMessage(problems));
+  }
+  return config;
+});
+
+/** Variables set in the shell win over .env files, as Vite's own loadEnv does; an empty shell value counts as empty. */
+function pickViteEnv(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) if (k.startsWith('VITE_') && v !== undefined) out[k] = v;
+  return out;
+}
+
+const config = {
   define: { __APP_BUILD__: JSON.stringify(BUILD), __APP_SHA__: JSON.stringify(shortSha()) },
   plugins: [
     react(),
@@ -75,4 +94,4 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts', 'scripts/**/*.test.ts', 'functions/test/clientip.test.ts'],
   },
-});
+};

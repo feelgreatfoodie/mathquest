@@ -17,7 +17,7 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
-import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultTerm } from '../game/vault';
+import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { WorldState } from '../game/overworld/worldState';
 import { newId, type Repo } from './repo';
@@ -147,7 +147,7 @@ export class FirestoreRepo implements Repo {
       const id = newId();
       const ratePer10 = rateOf(kid.settings, termDays);
       // createdAt is the server's time. No time from this device goes into the deposit.
-      tx.set(doc(this.vault(kidId), id), { id, amount, termDays, ratePer10, bonus: bonusFor(amount, ratePer10), status: 'active', paid: 0, createdAt: serverTimestamp() });
+      tx.set(doc(this.vault(kidId), id), { id, amount, termDays, ratePer10, bonus: bonusFor(amount, ratePer10), status: 'active', paidOut: 0, createdAt: serverTimestamp() });
       const next: KidGame = { ...kid.game, gems: kid.game.gems - amount };
       tx.update(ref, { game: splitGame(next).game, vault: { ...pointer, active: pointer.active + 1, lastId: id } });
       return next;
@@ -157,23 +157,28 @@ export class FirestoreRepo implements Repo {
   async vaultPay(kidId: string, depositId: string, mode: 'collect' | 'break'): Promise<{ paid: number; done: boolean }> {
     const ref = doc(this.kids(), kidId);
     const depRef = doc(this.vault(kidId), depositId);
+    // One chunk per transaction. The transaction reads the deposit and the kid, then writes game.gems and paidOut together,
+    // so a chunk lands once: a second client that read the same paidOut retries, reads the new one and pays the next chunk or nothing.
     return runTransaction(this.db, async (tx) => {
       const [snap, depSnap] = await Promise.all([tx.get(ref), tx.get(depRef)]);
       if (!snap.exists()) throw new Error('That player was removed.');
       if (!depSnap.exists()) throw new GameDeltaError('That deposit is not in the vault.');
       const dep = fromStored(depSnap.data());
+      if (dep.status === 'collected' || dep.status === 'broken') return { paid: 0, done: true };
+      // An active deposit starts the payout the caller asked for. A payout in progress finishes as it started, whatever `mode` says.
       const closing = dep.status === 'active';
-      const status = closing ? (mode === 'break' ? 'broken' : 'collected') : dep.status;
-      const owed = owedOf({ ...dep, status });
-      if (owed <= 0) return { paid: 0, done: true };
+      const running: VaultStatus = closing ? (mode === 'break' ? 'breaking' : 'collecting') : dep.status;
+      const owed = owedOf({ ...dep, status: running });
       const chunk = Math.min(PAY_CHUNK, owed);
+      const last = chunk === owed;
+      const status: VaultStatus = last ? (running === 'breaking' ? 'broken' : 'collected') : running;
       const kid = normalizeKid(snap.data() as Kid);
       const pointer: VaultPointer = (snap.data() as Kid).vault ?? { active: 0 };
-      // The first chunk closes the deposit. The rules check the term against their own clock and createdAt: this code never does.
-      tx.update(depRef, { paid: dep.paid + chunk, ...(closing ? { status, collectedAt: serverTimestamp() } : {}) });
+      // The first chunk leaves `active`: the rules check the term against their own clock and createdAt (this code never does) and the pointer drops.
+      tx.update(depRef, { paidOut: dep.paidOut + chunk, ...(status !== dep.status ? { status } : {}), ...(closing ? { collectedAt: serverTimestamp() } : {}) });
       const game = splitGame({ ...kid.game, gems: kid.game.gems + chunk }).game;
       tx.update(ref, closing ? { game, vault: { ...pointer, active: pointer.active - 1, closedId: depositId } } : { game });
-      return { paid: chunk, done: chunk === owed };
+      return { paid: chunk, done: last };
     });
   }
 
@@ -253,8 +258,8 @@ function fromStored(raw: Record<string, unknown>): VaultDeposit {
     termDays: Number(raw.termDays) as VaultTerm,
     ratePer10: Number(raw.ratePer10),
     bonus: Number(raw.bonus),
-    status: raw.status === 'collected' || raw.status === 'broken' ? raw.status : 'active',
-    paid: Number(raw.paid ?? 0),
+    status: (['collecting', 'breaking', 'collected', 'broken'] as const).find((x) => x === raw.status) ?? 'active',
+    paidOut: Number(raw.paidOut ?? 0),
     // A deposit just written has no server stamp yet in a cached read; it reads as now until the server fills it.
     createdAt: ms(raw.createdAt) || Date.now(),
     ...(raw.collectedAt ? { collectedAt: ms(raw.collectedAt) } : {}),

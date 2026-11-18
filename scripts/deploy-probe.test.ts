@@ -3,7 +3,7 @@ import { scryptSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_GAME } from '../src/engine/models';
 // @ts-expect-error plain .mjs script, no types
-import { MISMATCH_MESSAGE, buildDocs, callableUrl, checkSignIn, checkWrongPin, decodeJwtPayload, hashPin, makeProbe, parseArgs } from './deploy-probe.mjs';
+import { MISMATCH_MESSAGE, buildDocs, callableUrl, checkBundle, checkSignIn, checkWrongPin, decodeJwtPayload, hashPin, liveUrl, makeProbe, parseArgs, probeBundle, scriptUrls } from './deploy-probe.mjs';
 
 const jwt = (payload: object) => `h.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.s`;
 const P = { familyUid: 'probe-fam', kidId: 'probe-kid', name: 'zprobeabc', nameKey: 'zprobeabc', pin: '1234', wrongPin: '4321' };
@@ -19,7 +19,10 @@ describe('deploy-probe pieces (no network)', () => {
     expect(callableUrl('my-proj-1')).toBe('https://us-west1-my-proj-1.cloudfunctions.net/kidSignIn');
   });
   it('parses --project and rejects a missing or odd value', () => {
-    expect(parseArgs(['--project', 'my-proj-1'])).toEqual({ project: 'my-proj-1' });
+    expect(parseArgs(['--project', 'my-proj-1'])).toEqual({ project: 'my-proj-1', url: 'https://my-proj-1.web.app/' });
+    expect(parseArgs(['--project', 'my-proj-1', '--url', 'https://math.example.com'])).toEqual({ project: 'my-proj-1', url: 'https://math.example.com' });
+    expect(parseArgs(['--project', 'my-proj-1', '--url', 'http://insecure.example.com'])).toBeNull();
+    expect(parseArgs(['--project', 'my-proj-1', '--url'])).toBeNull();
     expect(parseArgs([])).toBeNull();
     expect(parseArgs(['--project'])).toBeNull();
     expect(parseArgs(['--project', '--x'])).toBeNull();
@@ -76,5 +79,53 @@ describe('deploy-probe pieces (no network)', () => {
   it('keeps the generic message in step with core.ts', () => {
     const core = readFileSync(new URL('../functions/src/core.ts', import.meta.url), 'utf8');
     expect(core).toContain(`MISMATCH_MESSAGE = "${MISMATCH_MESSAGE}"`);
+  });
+});
+
+// The served bundle must carry the Firebase project id. A no-config bundle has none and runs in local mode.
+describe('deploy-probe bundle check (no network)', () => {
+  const PROJECT = 'demo-proj-1';
+  const html = '<html><head><script type="module" crossorigin src="/assets/index-abc123.js"></script><link rel="modulepreload" href="/assets/vendor-def456.js"><link rel="stylesheet" href="/assets/index-x.css"><script src="https://cdn.example.com/x.js"></script></head></html>';
+  const page = 'https://demo-proj-1.web.app/';
+  const reply = (files: Record<string, string>, pageHtml = html) => async (u: string) => {
+    if (u === page) return { ok: true, status: 200, text: async () => pageHtml };
+    const t = files[u];
+    return t === undefined ? { ok: false, status: 404, text: async () => '' } : { ok: true, status: 200, text: async () => t };
+  };
+  it('builds the default live URL from the project', () => {
+    expect(liveUrl(PROJECT)).toBe(page);
+  });
+  it('finds module scripts and preloads, resolves them against the page, skips css, keeps order, no repeats', () => {
+    expect(scriptUrls(html + html, page)).toEqual([
+      'https://demo-proj-1.web.app/assets/index-abc123.js',
+      'https://demo-proj-1.web.app/assets/vendor-def456.js',
+      'https://cdn.example.com/x.js',
+    ]);
+  });
+  it('passes when a served script contains the project id', () => {
+    expect(checkBundle([{ url: 'a', text: 'x' }, { url: 'b', text: `a={projectId:"${PROJECT}"}` }], PROJECT)).toEqual([]);
+  });
+  it('fails when no script contains the project id (a no-config bundle), and when the page loads no script', () => {
+    expect(checkBundle([{ url: 'a', text: 'projectId:void 0' }], PROJECT)[0]).toContain('none of 1 served script');
+    expect(checkBundle([{ url: 'a', text: null }], PROJECT)[0]).toContain(PROJECT);
+    expect(checkBundle([], PROJECT)).toEqual(['bundle: the page loads no script files']);
+  });
+  it('fetches the live page and its scripts, and passes on a configured bundle', async () => {
+    const fetchImpl = reply({ 'https://demo-proj-1.web.app/assets/index-abc123.js': `projectId:"${PROJECT}"`, 'https://demo-proj-1.web.app/assets/vendor-def456.js': 'v', 'https://cdn.example.com/x.js': 'c' });
+    expect(await probeBundle({ url: page, project: PROJECT, fetchImpl })).toEqual([]);
+  });
+  it('fails a served no-config bundle even though the page and scripts load fine', async () => {
+    const fetchImpl = reply({ 'https://demo-proj-1.web.app/assets/index-abc123.js': 'const cfg={apiKey:void 0,projectId:void 0}', 'https://demo-proj-1.web.app/assets/vendor-def456.js': 'v', 'https://cdn.example.com/x.js': 'c' });
+    const problems = await probeBundle({ url: page, project: PROJECT, fetchImpl });
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('kid sign-in would fail');
+  });
+  it('fails on an HTTP error for the page, and on a network error', async () => {
+    expect((await probeBundle({ url: page, project: PROJECT, fetchImpl: async () => ({ ok: false, status: 503, text: async () => '' }) }))[0]).toContain('HTTP 503');
+    expect((await probeBundle({ url: page, project: PROJECT, fetchImpl: async () => { throw new Error('offline'); } }))[0]).toContain('offline');
+  });
+  it('the script calls the bundle check inside probe() so a passing sign-in cannot hide a bad bundle', () => {
+    const src = readFileSync(new URL('./deploy-probe.mjs', import.meta.url), 'utf8');
+    expect(src).toMatch(/problems\.push\(\.\.\.\(await probeBundle\(/);
   });
 });

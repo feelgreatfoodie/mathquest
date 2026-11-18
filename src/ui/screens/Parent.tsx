@@ -480,7 +480,7 @@ function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
         {deposits.map((d) => (
           <li key={d.id} data-status={d.status}>
             {fmtDay(d.createdAt)}: {d.amount} gems for {d.termDays as VaultTerm} days at {d.ratePer10} per 10 ·{' '}
-            {d.status === 'active' ? `pays ${payoutOf({ ...d, status: 'collected' })} on ${fmtDay(maturesAtOf(d))}` : d.status === 'collected' ? `collected ${payoutOf(d)}` : `broken early, ${d.amount} returned`}
+            {d.status === 'active' ? `pays ${payoutOf({ ...d, status: 'collected' })} on ${fmtDay(maturesAtOf(d))}` : d.status === 'collected' ? `collected ${payoutOf(d)}` : d.status === 'collecting' ? `paying out ${payoutOf(d)}` : d.status === 'breaking' ? `broken early, paying back ${d.amount}` : `broken early, ${d.amount} returned`}
             {d.status !== 'active' && owedOf(d) > 0 ? ` (${owedOf(d)} still to pay)` : ''}
           </li>
         ))}
