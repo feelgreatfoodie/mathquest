@@ -7,7 +7,8 @@ import type { Firestore, Transaction } from 'firebase-admin/firestore';
 // index.ts wires it to callable functions.
 //
 // Data (server-only; firestore.rules deny every client read and write):
-//   pinIndex/{familyUid}/kids/{kidId}            { nameKey, salt, hash, updatedAt }
+//   pinIndex/{familyUid}/kids/{kidId}            { nameKey, salt, hash, updatedAt, pic?: { salt, hash, updatedAt } }
+//                                                pic is the picture PIN (4 of 9 icons), derived exactly like the digit PIN
 //   pinIndex/{familyUid}/attempts/family         family failure counter and lock
 //   pinIndex/_global/attempts/ip_{hash}          per-IP failure counter and lock
 //   pinIndex/_global/attempts/name_{hash}        per-name failure counter and lock
@@ -57,6 +58,8 @@ export function clientIp(
 
 const GLOBAL = '_global';
 const PIN_RE = /^\d{4}$/;
+/** A picture PIN: 4 icons out of 9, one letter a to i each, repeats allowed (6,561 combinations). Letters never collide with digits. */
+const PICTURE_RE = /^[a-i]{4}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 export interface AuthContext {
@@ -221,6 +224,8 @@ interface PinRow {
   kidId: string;
   salt: Buffer;
   hash: Buffer;
+  /** The picture PIN, when a parent set one. */
+  pic: { salt: Buffer; hash: Buffer } | null;
 }
 
 async function familyRegistered(d: Deps, uid: string): Promise<boolean> {
@@ -251,7 +256,8 @@ async function findRows(d: Deps, nameKey: string): Promise<PinRow[]> {
       const kid = await d.db.doc(`families/${familyUid}/kids/${doc.id}`).get();
       if (!kid.exists) continue;
       const row = doc.data();
-      out.push({ familyUid, kidId: doc.id, salt: Buffer.from(String(row.salt), 'hex'), hash: Buffer.from(String(row.hash), 'hex') });
+      const pic = row.pic && typeof row.pic === 'object' && row.pic.salt && row.pic.hash ? { salt: Buffer.from(String(row.pic.salt), 'hex'), hash: Buffer.from(String(row.pic.hash), 'hex') } : null;
+      out.push({ familyUid, kidId: doc.id, salt: Buffer.from(String(row.salt), 'hex'), hash: Buffer.from(String(row.hash), 'hex'), pic });
     }
   }
   return out;
@@ -267,7 +273,9 @@ export interface SignInInput {
 
 export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: string }> {
   const { name, pin } = input;
-  if (typeof name !== 'string' || typeof pin !== 'string' || !name.trim() || name.length > 40 || !PIN_RE.test(pin)) {
+  // `pin` is 4 digits, or 4 picture letters a to i. Both take the same path, the same counters and the same scrypt.
+  const isPicture = typeof pin === 'string' && PICTURE_RE.test(pin);
+  if (typeof name !== 'string' || typeof pin !== 'string' || !name.trim() || name.length > 40 || !(PIN_RE.test(pin) || isPicture)) {
     throw new HttpsError('invalid-argument', 'Type your name and a 4-digit PIN.');
   }
   const nameKey = normalizeName(name);
@@ -286,8 +294,10 @@ export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: s
   if (!(await reserve(d, buckets, entryId))) throw new HttpsError('resource-exhausted', LOCKED_MESSAGE);
 
   // An unknown name still pays for one scrypt, so timing does not reveal which names exist.
-  const derived = await scryptAsync(pin, row ? row.salt : DUMMY_SALT);
-  const ok = timingSafeEqual(derived, row ? row.hash : DUMMY_HASH) && row !== null;
+  // A picture tried on a kid with no picture PIN, like an unknown name, pays one scrypt and fails the same way.
+  const secret = row ? (isPicture ? row.pic : { salt: row.salt, hash: row.hash }) : null;
+  const derived = await scryptAsync(pin, secret ? secret.salt : DUMMY_SALT);
+  const ok = timingSafeEqual(derived, secret ? secret.hash : DUMMY_HASH) && secret !== null;
   if (!ok || !row) throw new HttpsError('permission-denied', MISMATCH_MESSAGE);
 
   await refund(d, buckets, entryId);
@@ -355,10 +365,35 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
       if (oldClaim.exists && o?.familyUid === parent.uid && o?.kidId === kidId) releaseOld = oldClaim.ref;
     }
     tx.set(claimRef, { familyUid: parent.uid, kidId });
-    tx.set(rowRef, { nameKey, salt: salt.toString('hex'), hash: hash.toString('hex'), updatedAt: nowOf(d) });
+    // merge: a new digit PIN keeps the picture PIN the parent set.
+    tx.set(rowRef, { nameKey, salt: salt.toString('hex'), hash: hash.toString('hex'), updatedAt: nowOf(d) }, { merge: true });
     if (releaseOld) tx.delete(releaseOld);
   });
   await kidRef.update({ hasPin: true });
+  return { ok: true };
+}
+
+// ---------- setKidPicturePin ----------
+
+/**
+ * Sets the picture PIN of one of the caller's kids. Parents only. The kid must already have a digit PIN (the row and the
+ * name claim exist), so the digit PIN keeps working and a picture is an extra way in. Hashed with scrypt and a fresh
+ * 16-byte salt exactly like setKidPin, stored in the same server-only row. The kid doc gets one flag, hasPicturePin,
+ * so the parent screen can show it. The picture itself is never stored or logged.
+ */
+export async function setKidPicturePin(d: Deps, auth: AuthContext | undefined, data: { kidId?: unknown; picture?: unknown }): Promise<{ ok: true }> {
+  const parent = await assertParent(d, auth);
+  const { kidId, picture } = data;
+  if (typeof kidId !== 'string' || !ID_RE.test(kidId)) throw new HttpsError('invalid-argument', 'Bad player id.');
+  if (typeof picture !== 'string' || !PICTURE_RE.test(picture)) throw new HttpsError('invalid-argument', 'Pick 4 pictures.');
+  const kidRef = d.db.doc(`families/${parent.uid}/kids/${kidId}`);
+  if (!(await kidRef.get()).exists) throw new HttpsError('not-found', 'That player does not exist.');
+  const rowRef = d.db.doc(`pinIndex/${parent.uid}/kids/${kidId}`);
+  if (!(await rowRef.get()).exists) throw new HttpsError('failed-precondition', 'Set a PIN for this player first.');
+  const salt = randomBytes(16);
+  const hash = await scryptAsync(picture, salt);
+  await rowRef.update({ pic: { salt: salt.toString('hex'), hash: hash.toString('hex'), updatedAt: nowOf(d) } });
+  await kidRef.update({ hasPicturePin: true });
   return { ok: true };
 }
 

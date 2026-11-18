@@ -134,6 +134,8 @@ export interface Kid {
   vault?: VaultPointer;
   /** Set by the setKidPin function. The PIN hash itself lives server-side only. */
   hasPin?: boolean;
+  /** Set by the setKidPicturePin function: this kid can sign in with 4 pictures too. The hash lives server-side only. */
+  hasPicturePin?: boolean;
   /**
    * The picture on the "Who is playing?" screen: a hero face and a color, free to pick. Top-level and parent-only: a
    * kid token may write only `game` and `inventory`, so it cannot change this, and an old bundle that never writes it

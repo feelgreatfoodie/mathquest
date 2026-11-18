@@ -91,6 +91,11 @@ export async function setKidPin(kidId: string, pin: string): Promise<void> {
   await callable<{ kidId: string; pin: string }, { ok: true }>('setKidPin')({ kidId, pin });
 }
 
+/** Sets the picture PIN of a kid who already has a digit PIN (4 icons, the letters a to i). Parents only. */
+export async function setKidPicturePin(kidId: string, picture: string): Promise<void> {
+  await callable<{ kidId: string; picture: string }, { ok: true }>('setKidPicturePin')({ kidId, picture });
+}
+
 export interface KidLockStatus {
   locked: boolean;
   failures: number;

@@ -14,6 +14,8 @@ import { HeroShop, type OnGame } from '../HeroShop';
 import type { RunSummary } from '../../engine/session';
 import { TABS, readTab, tabForKey, writeTab, type LandingTab } from '../landingTab';
 import { PinPad } from '../PinPad';
+import { readDeviceKids, type DeviceKid } from '../../data/deviceKids';
+import { PicturePad } from '../early/PicturePad';
 import { Sprite, UiIcon } from '../sprites';
 import { looksReady, owedOf, vaultBalance, vaultOn } from '../../game/vault';
 import { useDeposits, type VaultApi } from '../vaultApi';
@@ -69,6 +71,10 @@ export function Landing({
   const [name, setName] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
   const [needName, setNeedName] = useState(false);
+  // Faces from this device's own cache (written after a sign-in here). Nothing is fetched for a signed-out device.
+  const [faces] = useState<DeviceKid[]>(() => readDeviceKids());
+  const [who, setWho] = useState<DeviceKid | null>(null);
+  const [typed, setTyped] = useState(false);
   const refocus = useRef(false);
   // The tab list remounts when the panel swaps, so focus moves after the new tab renders.
   useEffect(() => {
@@ -86,6 +92,46 @@ export function Landing({
   };
   const tabs = <LandingTabs tab={tab} onTab={pick} />;
   const panelProps = { id: 'landing-panel', role: 'tabpanel', 'aria-labelledby': `landing-tab-${tab}` } as const;
+
+  if (tab === 'kid' && faces.length > 0 && !typed) {
+    return (
+      <div className="screen center">
+        <div className="panel pin-panel" {...panelProps}>
+          {tabs}
+          {who ? (
+            who.picture ? (
+              <div data-testid="picture-signin" data-kid={who.kidId}>
+                <PicturePad onComplete={(code) => onKidSubmit(who.name, code)} onCancel={() => setWho(null)} />
+                {error ? <p className="error">{error}</p> : null}
+              </div>
+            ) : (
+              <PinPad
+                embedded
+                title={who.name}
+                subtitle="Type your 4-digit PIN."
+                error={error}
+                onCancel={() => setWho(null)}
+                onComplete={(pin) => onKidSubmit(who.name, pin)}
+              />
+            )
+          ) : (
+            <>
+              <h2 className="pixel">Who's playing?</h2>
+              <div className="face-grid" data-testid="face-grid">
+                {faces.map((f) => (
+                  <button key={f.kidId} type="button" className="face-btn" data-kid={f.kidId} data-hero={f.hero} data-picture={f.picture ? 'yes' : 'no'} style={{ ['--kid-color' as string]: AVATAR_SWATCH[f.color] }} onClick={() => setWho(f)}>
+                    <Sprite name={f.hero} size={96} />
+                    <span className="kid-name">{f.name}</span>
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="btn btn-ghost" onClick={() => setTyped(true)}>Type a name instead</button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (tab === 'kid') {
     return (
@@ -124,6 +170,7 @@ export function Landing({
               setNeedName(false);
               return onKidSubmit(name, pin);
             }}
+            footer={faces.length > 0 ? <button type="button" className="btn btn-ghost" onClick={() => setTyped(false)}>Show faces</button> : null}
           />
         </div>
       </div>

@@ -5,7 +5,7 @@ import { LocalRepo } from './data/localRepo';
 import { hashPin, type Repo } from './data/repo';
 import { VersionGuard, guardFor } from './data/versionGate';
 import { GameDeltaError, type GameDelta } from './engine/game';
-import { learnerOf, type Family, type Kid, type KidGame } from './engine/models';
+import { avatarOf, learnerOf, type Family, type Kid, type KidGame } from './engine/models';
 import type { RunSummary } from './engine/session';
 import type { RunInfo } from './ui/runShared';
 import { dataMode, getFirebase, kidClaims, registerParent, signInKid, signInParent, signOutParent } from './firebase';
@@ -15,6 +15,7 @@ import { FailureToasts } from './ui/FailureToasts';
 import { UpdatePrompt, UpdateScreen } from './ui/UpdateScreen';
 import { reportFailure } from './ui/failures';
 import type { VaultApi } from './ui/vaultApi';
+import { rememberKids } from './data/deviceKids';
 import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
 import { ParentArea, Setup } from './ui/screens/Parent';
@@ -130,6 +131,17 @@ export function App() {
       })();
     });
   }, [load]);
+
+  // The Kid-tab faces. Written only here, and only while a parent or a kid is signed in on this device (repo is set by a
+  // sign-in), from kids this session already loaded. A kid session knows only itself, so it merges. Nothing is fetched.
+  useEffect(() => {
+    if (!repo || repo.mode !== 'firestore' || !kids.length) return;
+    rememberKids(
+      kids.map((k) => ({ kidId: k.id, name: k.name, hero: avatarOf(k).hero, color: avatarOf(k).color, ...(k.hasPicturePin ? { picture: true } : {}) })),
+      undefined,
+      { merge: kidSession },
+    );
+  }, [repo, kids, kidSession]);
 
   // Behind config/app.minVersion: the update screen replaces the app. Checked after sign-in, whenever the
   // app comes back to the front, and before each run.

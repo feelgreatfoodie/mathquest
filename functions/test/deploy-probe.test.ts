@@ -34,8 +34,14 @@ beforeEach(async () => {
 const deps = (): Deps => ({ db, auth: { createCustomToken: async (uid, claims) => `h.${Buffer.from(JSON.stringify({ uid, claims })).toString('base64url')}.s` } });
 
 /** Stands in for the deployed function: same core code, wrapped in the callable HTTP shape. */
-const fakeFetch = (override?: (name: string, pin: string) => Response | undefined) =>
-  (async (_url: string, init: { body: string }) => {
+const PAGE = 'https://demo-mathquest.web.app/';
+const fakeFetch = (override?: (name: string, pin: string) => Response | undefined, bundle = 'projectId:"demo-mathquest"') =>
+  (async (url: string, init?: { body?: string }) => {
+    // The served page and its script: the bundle check reads them (no network).
+    if (!init?.body) {
+      if (url === PAGE) return new Response('<script type="module" src="/assets/index-test.js"></script>', { status: 200 });
+      return new Response(bundle, { status: 200 });
+    }
     const { name, pin } = JSON.parse(init.body).data;
     const o = override?.(name, pin);
     if (o) return o;
@@ -86,6 +92,13 @@ describe('deploy-probe against the emulator', () => {
     const r = await probe({ db, project: 'demo-mathquest', fetchImpl: allow });
     expect(r.ok).toBe(false);
     expect(r.problems.join()).toContain('wrong PIN: sign-in succeeded');
+    expect(await snapshot()).toEqual([]);
+  });
+
+  it('fails, and still cleans up, when the served bundle has no project id (a no-config build) even though sign-in passes', async () => {
+    const r = await probe({ db, project: 'demo-mathquest', fetchImpl: fakeFetch(undefined, 'const cfg={projectId:void 0}') });
+    expect(r.ok).toBe(false);
+    expect(r.problems.join()).toContain('bundle: none of 1 served script');
     expect(await snapshot()).toEqual([]);
   });
 
