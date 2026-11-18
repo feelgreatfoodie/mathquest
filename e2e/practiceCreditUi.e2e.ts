@@ -4,7 +4,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { getModule } from '../src/engine/modules';
 
 /**
- * practice-credit-ui: the end screen of a practice round (every card already had its 3 graded answers today), for a
+ * practice-credit-ui, updated by every-answer-counts: the end screen when every card already had 3 answers today (every answer counts, so no practice wording), for a
  * reader and a pre-reader, at 393x852 and 820x1180. It never reads 0/0, shows the practice line and the gems, and the
  * pre-reader hears the practice voice line. Names and ids are made up. SCREENSHOTS=1 writes the PNGs under
  * docs/screenshots/practice-credit-ui.
@@ -59,7 +59,7 @@ for (const { w, h } of VIEWPORTS) {
   test.describe(`${w}x${h}`, () => {
     test.use({ viewport: { width: w, height: h } });
 
-    test('a reader practice round ends on 4/4 with the practice line and gems, never 0/0', async ({ page }) => {
+    test('a reader round of cards answered 3 times today ends on 4/4 with gems, no practice wording, never 0/0', async ({ page }) => {
       await seed(page, 'reader');
       await page.goto('/');
       await page.locator('.kid-card', { hasText: 'Pip' }).click();
@@ -76,13 +76,14 @@ for (const { w, h } of VIEWPORTS) {
       const summary = page.locator('.panel.summary');
       await expect(summary).not.toContainText('0/0');
       await expect(summary.locator('.stat', { hasText: 'correct' })).toContainText('4/4');
-      await expect(page.getByTestId('practice-line')).toContainText('Practice round: 4 of 4 right');
+      await expect(page.getByTestId('practice-line')).toHaveCount(0);
+      await expect(summary).not.toContainText(/practice/i);
       const gems = await summary.locator('.stat', { hasText: /^\s*\+?\d*\s*gems$|gems/ }).first().innerText();
       expect(Number(/\+(\d+)/.exec(gems)?.[1])).toBeGreaterThanOrEqual(1);
       await shot(page, 'practice-round-reader', w, h);
     });
 
-    test('a pre-reader practice round shows 4 of 4 stars and says the practice voice line', async ({ page }) => {
+    test('a pre-reader round of cards answered 3 times today shows 4 of 4 stars and says Great job', async ({ page }) => {
       await seed(page, 'prereader');
       await page.goto('/');
       await page.locator('.kid-card', { hasText: 'Pip' }).click();
@@ -93,7 +94,7 @@ for (const { w, h } of VIEWPORTS) {
         await page.waitForTimeout(80);
       }
       await expect(page.locator('.big-stars')).toHaveAttribute('aria-label', '4 of 4 stars');
-      await expect.poll(async () => (await spoken(page)).some((t) => /^Great practice! You got \w+ stars!$/.test(t))).toBe(true);
+      await expect.poll(async () => (await spoken(page)).some((t) => /^Great job! You got \w+ stars!$/.test(t))).toBe(true);
       await shot(page, 'practice-round-prereader', w, h);
     });
   });

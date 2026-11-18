@@ -7,7 +7,7 @@ export const GEM_RUN_MAX = 10;
 /** What a run reports to the economy. */
 export interface GemRunStats {
   correct: number;
-  /** Right answers on ungraded fill practice. A missing value reads as 0, so old payloads work. */
+  /** Old logs only: right answers on fill practice that `correct` left out. New runs fold them into `correct`. A missing value reads as 0. */
   practiceCorrect?: number;
   graded: number;
   bestCombo: number;
@@ -55,7 +55,7 @@ export function earnedTodayOf(game: { gemsEarnedToday?: number; gemsDay?: string
   return game.gemsDay === key && typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** Gems before speed and throttle. Right answers are graded plus fill practice. Reader: 1 per 3 right, +3 combo of 10, +2 for 3 new facts, +2 perfect. Pre-reader: 1 per 2 right, +1 perfect. Perfect, the combo and new facts read graded answers only. */
+/** Gems before speed and throttle. Right answers are `correct` (every counted answer) plus `practiceCorrect` from old payloads, which new runs never set. Reader: 1 per 3 right, +3 combo of 10, +2 for 3 new facts, +2 perfect. Pre-reader: 1 per 2 right, +1 perfect. Perfect, the combo and new facts read graded answers only. */
 export function baseGems(stats: GemRunStats, learner: Learner): number {
   const perfect = stats.graded > 0 && stats.correct === stats.graded;
   const right = stats.correct + (stats.practiceCorrect ?? 0);

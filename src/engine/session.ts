@@ -7,14 +7,14 @@ import { dayKey } from './game';
 import { gemsForRun } from './gems';
 import { learnerOf, learnerParams, paceOf, type CardMap, type CardState, type KidSettings, type Learner } from './models';
 import { answerText, checkAnswer, generateProblem, ICON_IDS, type AnswerInput, type IconId, type Problem, type Rng, type Verdict } from './problems';
-import { DAILY_GRADED_CAP, gradedToday, isDue, median, newCardState, noteGraded, practice, retrievability, review } from './scheduler';
+import { gradedToday, isDue, median, newCardState, noteGraded, practice, repeatAnswer, retrievability, review } from './scheduler';
 
 export interface PlanItem {
   cardId: string;
   isNew: boolean;
   /** An unseen card from a locked group, shown with its hint. A miss on it does not count against the kid. */
   preview?: boolean;
-  /** Ungraded practice that fills a run once no card has graded answers left today. FSRS does not change. */
+  /** Filler for a run with too few due or missed cards. It counts for the kid like a graded answer and never changes FSRS. */
   fill?: boolean;
 }
 
@@ -76,20 +76,24 @@ function shuffle<T>(xs: T[], rng: Rng): T[] {
  *  2. new cards in curriculum order, if there is room (facts and skills both)
  *  3. up to `previewMax` previews: unseen cards of locked groups, next locked group first
  *  4. "practice ahead" on seen cards to fill the run: missed today, then least recently answered, then weakest
- * A card that already had DAILY_GRADED_CAP graded answers today is left out of 1 and 4: it can only come back
- * as an in-run retry. New cards and previews are spread through the first 70% of the run so misses can be
+ * Every seen card is a candidate however often it was answered today: every answer counts for the kid, and FSRS
+ * only sees the first answer of the day (see grade()). A card answered in the last FILL_REST_MS is skipped by 4 and
+ * by fill unless its last answer was a miss. New cards and previews are spread through the first 70% of the run so misses can be
  * retried before the end. Then previews move later so none is in the first `previewFloor` slots or next to another.
  */
 export function planSession({ cards, available, now, size, maxNew, rng, locked = [], previewMax = 0, previewFloor = 1 }: PlanInput): PlanItem[] {
   const today = dayKey(now);
   const seen = available.filter((d) => cards[d.id]);
-  const open = seen.filter((d) => gradedToday(cards[d.id], now) < DAILY_GRADED_CAP);
+  const open = seen;
+  const missedLast = (d: CardDef) => cards[d.id]!.lastResults?.at(-1) === false;
+  // Fairness: a card answered in the last FILL_REST_MS waits, unless the kid missed it.
+  const rested = (d: CardDef) => now - cards[d.id]!.updatedAt >= FILL_REST_MS || missedLast(d);
   const byWeakest = (a: CardDef, b: CardDef) => retrievability(cards[a.id]!, now) - retrievability(cards[b.id]!, now);
 
   const due = open.filter((d) => isDue(cards[d.id]!, now)).sort(byWeakest);
   const dueIds = new Set(due.map((d) => d.id));
   // Last graded answer wrong: back in the very next run, not only when FSRS says it is due.
-  const missed = open.filter((d) => !dueIds.has(d.id) && cards[d.id]!.lastResults?.at(-1) === false).sort(byWeakest);
+  const missed = open.filter((d) => !dueIds.has(d.id) && missedLast(d)).sort(byWeakest);
   const reviews = [...missed, ...due].slice(0, size);
 
   const room = Math.max(0, size - reviews.length);
@@ -107,7 +111,7 @@ export function planSession({ cards, available, now, size, maxNew, rng, locked =
   const missedToday = (d: CardDef) => (cards[d.id]!.missDay === today ? 0 : 1);
   const byFill = (a: CardDef, b: CardDef) =>
     missedToday(a) - missedToday(b) || cards[a.id]!.updatedAt - cards[b.id]!.updatedAt || byWeakest(a, b);
-  const ahead = open.filter((d) => !chosen.has(d.id)).sort(byFill).slice(0, fillCount);
+  const ahead = open.filter((d) => !chosen.has(d.id) && rested(d)).sort(byFill).slice(0, fillCount);
 
   // Short on history (e.g. the first runs)? Probe more unseen facts. A fast correct answer on a
   // never-seen fact means it is already known, so these double as a placement test.
@@ -117,13 +121,13 @@ export function planSession({ cards, available, now, size, maxNew, rng, locked =
     fresh.push(...unseen.filter((d) => d.kind !== 'skill' && !have.has(d.id)).slice(0, short).map((d) => ({ cardId: d.id, isNew: true })));
   }
 
-  // Nothing graded is left (every seen card hit today's cap)? Fill the rest of the run with ungraded practice,
-  // least recently answered first, then weakest. The kid never meets an empty run; FSRS is not touched.
+  // Still short (every rested card is already in)? Fill with counted answers on the rested cards first, least recently
+  // answered first, then weakest. If nothing has rested, the whole seen pool is used so the kid never meets an empty run.
   const placed = reviews.length + ahead.length + fresh.length + previews.length;
   const aheadIds = new Set(ahead.map((d) => d.id));
-  // A card answered in the last hour goes to the back, so a round does not repeat the cards the kid just saw; then the byFill order.
-  const recent = (d: CardDef) => (now - cards[d.id]!.updatedAt < FILL_REST_MS ? 1 : 0);
-  const practicePool = seen.filter((d) => !chosen.has(d.id) && !aheadIds.has(d.id)).sort((a, b) => recent(a) - recent(b) || byFill(a, b));
+  const left = seen.filter((d) => !chosen.has(d.id) && !aheadIds.has(d.id));
+  const restedLeft = left.filter(rested);
+  const practicePool = (restedLeft.length ? restedLeft : left).sort(byFill);
   const practiceItems: PlanItem[] = [];
   for (let i = 0; practicePool.length && placed + practiceItems.length < size; i++) {
     practiceItems.push({ cardId: practicePool[i % practicePool.length]!.id, isNew: false, fill: true });
@@ -172,12 +176,12 @@ export interface Entry {
   /** Unique within one runner. A mode that lets the kid pick the order answers by this id. */
   id: string;
   cardId: string;
-  /** teach = show a worked example (new skills); graded = first scored attempt; practice = in-run retry */
+  /** teach = show a worked example (new skills); graded = a counted answer (the first of the day reviews FSRS); practice = in-run retry */
   kind: 'teach' | 'graded' | 'practice';
   isNew: boolean;
   /** A preview of a locked group: the hint shows first and a miss does not count against the kid. */
   preview?: boolean;
-  /** Ungraded fill practice: answered through practice(), so FSRS does not change. */
+  /** Filler from the plan, on a card that is not due. Counted for the kid like a graded answer; FSRS never changes. */
   fill?: boolean;
   problem: Problem;
 }
@@ -205,17 +209,17 @@ export interface RunSummary {
   gems: number;
   bestCombo: number;
   missed: string[];
-  /** Right answers on ungraded fill practice. Present only when above 0, so the golden summary keeps its shape; a missing value reads as 0. */
+  /** Old logs only (before every answer counted): right answers on fill practice that `correct` left out. New runs never set it. */
   practiceCorrect?: number;
-  /** Fill practice answers given (right or wrong), without in-run retries. Present only when above 0; a missing value reads as 0. */
+  /** Old logs only: fill practice answers that `graded` left out. New runs never set it. */
   fillAnswered?: number;
   /** Facts whose time this run beat their previous median. */
   faster: string[];
 }
 
 const MAX_RETRIES = 2;
-/** Fill practice prefers cards not answered in the last hour. */
-export const FILL_REST_MS = 60 * 60 * 1000;
+/** A card answered in the last 10 minutes is skipped by fill unless it was missed, so one fact is not drilled all day. */
+export const FILL_REST_MS = 10 * 60 * 1000;
 
 /**
  * Runs one session. Pure and UI-free: the UI shows `current()`, times the answer, and calls
@@ -238,8 +242,6 @@ export class SessionRunner {
   private times: number[] = [];
   private stats = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0 };
   private newIds: string[] = [];
-  private practiceCorrect = 0;
-  private fillAnswered = 0;
   private missed = new Set<string>();
   private faster = new Set<string>();
   private nextId = 0;
@@ -275,7 +277,7 @@ export class SessionRunner {
         this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'teach', isNew: true, problem });
         this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: true, problem: this.make(item.cardId, rng) });
       } else if (item.fill) {
-        this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'practice', isNew: false, fill: true, problem });
+        this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: false, fill: true, problem });
       } else {
         this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: item.isNew, ...(item.preview ? { preview: true } : {}), problem });
       }
@@ -386,10 +388,13 @@ export class SessionRunner {
       // With three buttons a first-time right answer may be a guess, so it can't be Easy.
       if (entry.isNew && correct && mod?.input === 'choices' && rating === Rating.Easy) rating = Rating.Good;
       if (opts.peeked && correct && (rating === Rating.Easy || rating === Rating.Good)) rating = Rating.Hard;
-      // After a card's first graded answer today, later ones are practice: same-day repeats must not
-      // inflate FSRS stability (a fluent look after one evening) or crush it (one slip).
-      const repeatToday = gradedToday(prev, now) >= 1;
-      next = noteGraded(repeatToday ? practice(prev, ms, correct, now) : review(prev, rating, ms, correct, now), correct, now);
+      // Only a card's first answer of the day calls review(). Later ones count for the kid (lastResults, correct,
+      // recentMs) but never touch the FSRS fields: same-day repeats must not inflate stability (a fluent look after
+      // one evening) or crush it (one slip). A same-day miss after a reviewed answer sets lastResults and missDay, the
+      // plan brings the card back, and the next day's review() captures the lapse.
+      // Fill is extra practice on a card that is not due (the Adventure fight relies on it): it never reviews.
+      const repeatToday = !!entry.fill || gradedToday(prev, now) >= 1;
+      next = noteGraded(repeatToday ? repeatAnswer(prev, ms, correct, now) : review(prev, rating, ms, correct, now), correct, now);
       // A preview miss is information, not a mistake: it counts against nothing the kid sees.
       const free = !!entry.preview && !correct;
       if (!free) this.stats.graded++;
@@ -401,10 +406,8 @@ export class SessionRunner {
       }
       if (!correct && !free) this.missed.add(entry.cardId);
     } else {
+      // An in-run retry of a missed card is not a new answer: only timing stats change.
       next = practice(prev, ms, correct, now);
-      // Fill practice only: an in-run retry of a missed card is not a new answer, and a teach card is not an answer.
-      if (entry.fill) this.fillAnswered++;
-      if (correct && entry.fill) this.practiceCorrect++;
     }
     this.cards[entry.cardId] = next;
     this.changed.add(entry.cardId);
@@ -462,7 +465,7 @@ export class SessionRunner {
 
   summary(): RunSummary {
     // Gems at Normal speed and full rate. saveRun re-works them with the parent settings and today's count (gemsForRun).
-    const gems = gemsForRun({ ...this.stats, practiceCorrect: this.practiceCorrect, bestCombo: this.bestCombo }, this.learner, {}, 0);
+    const gems = gemsForRun({ ...this.stats, bestCombo: this.bestCombo }, this.learner, {}, 0);
     return {
       ...this.stats,
       medianMs: this.times.length ? Math.round(median(this.times)) : 0,
@@ -471,8 +474,6 @@ export class SessionRunner {
       bestCombo: this.bestCombo,
       missed: [...this.missed],
       faster: [...this.faster],
-      ...(this.practiceCorrect ? { practiceCorrect: this.practiceCorrect } : {}),
-      ...(this.fillAnswered ? { fillAnswered: this.fillAnswered } : {}),
     };
   }
 }

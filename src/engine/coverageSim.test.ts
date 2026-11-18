@@ -54,22 +54,26 @@ const prereader = () => {
 describe('one evening: the older boy (25 runs, 93%)', () => {
   const r = reader();
   it('sees every facts-module fact at least once', () => expect(r.seenAtEnd).toBe(r.universe));
-  it('no card gets more than 3 graded answers in a day', () => {
-    expect(r.maxGradedPerCard).toBeLessThanOrEqual(3);
-    expect(r.cardsOverCap).toBe(0);
+  it('FSRS reviews each card at most once in the day, however many answers it gets', () => {
+    expect(r.maxRepsGain).toBeLessThanOrEqual(1);
+    expect(r.maxGradedPerCard).toBeGreaterThan(3);
   });
-  it('every card missed in run N is back in run N+1, unless it was already at its cap (its in-run retries came first)', () => {
-    expect(r.missedNotBack - r.missedNotBackAtCap).toBe(0);
+  it('every card missed in run N is back in run N+1, however many answers it already had today', () => {
+    expect(r.missedNotBack).toBe(0);
   });
   it('the 6s, 7s and 8s appear as previews by run 3', () => {
     expect(r.firstSeenRun['facts:g4']).toBeLessThanOrEqual(3);
   });
   it('previews never exceed 2 per run', () => expect(r.maxPreviewsPerRun).toBeLessThanOrEqual(2));
-  it('every run from 11 to 25 has a full queue, and FSRS does not move once nothing graded is left', () => {
+  it('every run from 11 to 25 has a full queue, and every answer in it counts', () => {
     expect(r.emptyRuns).toBe(0);
     for (const n of r.planned.slice(10)) expect(n).toBeGreaterThanOrEqual(30);
-    expect(r.firstUngradedRun).toBeDefined();
-    expect(r.fsrsChangedAfterCap).toBe(0);
+    expect(r.firstUngradedRun).toBeUndefined();
+    expect(r.uncountedRight).toBe(0);
+    expect(r.lateCorrect).toBeGreaterThan(300);
+  });
+  it('the steady share keeps rising all evening (the lair and the unlock read it)', () => {
+    expect(r.steadyAtEnd).toBeGreaterThan(0.5);
   });
 });
 
@@ -78,7 +82,7 @@ describe('one evening: the younger boy (20 runs, 93%)', () => {
   it('opens add g2', () => expect(r.openedAtRun['add10:g2']).toBeLessThanOrEqual(20));
   it('sees every add10 fact', () => expect(r.seenAtEnd).toBe(r.universe));
   it('previews are capped at 1 per run', () => expect(r.maxPreviewsPerRun).toBeLessThanOrEqual(1));
-  it('no card gets more than 3 graded answers in a day', () => expect(r.maxGradedPerCard).toBeLessThanOrEqual(3));
+  it('FSRS reviews each card at most once in the day', () => expect(r.maxRepsGain).toBeLessThanOrEqual(1));
 });
 
 describe('on top of the parent floor (groupsUnlocked)', () => {
@@ -89,8 +93,8 @@ describe('on top of the parent floor (groupsUnlocked)', () => {
     expect(r.openedAtRun['add10:g2']).toBe(1);
     expect(r.seenAtEnd).toBe(r.universe);
     expect(r.maxPreviewsPerRun).toBeLessThanOrEqual(1);
-    expect(r.maxGradedPerCard).toBeLessThanOrEqual(3);
-    expect(r.fsrsChangedAfterCap).toBe(0);
+    expect(r.maxRepsGain).toBeLessThanOrEqual(1);
+    expect(r.uncountedRight).toBe(0);
   });
   it('a reader floor of 3 keeps groups 1 to 3 open and previews the 6s, 7s and 8s first', () => {
     const s = readerStart();
@@ -99,7 +103,7 @@ describe('on top of the parent floor (groupsUnlocked)', () => {
     expect(r.openedAtRun['facts:g3']).toBe(1);
     expect(r.firstSeenRun['facts:g4']).toBeLessThanOrEqual(3);
     expect(r.seenAtEnd).toBe(r.universe);
-    expect(r.cardsOverCap).toBe(0);
+    expect(r.maxRepsGain).toBeLessThanOrEqual(1);
   });
 });
 
