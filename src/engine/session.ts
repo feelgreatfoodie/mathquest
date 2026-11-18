@@ -2,14 +2,17 @@ import type { Grade } from 'ts-fsrs';
 import { Rating } from 'ts-fsrs';
 import { getCardDef, moduleOfCard, type CardDef } from './modules';
 import { factBaseline, gradeAnswer, thresholdsFor } from './grading';
-import { cardLevel } from './mastery';
+import { cardLevel, availableCards, previewPool } from './mastery';
+import { dayKey } from './game';
 import { learnerOf, learnerParams, paceOf, type CardMap, type CardState, type KidSettings } from './models';
 import { answerText, checkAnswer, generateProblem, ICON_IDS, type AnswerInput, type IconId, type Problem, type Rng, type Verdict } from './problems';
-import { isDue, median, newCardState, practice, retrievability, review } from './scheduler';
+import { DAILY_GRADED_CAP, gradedToday, isDue, median, newCardState, noteGraded, practice, retrievability, review } from './scheduler';
 
 export interface PlanItem {
   cardId: string;
   isNew: boolean;
+  /** An unseen card from a locked group, shown with its hint. A miss on it does not count against the kid. */
+  preview?: boolean;
 }
 
 export interface PlanInput {
@@ -19,6 +22,10 @@ export interface PlanInput {
   size: number;
   maxNew: number;
   rng: Rng;
+  /** Unseen cards of locked groups in preview order (see previewPool). */
+  locked?: CardDef[];
+  /** Most previews in this run. */
+  previewMax?: number;
 }
 
 /** Most new skill (procedure) cards per run; the rest of the new budget goes to facts. */
@@ -35,44 +42,84 @@ function shuffle<T>(xs: T[], rng: Rng): T[] {
 
 /**
  * Builds one run:
- *  1. due reviews, most-forgotten first (capped at size)
+ *  1. facts missed last time, then due reviews, most-forgotten first (capped at size)
  *  2. new cards in curriculum order, if there is room (facts and skills both)
- *  3. "practice ahead" on the weakest seen cards to fill the run
- * New cards are spread through the first 70% of the run so misses can be retried before the end.
+ *  3. up to `previewMax` previews: unseen cards of locked groups, next locked group first
+ *  4. "practice ahead" on seen cards to fill the run: missed today, then least recently answered, then weakest
+ * A card that already had DAILY_GRADED_CAP graded answers today is left out of 1 and 4: it can only come back
+ * as an in-run retry. New cards and previews are spread through the first 70% of the run so misses can be
+ * retried before the end.
  */
-export function planSession({ cards, available, now, size, maxNew, rng }: PlanInput): PlanItem[] {
+export function planSession({ cards, available, now, size, maxNew, rng, locked = [], previewMax = 0 }: PlanInput): PlanItem[] {
+  const today = dayKey(now);
   const seen = available.filter((d) => cards[d.id]);
+  const open = seen.filter((d) => gradedToday(cards[d.id], now) < DAILY_GRADED_CAP);
   const byWeakest = (a: CardDef, b: CardDef) => retrievability(cards[a.id]!, now) - retrievability(cards[b.id]!, now);
 
-  const due = seen.filter((d) => isDue(cards[d.id]!, now)).sort(byWeakest);
-  const reviews = due.slice(0, size);
+  const due = open.filter((d) => isDue(cards[d.id]!, now)).sort(byWeakest);
+  const dueIds = new Set(due.map((d) => d.id));
+  // Last graded answer wrong: back in the very next run, not only when FSRS says it is due.
+  const missed = open.filter((d) => !dueIds.has(d.id) && cards[d.id]!.lastResults?.at(-1) === false).sort(byWeakest);
+  const reviews = [...missed, ...due].slice(0, size);
 
   const room = Math.max(0, size - reviews.length);
   const unseen = available.filter((d) => !cards[d.id]);
   const newSkills = unseen.filter((d) => d.kind === 'skill').slice(0, Math.min(MAX_NEW_SKILLS, room, maxNew));
   const newFacts = unseen.filter((d) => d.kind !== 'skill').slice(0, Math.min(room, maxNew) - newSkills.length);
-  const fresh = [...newSkills, ...newFacts];
+  const fresh: PlanItem[] = [...newSkills, ...newFacts].map((d) => ({ cardId: d.id, isNew: true }));
+  const previews: PlanItem[] = locked
+    .filter((d) => !cards[d.id])
+    .slice(0, previewMax)
+    .map((d) => ({ cardId: d.id, isNew: true, preview: true }));
 
-  const fillCount = Math.max(0, size - reviews.length - fresh.length);
-  const dueIds = new Set(reviews.map((d) => d.id));
-  const ahead = seen.filter((d) => !dueIds.has(d.id)).sort(byWeakest).slice(0, fillCount);
+  const fillCount = Math.max(0, size - reviews.length - fresh.length - previews.length);
+  const chosen = new Set(reviews.map((d) => d.id));
+  const missedToday = (d: CardDef) => (cards[d.id]!.missDay === today ? 0 : 1);
+  const byFill = (a: CardDef, b: CardDef) =>
+    missedToday(a) - missedToday(b) || cards[a.id]!.updatedAt - cards[b.id]!.updatedAt || byWeakest(a, b);
+  const ahead = open.filter((d) => !chosen.has(d.id)).sort(byFill).slice(0, fillCount);
 
   // Short on history (e.g. the first runs)? Probe more unseen facts. A fast correct answer on a
   // never-seen fact means it is already known, so these double as a placement test.
-  const short = size - reviews.length - fresh.length - ahead.length;
+  const short = size - reviews.length - fresh.length - previews.length - ahead.length;
   if (short > 0) {
-    const chosen = new Set(fresh.map((d) => d.id));
-    fresh.push(...unseen.filter((d) => d.kind !== 'skill' && !chosen.has(d.id)).slice(0, short));
+    const have = new Set(fresh.map((i) => i.cardId));
+    fresh.push(...unseen.filter((d) => d.kind !== 'skill' && !have.has(d.id)).slice(0, short).map((d) => ({ cardId: d.id, isNew: true })));
   }
 
   const base: PlanItem[] = shuffle([...reviews, ...ahead], rng).map((d) => ({ cardId: d.id, isNew: false }));
   const out = [...base];
-  const span = Math.max(1, Math.floor(Math.max(out.length, fresh.length) * 0.7));
-  shuffle(fresh, rng).forEach((d, i) => {
-    const pos = Math.min(out.length, Math.floor(((i + 0.5) * span) / fresh.length) + i);
-    out.splice(pos, 0, { cardId: d.id, isNew: true });
+  const spread = [...fresh, ...previews];
+  const span = Math.max(1, Math.floor(Math.max(out.length, spread.length) * 0.7));
+  shuffle(spread, rng).forEach((item, i) => {
+    const pos = Math.min(out.length, Math.floor(((i + 0.5) * span) / spread.length) + i);
+    out.splice(pos, 0, item);
   });
   return out;
+}
+
+export interface BuildPlanInput {
+  cards: CardMap;
+  settings: KidSettings;
+  now: number;
+  rng: Rng;
+}
+
+/** The plan for one run of one kid: available cards, previews and sizes all come from the kid's settings. */
+export function buildPlan({ cards, settings, now, rng }: BuildPlanInput): PlanItem[] {
+  const prereader = learnerOf(settings) === 'prereader';
+  // A pre-reader only gets picture modules: a keypad question has nothing they could read.
+  const ok = (d: CardDef) => !prereader || moduleOfCard(d.id)?.input === 'choices';
+  return planSession({
+    cards,
+    available: availableCards(cards, settings).filter(ok),
+    now,
+    size: settings.sessionSize,
+    maxNew: settings.maxNew,
+    rng,
+    locked: previewPool(cards, settings).filter(ok),
+    previewMax: prereader ? 1 : 2,
+  });
 }
 
 export interface Entry {
@@ -82,6 +129,8 @@ export interface Entry {
   /** teach = show a worked example (new skills); graded = first scored attempt; practice = in-run retry */
   kind: 'teach' | 'graded' | 'practice';
   isNew: boolean;
+  /** A preview of a locked group: the hint shows first and a miss does not count against the kid. */
+  preview?: boolean;
   problem: Problem;
 }
 
@@ -93,6 +142,8 @@ export interface Feedback {
   fast: boolean;
   xp: number;
   combo: number;
+  /** The answered entry was a preview. */
+  preview?: boolean;
 }
 
 export interface RunSummary {
@@ -155,7 +206,7 @@ export class SessionRunner {
         this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'teach', isNew: true, problem });
         this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: true, problem: this.make(item.cardId, rng) });
       } else {
-        this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: item.isNew, problem });
+        this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: item.isNew, ...(item.preview ? { preview: true } : {}), problem });
       }
     }
   }
@@ -248,12 +299,17 @@ export class SessionRunner {
       // With three buttons a first-time right answer may be a guess, so it can't be Easy.
       if (entry.isNew && correct && mod?.input === 'choices' && rating === Rating.Easy) rating = Rating.Good;
       if (opts.peeked && correct && (rating === Rating.Easy || rating === Rating.Good)) rating = Rating.Hard;
-      next = review(prev, rating, ms, correct, now);
-      this.stats.graded++;
+      // After a card's first graded answer today, later ones are practice: same-day repeats must not
+      // inflate FSRS stability (a fluent look after one evening) or crush it (one slip).
+      const repeatToday = gradedToday(prev, now) >= 1;
+      next = noteGraded(repeatToday ? practice(prev, ms, correct, now) : review(prev, rating, ms, correct, now), correct, now);
+      // A preview miss is information, not a mistake: it counts against nothing the kid sees.
+      const free = !!entry.preview && !correct;
+      if (!free) this.stats.graded++;
       if (correct) this.stats.correct++;
       if (fast) this.stats.fast++;
       if (entry.isNew && correct) this.stats.newLearned++;
-      if (!correct) this.missed.add(entry.cardId);
+      if (!correct && !free) this.missed.add(entry.cardId);
     } else {
       next = practice(prev, ms, correct, now);
     }
@@ -279,7 +335,8 @@ export class SessionRunner {
       });
     }
 
-    this.combo = correct ? this.combo + 1 : 0;
+    // A preview miss leaves the combo alone.
+    this.combo = correct ? this.combo + 1 : entry.preview ? this.combo : 0;
     this.bestCombo = Math.max(this.bestCombo, this.combo);
     const gained = correct ? (entry.kind === 'graded' ? 10 : 5) + (fast ? 5 : 0) + (this.combo >= 5 ? 2 : 0) : 0;
     this.xp += gained;
@@ -292,6 +349,7 @@ export class SessionRunner {
       fast,
       xp: gained,
       combo: this.combo,
+      ...(entry.preview ? { preview: true } : {}),
     };
   }
 

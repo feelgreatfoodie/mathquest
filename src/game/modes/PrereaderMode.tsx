@@ -130,7 +130,7 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
     return (
       <div className="screen center">
         <div className="panel">
-          <p>Nothing to practice yet. A parent can turn on a module for this player.</p>
+          {kid.game.lastPlayedDay ? <p aria-label="All done for today"><UiIcon name="check" size={96} /></p> : <p>Nothing to practice yet. A parent can turn on a module for this player.</p>}
           <button type="button" className="btn" onClick={onExit}>Back</button>
         </div>
       </div>

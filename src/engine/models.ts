@@ -26,6 +26,13 @@ export interface CardState {
   recentMs: number[];
   lastRating: number;
   updatedAt: number;
+  /** Local day (YYYY-MM-DD) of the last graded answer, and how many graded answers that day. Absent on old cards. */
+  day?: string;
+  dayGraded?: number;
+  /** Outcomes of the last two graded answers, newest last. Absent on old cards. */
+  lastResults?: boolean[];
+  /** Local day of the last miss. */
+  missDay?: string;
 }
 
 export type CardMap = Record<string, CardState>;

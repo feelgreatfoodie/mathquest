@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { levelFor } from '../../engine/game';
 import { factBaseline, factThresholds } from '../../engine/grading';
-import { LEVEL_LABELS, cardLevel, unlockedFactGroups, type Level } from '../../engine/mastery';
+import { LEVEL_LABELS, cardLevel, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
 import { learnerOf, modulesOf, paceOf, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
@@ -376,6 +376,18 @@ function KidDetail({ repo, kid, onSettings, onPinSet, onDelete }: { repo: Repo; 
         <div className="stat"><span className="stat-value">{minutes}</span><span className="stat-label">minutes this week</span></div>
         {on.facts || learner === 'reader' ? <div className="stat"><span className="stat-value">{fmtSec(baseline)}</span><span className="stat-label">typical fact time</span></div> : null}
       </section>
+
+      <ul className="coverage" aria-label="Coverage">
+        {MODULES.filter((m) => on[m.id] && m.groups).map((m) => {
+          const c = moduleCoverage(m, cards);
+          return (
+            <li key={m.id} data-coverage={m.id}>
+              {m.name}: seen {c.seen} of {c.total}
+              {c.untouched.length ? ` · ${c.untouched.join(', ')} not started` : ''}
+            </li>
+          );
+        })}
+      </ul>
 
       {on.add10 ? (
         <section className="panel">
