@@ -16,6 +16,7 @@ import {
 import { applyDelta, type GameDelta } from '../engine/game';
 import { normalizeGame, normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type SessionLog } from '../engine/models';
 import type { Repo } from './repo';
+import { guardFor, type VersionGuard } from './versionGate';
 
 const BATCH_MAX = 450;
 
@@ -30,10 +31,15 @@ const BATCH_MAX = 450;
 export class FirestoreRepo implements Repo {
   readonly mode = 'firestore' as const;
 
+  private guard: VersionGuard;
+
   constructor(
     private db: Firestore,
     private uid: string,
-  ) {}
+    guard?: VersionGuard,
+  ) {
+    this.guard = guard ?? guardFor(db);
+  }
 
   private family() {
     return doc(this.db, 'families', this.uid);
@@ -89,6 +95,7 @@ export class FirestoreRepo implements Repo {
   }
 
   async applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog }): Promise<KidGame> {
+    await this.guard.check(); // a bundle behind config/app.minVersion writes nothing
     const ref = doc(this.kids(), kidId);
     const sessionRef = opts?.session ? doc(this.sessions(kidId), opts.session.id) : null;
     return runTransaction(this.db, async (tx) => {
@@ -129,6 +136,7 @@ export class FirestoreRepo implements Repo {
   }
 
   async saveCards(kidId: string, cards: CardState[]): Promise<void> {
+    await this.guard.check();
     for (let i = 0; i < cards.length; i += BATCH_MAX) {
       const batch = writeBatch(this.db);
       cards.slice(i, i + BATCH_MAX).forEach((c) => batch.set(doc(this.cards(kidId), c.id), c));
@@ -137,6 +145,7 @@ export class FirestoreRepo implements Repo {
   }
 
   async addSession(kidId: string, log: SessionLog): Promise<void> {
+    await this.guard.check();
     await setDoc(doc(this.sessions(kidId), log.id), log);
   }
 

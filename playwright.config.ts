@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 // iPad-size run on system Chrome against the local dev server (localStorage data, no Firebase).
 // `npm run test:e2e`. SCREENSHOTS=1 also writes the PNGs under docs/screenshots/.
-const PORT = 5199;
+const PORT = Number(process.env.E2E_PORT) || 5199;
 
 export default defineConfig({
   testDir: 'e2e',

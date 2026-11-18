@@ -145,7 +145,7 @@ export function Sprite({ name, size = 96, className }: { name: string; size?: nu
   );
 }
 
-export type UiIconName = 'house' | 'speaker' | 'eye' | 'play' | 'flame' | 'arrow-down' | 'gem' | 'check';
+export type UiIconName = 'house' | 'speaker' | 'eye' | 'play' | 'flame' | 'arrow-down' | 'gem' | 'check' | 'refresh' | 'close';
 
 /** Plain icons for the pre-reader screens. They carry no text: a shape and an aria-label. */
 export function UiIcon({ name, size = 40, label }: { name: UiIconName; size?: number; label?: string }) {
@@ -167,5 +167,9 @@ export function UiIcon({ name, size = 40, label }: { name: UiIconName; size?: nu
       return <svg {...common}><path d="M6 3h12l4 6-10 12L2 9z" fill="#38bdf8" stroke="#075985" strokeWidth="1.5" strokeLinejoin="round" /></svg>;
     case 'check':
       return <svg {...common} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 13l5 5L20 6" /></svg>;
+    case 'refresh':
+      return <svg {...common} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 12a8 8 0 1 1-2.6-5.9" /><path d="M20 3v6h-6" /></svg>;
+    case 'close':
+      return <svg {...common} fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>;
   }
 }
