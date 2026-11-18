@@ -8,11 +8,11 @@ describe('whatsnew', () => {
     const prs = list.map((e) => e.pr);
     expect(new Set(prs).size).toBe(10);
     expect([...prs].sort((a, b) => b - a)).toEqual(prs);
-    expect(WHATS_NEW.length).toBeGreaterThanOrEqual(10);
+    expect(WHATS_NEW.map((e) => e.pr)).toContain(10); // backfilled, kept beyond the shown 10
   });
-  it('backfills #10 to #19 that merged', () => {
+  it('covers every merged change from #11 to #20 (#17 and later included)', () => {
     const prs = recentChanges().map((e) => e.pr);
-    for (const n of [10, 11, 12, 13, 14, 15, 16, 18, 19, 20]) expect(prs).toContain(n);
+    for (const n of [11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) expect(prs).toContain(n);
   });
   it('marks changes kids cannot see and changes behind a setting', () => {
     const list = recentChanges();
