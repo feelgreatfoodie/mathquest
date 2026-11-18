@@ -199,6 +199,23 @@ export interface SessionLog {
   gems: number;
   bestCombo: number;
   missed: string[];
+  /** Which mode played it. A log from before this field reads as 'dungeon' for a reader and 'prereader' for a pre-reader (`sessionModeOf`). */
+  mode?: SessionMode;
+  /** Adventure only: the region the trip was in at its last checkpoint. */
+  region?: string;
+  /** Adventure only: false while the trip is open, true once it was closed at the campfire. It never goes back to false. */
+  finished?: boolean;
+  /** Adventure only: how the trip closed. 'camp' = the campfire or hold to camp; 'left' = never closed (expired or replaced by a new trip). */
+  endedBy?: 'camp' | 'left';
+  /** Adventure only: the XP already added to the kid's game for this trip. A checkpoint credits only what is above this. */
+  xpCredited?: number;
+}
+
+export type SessionMode = 'dungeon' | 'overworld' | 'prereader';
+
+/** The mode of a stored log: a missing value is the Dungeon for a reader and the picture run for a pre-reader. */
+export function sessionModeOf(log: Pick<SessionLog, 'mode'>, learner: Learner): SessionMode {
+  return log.mode ?? (learner === 'prereader' ? 'prereader' : 'dungeon');
 }
 
 export const DEFAULT_SETTINGS: KidSettings = {

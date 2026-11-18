@@ -17,6 +17,7 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
+import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { WorldState } from '../game/overworld/worldState';
@@ -106,13 +107,23 @@ export class FirestoreRepo implements Repo {
     if (Object.keys(update).length) await updateDoc(doc(this.kids(), kidId), update);
   }
 
-  async applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog }): Promise<KidGame> {
+  async applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog; checkpoint?: boolean }): Promise<KidGame> {
     const ref = doc(this.kids(), kidId);
     const sessionRef = opts?.session ? doc(this.sessions(kidId), opts.session.id) : null;
     return runTransaction(this.db, async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists()) throw new Error('That player was removed.');
       const current = normalizeKid(snap.data() as Kid).game;
+      if (sessionRef && opts?.session && opts.checkpoint) {
+        // An Adventure checkpoint: the stored trip doc says how much XP was already credited. Read, credit the rest and merge, in this transaction.
+        const sSnap = await tx.get(sessionRef);
+        const cp = creditCheckpoint(sSnap.exists() ? (sSnap.data() as SessionLog) : null, opts.session, delta);
+        if (!cp) return current;
+        const after = applyDelta(current, cp.delta);
+        tx.set(sessionRef, { ...cp.session, gems: cp.storedGems + (after.gems - current.gems) });
+        tx.update(ref, { game: splitGame(after).game });
+        return after;
+      }
       // The log is written with the delta, so a stored log means this delta already landed.
       if (sessionRef && (await tx.get(sessionRef)).exists()) return current;
       let next = applyDelta(current, delta);

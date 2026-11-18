@@ -20,6 +20,8 @@ export interface OutboxEntry {
   kidId: string;
   /** Absent on a shop math tip: a tip has no session, and the cap (not a stored log) stops a repeat. */
   sessionLog?: SessionLog;
+  /** An Adventure checkpoint: `runId` is `${tripId}:${seq}`, `sessionLog` is the trip's cumulative log. A replay credits only the XP above the stored xpCredited. */
+  checkpoint?: boolean;
   gameDelta: GameDelta;
   savedAt: number;
   /** How many times the server refused this run (permission-denied). */
@@ -158,7 +160,7 @@ export async function replayOutbox(
     const delta = (e.denied ?? 0) >= MAX_DENIED_TRIES - 1 ? clampToRules(e.gameDelta) : e.gameDelta;
     let game: KidGame;
     try {
-      game = await repo.applyGameDelta(e.kidId, delta, e.sessionLog ? { session: e.sessionLog } : undefined);
+      game = await repo.applyGameDelta(e.kidId, delta, e.sessionLog ? { session: e.sessionLog, ...(e.checkpoint ? { checkpoint: true } : {}) } : undefined);
     } catch (err) {
       // A tip the stored game cannot take (the 4th of the day) will never apply: drop it, do not retry, do not block the queue.
       if (e.gameDelta.shopTip && err instanceof GameDeltaError) {

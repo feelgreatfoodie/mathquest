@@ -21,9 +21,11 @@ export interface Repo {
    * The only writer of `game`. Reads the stored game inside a transaction, applies the delta and writes
    * `game` back, so a stale screen cannot overwrite newer totals. With `session`, the run's log is written
    * in the same transaction, and a log that is already stored means the delta was already applied (a safe retry).
+   * With `checkpoint` (an Adventure trip), `session` is the trip's cumulative log and a stored log does NOT end the write: the transaction
+   * reads it, credits only the XP above its `xpCredited`, and merges the log in place. A closed trip (`finished`) takes nothing more.
    * A purchase also writes one purchases-log entry in the same transaction. Returns the game as stored. Throws GameDeltaError when the delta cannot apply.
    */
-  applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog }): Promise<KidGame>;
+  applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog; checkpoint?: boolean }): Promise<KidGame>;
   /**
    * Puts `amount` gems in the vault for `termDays` in one transaction: gems drop, the vault pointer moves and the deposit doc is
    * created with the server's time. Throws GameDeltaError when the vault is off, the amount is under 10 or over the gems, or 3 are active.

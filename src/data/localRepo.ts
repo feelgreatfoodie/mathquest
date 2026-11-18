@@ -1,4 +1,5 @@
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
+import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, maturesAtOf, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { WorldState } from '../game/overworld/worldState';
@@ -62,10 +63,21 @@ export class LocalRepo implements Repo {
     this.patchKid(kidId, (k) => ({ ...k, ...(flags.hasPin !== undefined ? { hasPin: flags.hasPin } : {}), ...(flags.avatar !== undefined ? { avatar: flags.avatar } : {}) }));
   }
 
-  async applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog }): Promise<KidGame> {
+  async applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog; checkpoint?: boolean }): Promise<KidGame> {
     const stored = read<Kid[]>('kids', []).find((k) => k.id === kidId);
     if (!stored) throw new Error('That player was removed.');
     const current = normalizeKid(stored).game;
+    if (opts?.session && opts.checkpoint) {
+      const logs = read<SessionLog[]>(`sessions:${kidId}`, []);
+      const stored = logs.find((l) => l.id === opts.session!.id) ?? null;
+      const cp = creditCheckpoint(stored, opts.session, delta);
+      if (!cp) return current;
+      const after = applyDelta(current, cp.delta);
+      const merged: SessionLog = { ...cp.session, gems: cp.storedGems + (after.gems - current.gems) };
+      write(`sessions:${kidId}`, [...logs.filter((l) => l.id !== merged.id), merged].slice(-200));
+      this.patchKid(kidId, (k) => ({ ...k, game: after }));
+      return after;
+    }
     if (opts?.session) {
       const logs = read<SessionLog[]>(`sessions:${kidId}`, []);
       if (logs.some((l) => l.id === opts.session!.id)) return current;
