@@ -43,28 +43,67 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['game']);
     }
 
+    // A kid write may also change `inventory` (owned items, equipped slots, savings goal), next to `game`, and only
+    // that: an item buy (inventory.items grows by one, gems drop with a purchases doc, see gemsDropBacked), an equip
+    // or unequip, or a goal pin. inventoryOk and equippedOk check the contents. Name, settings and the rest stay
+    // parent-only. A write that leaves inventory alone passes through kidOnlyChangedGame as before.
+    function kidInventoryOk() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['game', 'inventory']);
+    }
+
     // The hero catalog (HEROES in src/engine/game.ts; a unit test keeps the two equal). A hero id that is not
     // here has no price and cannot be bought.
     function heroPrices() {
       return {'knight': 0, 'wizard': 15, 'ranger': 35, 'robot': 60, 'dragon': 100};
     }
 
-    // A kid token that adds a hero adds exactly one (the last in the list, as a purchase appends it), the hero
+    // The item catalog (ITEMS in src/game/shop/catalog.ts; a unit test keeps the two equal). An item id has its slot
+    // as a prefix: w- weapon, g- gear, p- pet, a- adventure, c- camp. An id that is not here has no price and cannot
+    // be bought. Prices sit in four bands: common 15-30, rare 50-90, epic 120-180, legendary 250-400.
+    function itemPrices() {
+      return {
+        'w-sword': 20, 'w-wand': 30, 'w-bow': 55, 'w-hammer': 70, 'w-boomerang': 90,
+        'g-cape': 15, 'g-helm': 25, 'g-wizhat': 30, 'g-dinohood': 60,
+        'p-beetle': 50, 'p-dog': 80, 'p-owl': 120, 'p-pup': 150,
+        'a-key': 25, 'a-boots': 50, 'a-lantern': 60, 'a-bridge': 120,
+        'c-flag': 15, 'c-banner': 20, 'c-tent': 30, 'c-fire': 55,
+        'g-goldarmor': 300, 'w-crystalstaff': 350
+      };
+    }
+
+    // The owned items, the equipped slots and the savings goal live in the kid doc's top-level `inventory` map, not in
+    // `game`. An old bundle (cached on an iPad) writes `game` without them and never touches `inventory`, so its save
+    // stays valid for a kid who owns items. A missing inventory reads as {}.
+    function itemsOf(d) {
+      return d.get('inventory', {}).get('items', []);
+    }
+
+    // A kid token adds at most one thing in a write, a hero or an item, never both. An item is added the same way as a
+    // hero: the last in inventory.items, in itemPrices, not owned before, and gems drop by exactly its price (no free
+    // starter among items). A token that adds a hero adds exactly one (the last in the list, as a purchase appends it), the hero
     // is in the catalog, and gems drop by exactly its price. The free starter hero (price 0) may be added with
     // a gem rise, because a doc with game {} gets its knight and a run's gems in one write; any drop is refused
-    // by gemsDropBacked. Without a hero change it passes, so runs and equips are unaffected. Only the kid branch
-    // of the kid-doc update uses this.
+    // by gemsDropBacked. Without a hero or item change it passes, so runs and equips are unaffected. Only the kid branch
+    // uses this.
     function kidHeroGrowthOk() {
       let before = resource.data.get('game', {});
       let after = request.resource.data.get('game', {});
       let beforeHeroes = before.get('heroes', []);
       let afterHeroes = after.get('heroes', []);
-      return afterHeroes.size() == beforeHeroes.size()
-        || (afterHeroes.size() == beforeHeroes.size() + 1
+      let beforeItems = itemsOf(resource.data);
+      let afterItems = itemsOf(request.resource.data);
+      let heroGrew = afterHeroes.size() == beforeHeroes.size() + 1;
+      let itemGrew = afterItems.size() == beforeItems.size() + 1;
+      return (afterHeroes.size() == beforeHeroes.size() && afterItems.size() == beforeItems.size())
+        || (heroGrew && afterItems.size() == beforeItems.size()
           && afterHeroes[afterHeroes.size() - 1] in heroPrices()
           && !beforeHeroes.hasAny([afterHeroes[afterHeroes.size() - 1]])
           && (heroPrices()[afterHeroes[afterHeroes.size() - 1]] == 0
-            || before.get('gems', 0) - after.get('gems', 0) == heroPrices()[afterHeroes[afterHeroes.size() - 1]]));
+            || before.get('gems', 0) - after.get('gems', 0) == heroPrices()[afterHeroes[afterHeroes.size() - 1]]))
+        || (itemGrew && afterHeroes.size() == beforeHeroes.size()
+          && afterItems[afterItems.size() - 1] in itemPrices()
+          && !beforeItems.hasAny([afterItems[afterItems.size() - 1]])
+          && before.get('gems', 0) - after.get('gems', 0) == itemPrices()[afterItems[afterItems.size() - 1]]);
     }
 
     // The game economy is client-trusted by design: grading runs on the device, so a kid token can write any
@@ -86,9 +125,9 @@ service cloud.firestore {
       return /databases/$(database)/documents/families/$(uid)/kids/$(kidId)/purchases/$(id);
     }
 
-    // A decrease of game.gems is legal only in the write that buys one hero. That write sets game.lastPurchaseId
-    // to a new id, creates the purchases doc with that id, adds exactly one hero, and the doc's cost equals the
-    // drop and its heroId is the hero added. The rules cannot look up "some purchases doc", so the kid doc names
+    // A decrease of game.gems is legal only in the write that buys one hero or one item. That write sets game.lastPurchaseId
+    // to a new id, creates the purchases doc with that id, adds exactly one hero or exactly one item (in inventory.items, not both), and
+    // the doc's cost equals the drop and its heroId (or itemId) is the one added. The rules cannot look up "some purchases doc", so the kid doc names
     // it: lastPurchaseId is the key that exists/getAfter can read. A stale full-doc copy, a reused id, a wrong
     // cost, a drop without a hero or two docs for one buy all fail here. Applies to the kid and the parent branch;
     // the Admin SDK skips rules, so a support correction stays possible. A missing game or gems reads as 0.
@@ -99,14 +138,19 @@ service cloud.firestore {
       let id = after.get('lastPurchaseId', '');
       let beforeHeroes = before.get('heroes', []);
       let afterHeroes = after.get('heroes', []);
+      let beforeItems = itemsOf(resource.data);
+      let afterItems = itemsOf(request.resource.data);
+      let heroGrew = afterHeroes.size() == beforeHeroes.size() + 1 && afterItems.size() == beforeItems.size();
+      let itemGrew = afterItems.size() == beforeItems.size() + 1 && afterHeroes.size() == beforeHeroes.size();
       return drop <= 0
         || (id is string && id.matches('^[A-Za-z0-9_-]{1,40}$')
           && id != before.get('lastPurchaseId', '')
-          && afterHeroes.size() == beforeHeroes.size() + 1
+          && (heroGrew || itemGrew)
           && !exists(purchasePath(uid, kidId, id))
           && existsAfter(purchasePath(uid, kidId, id))
           && getAfter(purchasePath(uid, kidId, id)).data.cost == drop
-          && getAfter(purchasePath(uid, kidId, id)).data.heroId == afterHeroes[afterHeroes.size() - 1]);
+          && ((heroGrew && getAfter(purchasePath(uid, kidId, id)).data.get('heroId', '') == afterHeroes[afterHeroes.size() - 1])
+            || (itemGrew && getAfter(purchasePath(uid, kidId, id)).data.get('itemId', '') == afterItems[afterItems.size() - 1])));
     }
 
     // game.hero may change only to a hero the kid owns after the write (a buy equips the new hero in the same
@@ -118,7 +162,43 @@ service cloud.firestore {
         || after.get('heroes', ['knight']).hasAny([after.get('hero', 'knight')]);
     }
 
-    // xp and bestCombo only grow, and the hero list never loses an entry. gemsDropBacked misses a stale copy that
+    // inventory.equipped may change only to items the kid owns after the write (inventory.items), each in its own slot
+    // (w- weapon, g- gear, p- pet) and in the catalog. An unchanged equipped passes, so a stored doc that already
+    // disagrees can still be saved. Any other slot name is refused. An empty or missing map passes (unequip).
+    function equippedOk() {
+      let before = resource.data.get('inventory', {});
+      let after = request.resource.data.get('inventory', {});
+      let eq = after.get('equipped', {});
+      let owned = after.get('items', []);
+      let prices = itemPrices();
+      return eq == before.get('equipped', {})
+        || (eq is map
+          && eq.keys().hasOnly(['weapon', 'gear', 'pet'])
+          && (!('weapon' in eq) || (eq.weapon is string && eq.weapon.matches('^w-.*') && eq.weapon in prices && eq.weapon in owned))
+          && (!('gear' in eq) || (eq.gear is string && eq.gear.matches('^g-.*') && eq.gear in prices && eq.gear in owned))
+          && (!('pet' in eq) || (eq.pet is string && eq.pet.matches('^p-.*') && eq.pet in prices && eq.pet in owned)));
+    }
+
+    // The inventory map is valid when it is unchanged, or when it holds only items, equipped and goal, the items
+    // list is a list that keeps every earlier entry and grows by at most one (a buy), and a goal is a short string.
+    // A removed inventory reads as {} and loses its items, so it fails. The kid branch also needs one more rule
+    // (kidInventoryOk). Applies to the kid and the parent branch.
+    function inventoryOk() {
+      let before = resource.data.get('inventory', {});
+      let after = request.resource.data.get('inventory', {});
+      let beforeItems = before.get('items', []);
+      let afterItems = after.get('items', []);
+      return after == before
+        || (after is map
+          && after.keys().hasOnly(['items', 'equipped', 'goal'])
+          && afterItems is list
+          && afterItems.size() <= beforeItems.size() + 1
+          && afterItems.size() <= 60
+          && afterItems.hasAll(beforeItems)
+          && (!('goal' in after) || (after.goal is string && after.goal.size() <= 40)));
+    }
+
+    // xp and bestCombo only grow, and the hero list never loses an entry (the item list is held by inventoryOk). gemsDropBacked misses a stale copy that
     // keeps gems but rewinds xp (a real loss: xp 1363 to 467). A missing field reads as 0 or empty, so a
     // game {} doc can still be filled. Admin SDK writes skip rules, so a support reset stays possible.
     function gameMonotonicOk() {
@@ -129,26 +209,43 @@ service cloud.firestore {
         && after.get('heroes', []).hasAll(before.get('heroes', []));
     }
 
-    // A purchases-log entry is valid only in the transaction that buys the hero: the kid doc after the write
-    // holds one more hero (the logged one, not owned before) and exactly `cost` fewer gems. get() reads the doc
+    // A purchases-log entry is valid only in the transaction that buys the hero or the item: the entry names exactly
+    // one of heroId and itemId, the kid doc after the write holds one more of that kind (the logged one, not owned
+    // before, nothing else added) and exactly `cost` fewer gems, and `cost` is the catalog price. get() reads the doc
     // before the write, getAfter() reads it after, so a lone entry, a wrong cost or a wrong hero is refused.
     function purchaseEntryOk(uid, kidId, purchaseId) {
       let kidPath = /databases/$(database)/documents/families/$(uid)/kids/$(kidId);
       let before = get(kidPath).data.get('game', {});
       let after = getAfter(kidPath).data.get('game', {});
+      let beforeItems = itemsOf(get(kidPath).data);
+      let afterItems = itemsOf(getAfter(kidPath).data);
       let e = request.resource.data;
-      return e.keys().hasOnly(['id', 'heroId', 'cost', 'at'])
-        && e.keys().hasAll(['id', 'heroId', 'cost', 'at'])
+      let isHero = e.keys().hasAny(['heroId']);
+      let isItem = e.keys().hasAny(['itemId']);
+      return e.keys().hasOnly(['id', 'heroId', 'itemId', 'cost', 'at'])
+        && e.keys().hasAll(['id', 'cost', 'at'])
+        && isHero != isItem
         && e.id == purchaseId
         && after.get('lastPurchaseId', '') == purchaseId
-        && e.heroId is string
-        && e.heroId in heroPrices()
-        && e.cost is int && e.cost > 0 && e.cost == heroPrices()[e.heroId]
+        && e.cost is int && e.cost > 0
         && e.at is number
-        && after.get('heroes', []).hasAll([e.heroId])
-        && !before.get('heroes', []).hasAny([e.heroId])
-        && after.get('heroes', []).size() == before.get('heroes', []).size() + 1
-        && before.get('gems', 0) - after.get('gems', 0) == e.cost;
+        && before.get('gems', 0) - after.get('gems', 0) == e.cost
+        && ((isHero
+            && e.heroId is string
+            && e.heroId in heroPrices()
+            && e.cost == heroPrices()[e.heroId]
+            && after.get('heroes', []).hasAll([e.heroId])
+            && !before.get('heroes', []).hasAny([e.heroId])
+            && after.get('heroes', []).size() == before.get('heroes', []).size() + 1
+            && afterItems.size() == beforeItems.size())
+          || (isItem
+            && e.itemId is string
+            && e.itemId in itemPrices()
+            && e.cost == itemPrices()[e.itemId]
+            && afterItems.hasAll([e.itemId])
+            && !beforeItems.hasAny([e.itemId])
+            && afterItems.size() == beforeItems.size() + 1
+            && after.get('heroes', []).size() == before.get('heroes', []).size()));
     }
 
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
@@ -186,8 +283,8 @@ service cloud.firestore {
         allow read: if isParent(uid) || isKid(uid, kidId);
         allow delete: if isParent(uid);
         allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId;
-        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk())
-          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame() && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && kidHeroGrowthOk() && kidRaiseOk());
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk())
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && kidHeroGrowthOk() && kidRaiseOk());
 
         match /cards/{cardId} {
           allow read: if isParent(uid) || isKid(uid, kidId);

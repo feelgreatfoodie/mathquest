@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { HeroFigure } from '../../ui/HeroFigure';
 import { learnerParams } from '../../engine/models';
 import type { Feedback, SessionRunner } from '../../engine/session';
 import { HoldButton } from '../../ui/early/HoldButton';
@@ -160,7 +161,7 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
       </div>
 
       <div className="arena early-arena">
-        <Sprite name={kid.game.hero} size={96} className="hero-sprite" />
+        <HeroFigure game={kid.game} size={96} className="hero-sprite" strike={solved} cheer={false} />
         <div className={`monster ${shake ? 'shake' : ''} ${solved ? 'hit' : ''}`}>
           <div className="hp"><div className="hp-fill" style={{ width: `${hp * 100}%` }} /></div>
           <Sprite name={monster} size={monster === 'boss' ? 120 : 96} />

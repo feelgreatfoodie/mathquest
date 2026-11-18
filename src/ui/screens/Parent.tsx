@@ -1,12 +1,13 @@
 import { useEffect, useState, type FocusEvent } from 'react';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { HEROES, levelFor } from '../../engine/game';
+import { itemById } from '../../game/shop/catalog';
 import { gemHistory } from '../../engine/gemHistory';
 import { GEM_SPEEDS, earnedTodayOf, gemFullRateOf, gemSpeedOf, gemTier } from '../../engine/gems';
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
-import { learnerOf, modulesOf, paceOf, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
+import { learnerOf, modulesOf, paceOf, shop2On, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
@@ -429,7 +430,7 @@ function GemHistory({ changes }: { changes: ReturnType<typeof gemHistory> }) {
           {changes.map((c, i) => (
             <li key={`${c.kind}-${c.at}-${i}`} className={c.gems > 0 ? 'gain' : 'spend'}>
               <span className="gem-delta">{signed(c.gems)}</span>
-              <span>{c.kind === 'run' ? 'Quest finished' : `Bought ${HEROES.find((h) => h.id === c.heroId)?.name ?? c.heroId}`}</span>
+              <span>{c.kind === 'run' ? 'Quest finished' : `Bought ${HEROES.find((h) => h.id === c.heroId)?.name ?? itemById(c.heroId ?? '')?.name ?? c.heroId}`}</span>
               <span className="muted">{new Date(c.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
             </li>
           ))}
@@ -688,6 +689,11 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
           <select value={paceOf(settings)} onChange={(e) => setSettings({ ...settings, paceMultiplier: Number(e.target.value) })}>
             {PACE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+        </label>
+        <label className="check">
+          <input type="checkbox" checked={shop2On(settings)} onChange={(e) => setSettings({ ...settings, shop2: e.target.checked })} />
+          Item shop (weapons, gear, pets, adventure items, camp)
+          <span className="hint">Fixed prices, no random rewards. Turn it on after every device has updated.</span>
         </label>
         <label>
           Gem speed

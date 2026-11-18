@@ -1,4 +1,4 @@
-import { applyDelta, type GameDelta } from '../engine/game';
+import { applyDelta, purchaseTarget, type GameDelta } from '../engine/game';
 import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import { newId, type Repo } from './repo';
 
@@ -81,7 +81,7 @@ export class LocalRepo implements Repo {
   private logPurchase(kidId: string, before: KidGame, after: KidGame, delta: GameDelta): void {
     if (delta.purchase === undefined) return;
     const logs = read<PurchaseLog[]>(`purchases:${kidId}`, []);
-    write(`purchases:${kidId}`, [...logs, { id: newId(), heroId: delta.purchase, cost: before.gems - after.gems, at: Date.now() }]);
+    write(`purchases:${kidId}`, [...logs, { id: newId(), ...purchaseTarget(delta.purchase), cost: before.gems - after.gems, at: Date.now() }]);
   }
 
   async listPurchases(kidId: string, max: number): Promise<PurchaseLog[]> {

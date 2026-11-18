@@ -14,8 +14,8 @@ import {
   writeBatch,
   type Firestore,
 } from 'firebase/firestore';
-import { applyDelta, type GameDelta } from '../engine/game';
-import { normalizeGame, normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { applyDelta, purchaseTarget, type GameDelta } from '../engine/game';
+import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import { newId, type Repo } from './repo';
 
 const BATCH_MAX = 450;
@@ -100,7 +100,7 @@ export class FirestoreRepo implements Repo {
     return runTransaction(this.db, async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists()) throw new Error('That player was removed.');
-      const current = normalizeGame((snap.data() as { game?: unknown }).game);
+      const current = normalizeKid(snap.data() as Kid).game;
       // The log is written with the delta, so a stored log means this delta already landed.
       if (sessionRef && (await tx.get(sessionRef)).exists()) return current;
       let next = applyDelta(current, delta);
@@ -110,11 +110,15 @@ export class FirestoreRepo implements Repo {
         // The log entry rides in the same transaction as the hero and the gems it records. The kid doc names it
         // (lastPurchaseId) so the rules can find it: a gem drop is legal only with that one entry.
         const id = newId();
-        const entry: PurchaseLog = { id, heroId: delta.purchase, cost: current.gems - next.gems, at: Date.now() };
+        const entry: PurchaseLog = { id, ...purchaseTarget(delta.purchase), cost: current.gems - next.gems, at: Date.now() };
         tx.set(doc(this.purchases(kidId), id), entry);
         next = { ...next, lastPurchaseId: id };
       }
-      tx.update(ref, { game: next });
+      // The shop fields go to the top-level inventory, never into game, and only when they changed: a run or a hero
+      // buy writes game alone, the same shape an old bundle writes.
+      const out = splitGame(next);
+      const changed = !sameInventory(splitGame(current).inventory, out.inventory);
+      tx.update(ref, { game: out.game, ...(changed ? { inventory: out.inventory ?? { items: [] } } : {}) });
       return next;
     });
   }

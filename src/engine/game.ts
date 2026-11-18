@@ -1,4 +1,5 @@
 import { GEM_RUN_MAX, earnedTodayOf, gemsForRun, type GemRunStats, type GemSettings } from './gems';
+import { EQUIP_SLOTS, itemById, type EquipSlot } from '../game/shop/catalog';
 import type { KidGame, Learner } from './models';
 import type { RunSummary } from './session';
 
@@ -52,10 +53,14 @@ export interface GameDelta {
   bestCombo?: number;
   /** When a run finished (epoch ms). Moves the day streak. Leave it out for a shop action. */
   playedAt?: number;
-  /** A hero to buy: spends its cost and equips it. Fails when owned or too expensive. */
+  /** A hero or an item (catalog id) to buy: spends its catalog price and equips it. Fails when owned or too expensive. */
   purchase?: string;
-  /** An owned hero to equip. */
+  /** An owned hero or item to equip. An item takes its slot. */
   equip?: string;
+  /** Empties a slot. The item stays owned. */
+  unequip?: EquipSlot;
+  /** Pins the hero or item the kid is saving for. null clears it. An owned hero or item cannot be a goal. */
+  goal?: string | null;
 }
 
 /** The delta cannot apply to the current game (a hero already owned, not enough gems). Retrying will not help. */
@@ -89,6 +94,7 @@ export function applyDelta(game: KidGame, delta: GameDelta): KidGame {
   if (!Number.isFinite(xp) || xp < 0) throw new GameDeltaError('XP cannot go down.');
   if (!Number.isFinite(bestCombo) || bestCombo < 0) throw new GameDeltaError('Best combo cannot go down.');
   let next: KidGame = { ...game, xp: game.xp + xp, bestCombo: Math.max(game.bestCombo, bestCombo), heroes: [...game.heroes] };
+  // items and equipped carry through the spread above; they are replaced, never edited in place.
   const earned = awardedGems(game, delta);
   let gems = game.gems + earned;
   if (!Number.isFinite(gems)) throw new GameDeltaError('Gems must be a number.');
@@ -107,15 +113,51 @@ export function applyDelta(game: KidGame, delta: GameDelta): KidGame {
   }
   if (delta.purchase !== undefined) {
     const hero = HEROES.find((h) => h.id === delta.purchase);
-    if (!hero) throw new GameDeltaError('That hero does not exist.');
-    if (next.heroes.includes(hero.id)) throw new GameDeltaError('That hero is already owned.');
-    if (gems < hero.cost) throw new GameDeltaError('Not enough gems.');
-    gems -= hero.cost;
-    next = { ...next, heroes: [...next.heroes, hero.id], hero: hero.id };
+    const item = hero ? undefined : itemById(delta.purchase);
+    if (!hero && !item) throw new GameDeltaError('That is not in the shop.');
+    const cost = (hero ?? item)!.cost;
+    const items = next.items ?? [];
+    if (next.heroes.includes(delta.purchase) || items.includes(delta.purchase)) throw new GameDeltaError('That is already owned.');
+    if (gems < cost) throw new GameDeltaError('Not enough gems.');
+    gems -= cost;
+    if (hero) {
+      next = { ...next, heroes: [...next.heroes, hero.id], hero: hero.id };
+    } else {
+      next = { ...next, items: [...items, item!.id] };
+      if (item!.slot) next = { ...next, equipped: { ...(next.equipped ?? {}), [item!.slot]: item!.id } };
+    }
+    // Buying the pinned goal ends the goal.
+    if (next.goal === delta.purchase) {
+      const { goal: _done, ...rest } = next;
+      next = rest;
+    }
   }
   if (delta.equip !== undefined) {
-    if (!next.heroes.includes(delta.equip)) throw new GameDeltaError('That hero is not owned.');
-    next = { ...next, hero: delta.equip };
+    const item = itemById(delta.equip);
+    if (item) {
+      if (!(next.items ?? []).includes(item.id)) throw new GameDeltaError('That item is not owned.');
+      if (!item.slot) throw new GameDeltaError('That item is not worn.');
+      next = { ...next, equipped: { ...(next.equipped ?? {}), [item.slot]: item.id } };
+    } else {
+      if (!next.heroes.includes(delta.equip)) throw new GameDeltaError('That hero is not owned.');
+      next = { ...next, hero: delta.equip };
+    }
+  }
+  if (delta.unequip !== undefined) {
+    if (!EQUIP_SLOTS.includes(delta.unequip)) throw new GameDeltaError('That is not a slot.');
+    const { [delta.unequip]: _gone, ...rest } = next.equipped ?? {};
+    next = { ...next, equipped: rest };
+  }
+  if (delta.goal !== undefined) {
+    if (delta.goal === null) {
+      const { goal: _cleared, ...rest } = next;
+      next = rest;
+    } else {
+      const known = HEROES.some((h) => h.id === delta.goal) || itemById(delta.goal);
+      if (!known) throw new GameDeltaError('That is not in the shop.');
+      if (next.heroes.includes(delta.goal) || (next.items ?? []).includes(delta.goal)) throw new GameDeltaError('That is already owned.');
+      next = { ...next, goal: delta.goal };
+    }
   }
   if (gems < 0) throw new GameDeltaError('Not enough gems.');
   return { ...next, gems };
@@ -132,4 +174,9 @@ export function buyHero(game: KidGame, heroId: string): KidGame | null {
     if (e instanceof GameDeltaError) return null;
     throw e;
   }
+}
+
+/** The purchases-log field that names what was bought: a hero id in heroId, an item id in itemId. Exactly one. */
+export function purchaseTarget(id: string): { heroId: string } | { itemId: string } {
+  return itemById(id) ? { itemId: id } : { heroId: id };
 }

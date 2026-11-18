@@ -1,10 +1,13 @@
 import { useState } from 'react';
+import { GoalJar, goalName } from '../GoalJar';
+import { CampRow } from '../CampRow';
+import { HeroFigure } from '../HeroFigure';
 import type { Kid } from '../../engine/models';
 import { HeroShop, type OnGame } from '../HeroShop';
-import { Sprite, UiIcon } from '../sprites';
+import { UiIcon } from '../sprites';
 import { HoldButton } from './HoldButton';
 import { unlockSounds } from './sounds';
-import { unlockSpeech } from './useSpeech';
+import { speak, unlockSpeech } from './useSpeech';
 
 const MAX_FLAMES = 7;
 
@@ -18,7 +21,9 @@ export function PrereaderHome({ kid, onStart, onBack, onGame }: { kid: Kid; onSt
       <div className="early-home-top">
         <HoldButton onHold={onBack}><UiIcon name="house" size={44} /></HoldButton>
       </div>
-      <Sprite name={kid.game.hero} size={220} className="bob" />
+      <HeroFigure game={kid.game} size={220} className="bob" />
+      <CampRow game={kid.game} size={64} />
+      <GoalJar game={kid.game} learner="prereader" onClick={() => void speak(`Saving for the ${goalName(kid.game.goal ?? '')}! You have ${kid.game.gems}.`)} />
       <div className="early-home-row">
         <button
           type="button"

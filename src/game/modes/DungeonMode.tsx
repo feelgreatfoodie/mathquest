@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { HeroFigure } from '../../ui/HeroFigure';
 import { learnerParams } from '../../engine/models';
 import type { Feedback, SessionRunner } from '../../engine/session';
 import { loadRunner, saveRun } from '../../ui/runShared';
@@ -147,7 +148,7 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
     <div className="screen run">
       <RunTop progress={progress} combo={feedback?.combo ?? 0} onQuit={finish} />
       <div className="arena">
-        <Sprite name={kid.game.hero} size={110} className="hero-sprite" />
+        <HeroFigure game={kid.game} size={110} className="hero-sprite" strike={feedback?.verdict === 'correct'} cheer={feedback?.verdict === 'correct' && (feedback?.combo ?? 0) >= 5} />
         <div className={`monster ${shake ? 'shake' : ''} ${feedback?.verdict === 'correct' ? 'hit' : ''}`}>
           <div className="hp"><div className="hp-fill" style={{ width: `${hp * 100}%` }} /></div>
           <Sprite name={monster} size={monster === 'boss' ? 150 : 120} />

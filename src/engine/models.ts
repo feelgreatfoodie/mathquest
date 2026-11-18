@@ -1,6 +1,7 @@
 import type { Track } from './content';
 import { MODULE_IDS, type ModuleId } from './modules/types';
 import { DEFAULT_GAME as GAME_DEFAULTS } from './gameDefaults';
+import { slotOf } from '../game/shop/catalog';
 
 /** ts-fsrs Card, flattened to JSON-safe numbers (epoch ms) for Firestore and localStorage. */
 export interface StoredFsrs {
@@ -56,6 +57,8 @@ export interface KidSettings {
    * Optional on stored docs: a missing value reads as 3. Read it through `paceOf`.
    */
   paceMultiplier?: number;
+  /** The item shop (weapons, gear, pets, adventure, camp): off until a parent turns it on. A missing value reads as off. Read it through `shop2On`. */
+  shop2?: boolean;
   /** Gem speed: 0.5 (Slow), 1 (Normal) or 1.5 (Fast). A missing value reads as 1. Read it through `gemSpeedOf` in gems.ts. */
   gemSpeed?: number;
   /** Gems earned today at full rate (half to twice this, a quarter after). A missing value reads as 25 (reader) or 15 (pre-reader). Read it through `gemFullRateOf`. */
@@ -79,17 +82,31 @@ export interface KidGame {
   bestCombo: number;
   heroes: string[];
   hero: string;
-  /** Set by the write that buys a hero: the id of its purchases doc, so the rules can find that doc. */
+  /** Items bought in the shop (src/game/shop/catalog.ts). Never loses an entry. Absent before shop-2: read it through `ownedItems`. */
+  items?: string[];
+  /** Worn items by slot. Each must be in `items`. Absent before shop-2: read it through `equippedOf`. */
+  equipped?: { weapon?: string; gear?: string; pet?: string };
+  /** The item or hero the kid is saving for (the jar on home). */
+  goal?: string;
+  /** Set by the write that buys a hero or an item: the id of its purchases doc, so the rules can find that doc. */
   lastPurchaseId?: string;
   /** Gems earned from runs on `gemsDay` (local YYYY-MM-DD). Absent on a game from before the throttle. Read it through `earnedTodayOf`. */
   gemsEarnedToday?: number;
   gemsDay?: string;
 }
 
-/** One hero bought: written with the game change in the same transaction, never edited or deleted. */
+/** The shop fields as stored in the kid doc's top-level `inventory` map. */
+export interface Inventory {
+  items: string[];
+  equipped?: { weapon?: string; gear?: string; pet?: string };
+  goal?: string;
+}
+
+/** One hero or item bought: written with the game change in the same transaction, never edited or deleted. Exactly one of heroId and itemId. */
 export interface PurchaseLog {
   id: string;
-  heroId: string;
+  heroId?: string;
+  itemId?: string;
   cost: number;
   /** Epoch ms. */
   at: number;
@@ -101,6 +118,12 @@ export interface Kid {
   createdAt: number;
   settings: KidSettings;
   game: KidGame;
+  /**
+   * The stored home of the shop fields (owned items, equipped slots, savings goal). On a loaded Kid these are merged
+   * into `game` (items, equipped, goal) and this field is dropped; `splitGame` pulls them out again to write. They
+   * live outside `game` so a save from an old bundle, which writes `game` without them, stays valid.
+   */
+  inventory?: Inventory;
   /** Set by the setKidPin function. The PIN hash itself lives server-side only. */
   hasPin?: boolean;
 }
@@ -149,6 +172,10 @@ export const PRESETS: Record<Learner, KidSettings> = {
     paceMultiplier: 3,
   },
 };
+
+export function shop2On(settings: { shop2?: boolean } | undefined | null): boolean {
+  return settings?.shop2 === true;
+}
 
 export function learnerOf(settings: { learner?: Learner } | undefined | null): Learner {
   return settings?.learner === 'prereader' ? 'prereader' : 'reader';
@@ -212,6 +239,14 @@ export function normalizeGame(raw: unknown): KidGame {
   const heroes = Array.isArray(g.heroes) && g.heroes.every((h) => typeof h === 'string') && g.heroes.length > 0
     ? (g.heroes as string[]).slice()
     : DEFAULT_GAME.heroes.slice();
+  const items = Array.isArray(g.items) ? (g.items.filter((i) => typeof i === 'string') as string[]) : [];
+  const eq = g.equipped && typeof g.equipped === 'object' ? (g.equipped as Record<string, unknown>) : {};
+  const equipped: NonNullable<KidGame['equipped']> = {};
+  for (const slot of ['weapon', 'gear', 'pet'] as const) {
+    const id = eq[slot];
+    // Each slot keeps only an owned item that fits it: junk and a stale slot read as empty.
+    if (typeof id === 'string' && items.includes(id) && slotOf(id) === slot) equipped[slot] = id;
+  }
   return {
     xp: num(g.xp, DEFAULT_GAME.xp),
     gems: num(g.gems, DEFAULT_GAME.gems),
@@ -220,6 +255,9 @@ export function normalizeGame(raw: unknown): KidGame {
     bestCombo: num(g.bestCombo, DEFAULT_GAME.bestCombo),
     heroes,
     hero: str(g.hero, DEFAULT_GAME.hero),
+    ...(items.length ? { items } : {}),
+    ...(Object.keys(equipped).length ? { equipped } : {}),
+    ...(typeof g.goal === 'string' && g.goal ? { goal: g.goal } : {}),
     ...(typeof g.gemsDay === 'string' && typeof g.gemsEarnedToday === 'number' && Number.isFinite(g.gemsEarnedToday)
       ? { gemsEarnedToday: g.gemsEarnedToday, gemsDay: g.gemsDay }
       : {}),
@@ -227,5 +265,30 @@ export function normalizeGame(raw: unknown): KidGame {
 }
 
 export function normalizeKid(raw: Kid): Kid {
-  return { ...raw, game: normalizeGame((raw as { game?: unknown }).game) };
+  const { inventory, ...rest } = raw;
+  const g = (raw as { game?: unknown }).game;
+  const base = g && typeof g === 'object' ? (g as Record<string, unknown>) : {};
+  // The stored inventory wins over any items, equipped or goal left in game.
+  const inv = inventory && typeof inventory === 'object' ? (inventory as unknown as Record<string, unknown>) : {};
+  const merged = { ...base, ...(inventory ? { items: inv.items, equipped: inv.equipped, goal: inv.goal } : {}) };
+  return { ...rest, game: normalizeGame(merged) };
+}
+
+/**
+ * Splits a game into what the `game` field stores and what the `inventory` field stores. The inventory is undefined
+ * for a game with no items, no equipped slot and no goal, so a kid who never shopped keeps a doc with no inventory.
+ */
+export function splitGame(game: KidGame): { game: KidGame; inventory: Inventory | undefined } {
+  const { items, equipped, goal, ...rest } = game;
+  const hasEquipped = !!equipped && Object.keys(equipped).length > 0;
+  const hasAny = (items?.length ?? 0) > 0 || hasEquipped || !!goal;
+  const inventory: Inventory | undefined = hasAny
+    ? { items: items ?? [], ...(hasEquipped ? { equipped } : {}), ...(goal ? { goal } : {}) }
+    : undefined;
+  return { game: rest, inventory };
+}
+
+/** True when two inventories hold the same items, equipped slots and goal (an absent inventory equals an empty one). */
+export function sameInventory(a: Inventory | undefined, b: Inventory | undefined): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
