@@ -19,7 +19,7 @@ import { BOSS_WIN, bossPlan, bossReady, bossReward } from './boss';
 import { TILE, drawScene, viewFor, type Scene } from './draw';
 import { MAX_VISIBLE, planEntities, retryEntity, type Entity } from './encounters';
 import { MAPS, findTiles, heroStart, isWalkable, tileAt, type Point, type RegionId, type WalkCtx } from './maps';
-import { approach, findPath } from './pathfind';
+import { approach } from './pathfind';
 import { NEXT_REGION, PREV_REGION, REGION_NAMES, gateInfo, lairMessage, regionProgress } from './regions';
 import { fromDoc, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
 
@@ -607,19 +607,6 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       draw(time);
       raf = requestAnimationFrame(loop);
     };
-    const campGuide = (region: RegionId, x: number, y: number): Point[] | null => {
-      if (!hudLit.current) {
-        guide.current = { key: '', path: null };
-        return null;
-      }
-      const key = `${region}:${x},${y}`;
-      if (guide.current.key !== key) {
-        const map = MAPS[region];
-        const camp = findTiles(map, 'camp')[0];
-        guide.current = { key, path: camp ? findPath(map, { x, y }, camp, walkCtx()) : null };
-      }
-      return guide.current.path;
-    };
     const draw = (time: number) => {
       const canvas = canvasRef.current;
       const w = worldRef.current;
@@ -629,7 +616,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       const map = MAPS[w.region];
       const h = hero.current;
       const dpr = canvas.width / Math.max(1, canvas.clientWidth);
-      const scale = Math.max(2, Math.min(6, Math.round(canvas.clientWidth / (TILE * 14)))) * Math.round(dpr);
+      // Tile size in CSS pixels: about 14 tiles across, never fewer than 11 by 7 in view (shrink the tiles before the buttons).
+      const want = Math.max(2, Math.min(6, Math.round(canvas.clientWidth / (TILE * 14))));
+      const fit = Math.max(1, Math.floor(Math.min(canvas.clientWidth / (11 * TILE), canvas.clientHeight / (7 * TILE))));
+      const scale = Math.min(want, fit) * Math.round(dpr);
+      canvas.dataset.tile = String(TILE * Math.min(want, fit)); // CSS px per tile, for the layout tests
       const k = kidRef.current.game;
       const worn = k.equipped?.pet;
       const scene: Scene = {
@@ -646,7 +637,6 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         lantern: gearRef.current.lantern,
         time,
         marker: markerRef.current,
-        campGuide: campGuide(w.region, h.x, h.y),
       };
       drawScene(g, canvas.width, canvas.height, scale, scene);
       viewScale.current = scale;
@@ -666,8 +656,6 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     campSpoken.current = true;
     voice(CAMP_VOICE);
   }, [hud.lit]);
-  // The guide to the campfire: the walk from the hero to the camp tile, worked out when the hero's tile changes.
-  const guide = useRef<{ key: string; path: Point[] | null }>({ key: '', path: null });
   const gateCache = useRef({ at: 0, open: false });
   const walkCtxCache = (): boolean => {
     const now = performance.now();
@@ -687,7 +675,6 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         entities: entsRef.current.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, shown: e.shown, cardId: e.cardId })),
         world: worldRef.current,
         paused: pausedRef.current,
-        guide: guide.current.path?.length ?? null,
       }),
       answerOf: (id: string) => {
         const a = runnerRef.current!.queue.find((q) => q.id === id)?.problem.answer;
@@ -733,9 +720,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(size) : null;
     ro?.observe(stage);
     window.addEventListener('resize', size);
+    window.addEventListener('orientationchange', size);
     return () => {
       ro?.disconnect();
       window.removeEventListener('resize', size);
+      window.removeEventListener('orientationchange', size);
     };
   }, [loaded]);
 
@@ -798,7 +787,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const adventureItems = items.filter((i) => i.startsWith('a-'));
 
   return (
-    <div className="screen overworld" data-testid="overworld" data-region={region}>
+    <div className={`screen overworld${learner === 'prereader' ? ' ow-pre' : ''}`} data-testid="overworld" data-region={region}>
       <div className="ow-hud">
         <HoldButton onHold={() => void finishTrip()} ms={CAMP_HOLD_MS} label="Hold to go to camp">
           <UiIcon name="house" size={44} />

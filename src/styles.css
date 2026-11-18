@@ -860,7 +860,12 @@ legend { padding: 0 6px; color: var(--muted); }
 .mode-name { font-size: 18px; }
 
 /* Adventure: the map fills the screen; a question floats over it as a modal. */
-.screen.overworld { padding: 0; gap: 0; height: 100%; display: flex; flex-direction: column; position: relative; }
+.screen.overworld {
+  /* Pinned to the viewport with edge offsets (the inset shorthand is missing in Safari before 14.1), so no child can widen it. */
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1; min-height: 0; height: auto; overflow: hidden;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  gap: 0; display: flex; flex-direction: column;
+}
 .ow-hud { display: flex; align-items: center; gap: 14px; padding: 8px 12px; background: var(--panel); border-bottom: 3px solid var(--line); flex-wrap: wrap; }
 .ow-hearts { color: #f87171; font-size: 26px; letter-spacing: 4px; }
 .ow-hearts i { font-style: normal; }
@@ -869,8 +874,9 @@ legend { padding: 0 6px; color: var(--muted); }
 .ow-remaining b { font-size: 20px; }
 .ow-camp-lit { display: inline-flex; align-items: center; gap: 6px; font-size: 20px; color: var(--gold); font-weight: 700; }
 .ow-item { image-rendering: pixelated; }
-.ow-stage { position: relative; flex: 1; min-height: 0; background: #10131f; touch-action: none; }
-.ow-canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; }
+.ow-stage { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: #10131f; touch-action: none; }
+/* Out of flow: the canvas bitmap is 2x or 3x the box, and its intrinsic size must never take part in layout. */
+.ow-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; }
 .ow-msg { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); max-width: min(520px, 92%); background: var(--panel); border: 3px solid var(--gold); border-radius: 14px; padding: 10px 44px 10px 14px; font-size: 18px; }
 .ow-msg p { margin: 0 0 6px; }
 .ow-lair { display: flex; align-items: center; gap: 12px; margin-right: 52px; }
@@ -878,13 +884,18 @@ legend { padding: 0 6px; color: var(--muted); }
 .ow-dots i { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--gold); background: transparent; }
 .ow-dots i.on { background: var(--gold); }
 .ow-msg .icon-btn { position: absolute; right: 6px; top: 6px; color: var(--text); }
-.ow-dpad { position: absolute; left: 14px; bottom: 14px; width: 204px; height: 204px; display: grid; grid-template-areas: '. up .' 'left . right' '. down .'; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px); gap: 6px; opacity: 0.9; touch-action: none; }
+.ow-dpad { position: absolute; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); width: 204px; height: 204px; display: grid; grid-template-areas: '. up .' 'left . right' '. down .'; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px); gap: 6px; opacity: 0.9; touch-action: none; }
 .ow-dir { width: 64px; height: 64px; border-radius: 16px; border: 3px solid var(--line); background: var(--panel-2); color: var(--text); display: flex; align-items: center; justify-content: center; touch-action: none; }
 .ow-dir:active { background: var(--line); }
 .ow-up { grid-area: up; transform: rotate(180deg); }
 .ow-dir.ow-left { grid-area: left; transform: rotate(90deg); }
 .ow-down { grid-area: down; }
 .ow-dir.ow-right { grid-area: right; transform: rotate(-90deg); }
+/* Pre-readers: Home, mute and the walk pad are 120 px or more. */
+.ow-pre .ow-hud .hold-btn, .ow-pre .ow-hud .mute-btn { min-width: 120px; min-height: 120px; }
+.ow-pre .ow-dpad { width: 372px; height: 372px; grid-template-columns: repeat(3, 120px); grid-template-rows: repeat(3, 120px); }
+.ow-pre .ow-dir { width: 120px; height: 120px; }
+.ow-pre .ow-dpad { opacity: 0.6; } /* big enough to hide the hero at a map edge, so it lets the hero show through */
 .ow-overlay .panel { align-items: center; text-align: center; display: flex; flex-direction: column; gap: 12px; align-self: center; }
 @media (prefers-reduced-motion: reduce) {
   .hero-sprite.lunge, .hero-sprite.hop, .monster.hit svg, .combo-badge, .star-burst i, .sparkles i, .entry-box.is-active { animation: none; }
