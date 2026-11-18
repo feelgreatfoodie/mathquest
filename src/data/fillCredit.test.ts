@@ -47,23 +47,25 @@ describe.each<Learner>(['reader', 'prereader'])('fill-credit (%s)', (learner) =>
   });
   afterEach(() => errors.mockRestore());
 
-  it('an all-fill run counts its right answers, earns gems, and the session log keeps practiceCorrect', async () => {
+  it('an all-fill run counts every answer as graded and correct, earns gems, and the session log has no practiceCorrect', async () => {
     const repo = new LocalRepo();
     const kid = makeKid('Testkid', learner);
     await repo.createKid(kid);
     const run = fillRunner(kid, 6, 1);
     const s = run.summary();
-    expect(s).toMatchObject({ graded: 0, correct: 0, practiceCorrect: 5 });
+    expect(s).toMatchObject({ graded: 6, correct: 5 });
+    expect(s.practiceCorrect).toBeUndefined();
     expect(s.gems).toBeGreaterThanOrEqual(1);
     const out = (await saveRun(repo, kid, run, Date.now()))!;
     expect(out.saved).toBe(true);
     expect(out.summary.gems).toBeGreaterThanOrEqual(1);
     const [log] = await repo.listSessions(kid.id, 5);
-    expect(log).toMatchObject({ graded: 0, correct: 0, practiceCorrect: 5 });
+    expect(log).toMatchObject({ graded: 6, correct: 5 });
+    expect(log!.practiceCorrect).toBeUndefined();
     expect((await repo.getKid(kid.id))!.game.gems).toBe(out.summary.gems);
   });
 
-  it('an all-fill run with 0 right earns 0 gems and logs no practiceCorrect', async () => {
+  it('an all-fill run with 0 right earns 0 gems', async () => {
     const repo = new LocalRepo();
     const kid = makeKid('Testkid', learner);
     await repo.createKid(kid);
@@ -81,7 +83,7 @@ describe.each<Learner>(['reader', 'prereader'])('fill-credit (%s)', (learner) =>
     await repo.createKid(kid);
     const run = fillRunner(kid, 6, 0);
     const out = (await saveRun(repo, kid, run, Date.now()))!;
-    expect((await repo.getKid(kid.id))!.game.gems).toBe(gemsForRun({ correct: 0, practiceCorrect: 6, graded: 0, bestCombo: run.summary().bestCombo, newLearned: 0 }, learner, {}, 0));
+    expect((await repo.getKid(kid.id))!.game.gems).toBe(gemsForRun({ correct: 6, graded: 6, bestCombo: run.summary().bestCombo, newLearned: 0 }, learner, {}, 0));
     expect(out.summary.gems).toBeGreaterThanOrEqual(1);
   });
 });

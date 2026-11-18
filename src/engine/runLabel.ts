@@ -20,7 +20,7 @@ export function runLabel(log: SessionLog, learner: Learner): RunLabel {
 }
 
 /**
- * The counts line for a run that holds practice fill answers (ungraded, so the Questions column leaves them out).
+ * The parent-only note for an OLD log whose fill practice answers were kept out of `graded` (new runs count every answer).
  * A run with none of them returns null. An all-fill run reads "52 answers · 49 right · practice"; a mixed run reads
  * "30 graded · 27 right · 22 practice · 20 right". A log from before practiceCorrect reads as 0 right.
  */
@@ -47,14 +47,12 @@ export function adventureLine(world: { region?: unknown; openedChests?: unknown;
 
 /** The counts a kid's end screen shows for one run. */
 export interface SummaryCounts {
-  /** Right answers: graded right plus practice right. */
+  /** Right answers. A log from before every answer counted also adds its practice right. */
   right: number;
-  /** Answers given: graded plus fill practice, without in-run retries. Never 0 for a run with an answer. */
+  /** Answers given, without in-run retries. A log from before every answer counted also adds its fill practice. Never 0 for a run with an answer. */
   total: number;
   graded: number;
   fill: number;
-  /** Nothing was graded: every answer was practice. */
-  practiceOnly: boolean;
 }
 
 export function summaryCounts(s: Pick<RunSummary, 'answered' | 'graded' | 'correct' | 'practiceCorrect' | 'fillAnswered'>): SummaryCounts {
@@ -63,14 +61,7 @@ export function summaryCounts(s: Pick<RunSummary, 'answered' | 'graded' | 'corre
   const fill = s.fillAnswered ?? (practiceRight ? Math.max(practiceRight, s.answered - s.graded) : 0);
   const right = s.correct + practiceRight;
   const total = Math.max(s.graded + fill, right, s.answered > 0 && s.graded + fill === 0 ? s.answered : 0);
-  return { right, total, graded: s.graded, fill, practiceOnly: s.graded === 0 && fill > 0 };
-}
-
-/** The line under the counts when a run holds practice answers; null for a run with none. */
-export function practiceLine(c: SummaryCounts): string | null {
-  if (c.fill <= 0) return null;
-  if (c.practiceOnly) return `Practice round: ${c.right} of ${c.total} right. Practice answers earn gems too.`;
-  return `${c.graded} graded and ${c.fill} practice. Practice answers earn gems too.`;
+  return { right, total, graded: s.graded, fill };
 }
 
 /** True when the log was written by a bundle older than `live`. A log with no build is never old. */

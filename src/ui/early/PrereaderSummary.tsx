@@ -127,7 +127,7 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
     let line = '';
     if (step === 'stars') {
       chime();
-      line = stars > 0 ? `${counts.practiceOnly ? 'Great practice' : 'Great job'}! You got ${word(stars)} ${stars === 1 ? 'star' : 'stars'}!` : "Nice try! Let's play again!";
+      line = stars > 0 ? `Great job! You got ${word(stars)} ${stars === 1 ? 'star' : 'stars'}!` : "Nice try! Let's play again!";
     } else if (step === 'gems') line = `You have ${gemsAfter} gems!`;
     else if (step === 'xp') line = lv.levelUp ? `Level ${lv.levelAfter}!` : `Level ${lv.levelAfter}`;
     else if (step === 'learned') line = `You learned ${learned.length} new ${learned.length === 1 ? 'one' : 'ones'}!`;

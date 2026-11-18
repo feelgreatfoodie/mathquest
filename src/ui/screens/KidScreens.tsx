@@ -12,7 +12,7 @@ import { lastModeOf, readLastMode, writeLastMode } from '../../game/modes/lastMo
 import type { GameModeId } from '../../game/modes/types';
 import type { Repo } from '../../data/repo';
 import { readerMapLine } from '../../engine/summaryView';
-import { practiceLine, summaryCounts } from '../../engine/runLabel';
+import { summaryCounts } from '../../engine/runLabel';
 import { avatarOf, learnerOf, shop2On, type CardMap, type Kid, type KidGame } from '../../engine/models';
 import { PrereaderHome } from '../early/PrereaderScreens';
 import { PrereaderSummary } from '../early/PrereaderSummary';
@@ -376,7 +376,6 @@ function ReaderSummary({ kid, summary, info, loadCards, onAgain, onHome }: Summa
   const lv = levelFor(kid.game.xp);
   const counts = summaryCounts(summary);
   const acc = counts.total ? counts.right / counts.total : 0;
-  const pLine = practiceLine(counts);
   const stars = acc >= 0.9 ? 3 : acc >= 0.75 ? 2 : 1;
   return (
     <div className="screen center">
@@ -396,7 +395,6 @@ function ReaderSummary({ kid, summary, info, loadCards, onAgain, onHome }: Summa
           <Stat label="XP" value={`+${summary.xp}`} />
           <Stat label="gems" value={`+${summary.gems}`} />
         </div>
-        {pLine ? <p className="muted" data-testid="practice-line">{pLine}</p> : null}
         {info.saved ? (
           <>
             <div className="stats">

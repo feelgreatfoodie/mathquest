@@ -52,8 +52,8 @@ describe('root cause 1: retrievability ties', () => {
   it('the practice-ahead fill no longer returns the first N seen cards in curriculum order', () => {
     const ids = factIds(0).slice(0, 12);
     const cards: CardMap = {};
-    // Same day, same stability, reviewed 1 to 12 minutes ago; the LAST ids in curriculum order are the stalest.
-    ids.forEach((id, i) => (cards[id] = { ...answered(id, T0 - (i + 1) * 60_000), fsrs: { ...answered(id, T0).fsrs, stability: 0.5, due: T0 + DAY, last_review: T0 - (i + 1) * 60_000 } }));
+    // Same day, same stability, reviewed 20 to 240 minutes ago (all rested); the LAST ids in curriculum order are the stalest.
+    ids.forEach((id, i) => (cards[id] = { ...answered(id, T0 - (i + 1) * 20 * 60_000), fsrs: { ...answered(id, T0).fsrs, stability: 0.5, due: T0 + DAY, last_review: T0 - (i + 1) * 20 * 60_000 } }));
     const p = plan(cards, readerSettings({ sessionSize: 6, maxNew: 0 })); // 2 slots go to previews
     const fill = p.filter((x) => !x.isNew).map((x) => x.cardId);
     expect(fill).toHaveLength(4);
@@ -76,20 +76,14 @@ describe('fill fairness and the daily cap', () => {
     expect(picked).toContain(ids[0]);
     expect(picked).toContain(ids[9]); // answered longest ago
   });
-  it('a card with 3 graded answers today is not planned (due or fill)', () => {
+  it('a due card with 3 answers today is planned again: there is no daily cap', () => {
     const cards = seenCards(6);
     const ids = Object.keys(cards);
-    cards[ids[0]!] = { ...cards[ids[0]!]!, dayGraded: 3, day: TODAY, fsrs: { ...cards[ids[0]!]!.fsrs, due: T0 - H } } as CardState; // due AND capped
-    cards[ids[1]!] = { ...cards[ids[1]!]!, dayGraded: 3, day: TODAY } as CardState;
+    cards[ids[0]!] = { ...cards[ids[0]!]!, dayGraded: 3, day: TODAY, fsrs: { ...cards[ids[0]!]!.fsrs, due: T0 - H } } as CardState; // due, 3 answers today
+    cards[ids[1]!] = { ...cards[ids[1]!]!, dayGraded: 5, day: TODAY, lastResults: [true, false], missDay: TODAY } as CardState; // missed again, 5 answers today
     const picked = plan(cards, readerSettings({ sessionSize: 30, maxNew: 0 })).map((x) => x.cardId);
-    expect(picked).not.toContain(ids[0]);
-    expect(picked).not.toContain(ids[1]);
-  });
-  it('a cap from yesterday does not count today', () => {
-    const cards = seenCards(3);
-    const id = Object.keys(cards)[0]!;
-    cards[id] = { ...cards[id]!, dayGraded: 3, day: dayKey(T0 - DAY) } as CardState;
-    expect(plan(cards, readerSettings({ sessionSize: 30, maxNew: 0 })).map((x) => x.cardId)).toContain(id);
+    expect(picked).toContain(ids[0]);
+    expect(picked).toContain(ids[1]);
   });
   it("a card's FSRS stability is unchanged by its 2nd and 3rd answers on the same day", () => {
     const id = 'mul:6x7';
@@ -112,7 +106,7 @@ describe('fill fairness and the daily cap', () => {
     expect(stab[1]).toBe(stab[0]);
     expect(stab[2]).toBe(stab[0]);
     expect(reps).toEqual([1, 1, 1, 1]);
-    expect((runner.getCard(id) as CardState & { dayGraded?: number }).dayGraded).toBe(4); // counted, so the plan stops asking at 3
+    expect((runner.getCard(id) as CardState & { dayGraded?: number }).dayGraded).toBe(4); // every answer is counted
   });
   it('the next day the first answer is a real review again', () => {
     const c0 = answered('mul:6x7', T0 - DAY);
@@ -122,52 +116,81 @@ describe('fill fairness and the daily cap', () => {
   });
 });
 
-describe('cap exhausted: ungraded practice fills the run', () => {
-  const capped = () => {
+describe('no daily cap: fill is counted, FSRS sees the first answer of the day only', () => {
+  // Every fact answered 3 times today, 2 to 40 hours ago, not due.
+  const busy = () => {
     const cards: CardMap = {};
-    factIds(0).forEach((id, i) => (cards[id] = { ...answered(id, T0 - (i + 2) * H), dayGraded: 3, day: TODAY, fsrs: { ...answered(id, T0 - (i + 2) * H).fsrs, due: T0 - H, stability: 1.5 } }) as CardState);
+    factIds(0).forEach((id, i) => (cards[id] = { ...answered(id, T0 - (i + 2) * H), dayGraded: 3, day: TODAY, fsrs: { ...answered(id, T0 - (i + 2) * H).fsrs, due: T0 + 3 * DAY, stability: 5 } }) as CardState);
     return cards;
   };
-  it('a run with every card at its cap still has a full queue of fill items', () => {
-    const p = plan(capped(), readerSettings({ sessionSize: 10, maxNew: 0 }));
+  it('a run with every card answered 3 times today still has a full queue of fill items', () => {
+    const p = plan(busy(), readerSettings({ sessionSize: 10, maxNew: 0 }));
     const fill = p.filter((x) => (x as { fill?: boolean }).fill);
-    // 2 slots go to previews, the rest is fill; nothing is graded.
     expect(p.filter((x) => !(x as { preview?: boolean }).preview)).toHaveLength(8);
-    expect(fill).toHaveLength(8);
-    expect(p.filter((x) => !(x as { fill?: boolean }).fill && !(x as { preview?: boolean }).preview)).toHaveLength(0);
+    expect(fill.length + p.filter((x) => !x.isNew && !(x as { fill?: boolean }).fill).length).toBe(8);
   });
   it('fill picks the least recently answered first', () => {
-    const cards = capped();
+    const cards = busy();
     const ids = Object.keys(cards);
-    const first = plan(cards, readerSettings({ sessionSize: 3, maxNew: 0 })).filter((x) => (x as { fill?: boolean }).fill).map((x) => x.cardId);
+    const first = plan(cards, readerSettings({ sessionSize: 3, maxNew: 0 })).filter((x) => !x.isNew).map((x) => x.cardId);
     expect(first).toContain(ids[ids.length - 1]); // answered longest ago
   });
-  it('answering fill items changes no FSRS state and no daily count; xp is still earned', () => {
-    const cards = capped();
-    const p = plan(cards, readerSettings({ sessionSize: 6, maxNew: 0 })).filter((x) => (x as { fill?: boolean }).fill);
+  it('a fill answer is a counted answer: FSRS stays byte-identical, dayGraded, lastResults, correct and graded move', () => {
+    const cards = busy();
+    const p = plan(cards, readerSettings({ sessionSize: 6, maxNew: 0 })).filter((x) => !x.isNew);
     let clock = T0;
     const runner = new session.SessionRunner(p, cards, mulberry32(9), () => (clock += 5000), readerSettings());
     let xp = 0;
     while (!runner.done()) {
       const e = runner.current()!;
-      expect(e.kind).toBe('practice');
+      expect(e.kind).toBe('graded');
       xp += runner.answer(e.problem.answer, 1500).xp;
       runner.advance();
     }
     for (const c of runner.changedCards()) {
-      expect(c.fsrs).toEqual(cards[c.id]!.fsrs);
-      expect(c.dayGraded).toBe(3);
-      expect(c.lastResults).toEqual(cards[c.id]!.lastResults);
+      expect(JSON.stringify(c.fsrs)).toBe(JSON.stringify(cards[c.id]!.fsrs));
+      expect(c.dayGraded).toBeGreaterThan(3);
+      expect(c.lastResults).toEqual([true, true]);
+      expect(c.attempts).toBeGreaterThan(cards[c.id]!.attempts);
     }
     expect(xp).toBeGreaterThan(0);
-    expect(runner.summary().graded).toBe(0);
+    const s = runner.summary();
+    expect(s.graded).toBe(p.length);
+    expect(s.correct).toBe(p.length);
+    expect(s.practiceCorrect).toBeUndefined();
   });
-  it('fill is not used while graded cards remain', () => {
-    const cards = capped();
-    const id = factIds(0)[20]!;
-    cards[id] = { ...answered(id, T0 - 30 * H), fsrs: { ...answered(id, T0 - 30 * H).fsrs, due: T0 - H } };
-    const p = plan(cards, readerSettings({ sessionSize: 4, maxNew: 0 }));
-    expect(p.some((x) => x.cardId === id && !(x as { fill?: boolean }).fill)).toBe(true);
+  it('fill skips a card answered in the last 10 minutes unless it was missed', () => {
+    const all = busy();
+    const cards: CardMap = Object.fromEntries(Object.entries(all).slice(0, 12));
+    const ids = Object.keys(cards);
+    cards[ids[0]!] = { ...cards[ids[0]!]!, updatedAt: T0 - 5 * 60_000 }; // answered 5 minutes ago, right
+    cards[ids[1]!] = { ...cards[ids[1]!]!, updatedAt: T0 - 5 * 60_000, lastResults: [true, false], missDay: TODAY }; // 5 minutes ago, missed
+    cards[ids[2]!] = { ...cards[ids[2]!]!, updatedAt: T0 - 11 * 60_000 }; // 11 minutes ago
+    const picked = plan(cards, readerSettings({ sessionSize: 30, maxNew: 0 })).map((x) => x.cardId);
+    expect(picked).not.toContain(ids[0]);
+    expect(picked).toContain(ids[1]);
+    expect(picked).toContain(ids[2]);
+  });
+  it('when every card is recent the run is still full, never empty', () => {
+    const cards = busy();
+    for (const id of Object.keys(cards)) cards[id] = { ...cards[id]!, updatedAt: T0 - 60_000 };
+    expect(plan(cards, readerSettings({ sessionSize: 10, maxNew: 0 })).filter((x) => !(x as { preview?: boolean }).preview)).toHaveLength(8);
+  });
+  it('a miss later the same day sets lastResults and missDay, leaves FSRS alone, and the card is planned for the next run', () => {
+    const id = 'mul:6x7';
+    const reviewed = review(newCardState(id, T0 - H), Rating.Good, 1500, true, T0 - H);
+    const cards: CardMap = { [id]: { ...reviewed, lastResults: [true], day: TODAY, dayGraded: 1 } as CardState };
+    const runner = new session.SessionRunner([{ cardId: id, isNew: false }], cards, mulberry32(3), () => T0, readerSettings());
+    const a = runner.current()!.problem.answer as { kind: 'int'; value: number };
+    runner.answer({ kind: 'int', value: a.value + 1 }, 1500);
+    const c = runner.getCard(id)!;
+    expect(JSON.stringify(c.fsrs)).toBe(JSON.stringify(cards[id]!.fsrs));
+    expect(c.lastResults).toEqual([true, false]);
+    expect(c.missDay).toBe(TODAY);
+    expect(c.attempts).toBe(2);
+    expect(c.correct).toBe(1);
+    const next = plan({ ...cards, [id]: c }, readerSettings({ sessionSize: 5, maxNew: 0 }), T0 + 60_000).map((x) => x.cardId);
+    expect(next).toContain(id);
   });
 });
 

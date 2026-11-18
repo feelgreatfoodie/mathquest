@@ -100,15 +100,21 @@ export function retrievability(state: CardState, now: number): number {
   return scheduler.forgetting_curve(days, state.fsrs.stability);
 }
 
-/** Graded answers a card may get in one local day. After that it can only come back as an in-run retry. */
-export const DAILY_GRADED_CAP = 3;
-
-/** How many graded answers the card has had today. */
+/** How many counted answers the card has had today. */
 export function gradedToday(state: CardState | undefined, now: number): number {
   return state && state.day === dayKey(now) ? (state.dayGraded ?? 0) : 0;
 }
 
-/** Notes one graded answer on the card: today's count, the last two outcomes, the day of a miss. */
+/**
+ * Records a counted answer that is not the card's first of the day. FSRS fields stay byte-identical (only the first
+ * answer of the day calls review()); the kid-facing counters move like a reviewed answer: attempts, correct, recentMs.
+ * Chain noteGraded() after it for the last two outcomes and the day of a miss.
+ */
+export function repeatAnswer(state: CardState, ms: number, correct: boolean, now: number): CardState {
+  return { ...practice(state, ms, correct, now), attempts: state.attempts + 1, correct: state.correct + (correct ? 1 : 0) };
+}
+
+/** Notes one counted answer on the card: today's count, the last two outcomes, the day of a miss. */
 export function noteGraded(state: CardState, correct: boolean, now: number): CardState {
   const today = dayKey(now);
   return {

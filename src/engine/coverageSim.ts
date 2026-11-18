@@ -1,4 +1,4 @@
-import { availableCards, unlockedGroups } from './mastery';
+import { availableCards, steadyShare, unlockedGroups } from './mastery';
 import { dayKey } from './game';
 import { learnerOf, modulesOf, type CardMap, type CardState, type KidSettings } from './models';
 import { MODULES, moduleOfCard } from './modules';
@@ -55,6 +55,13 @@ export interface EveningResult {
   top: { id: string; graded: number }[];
   /** FSRS reps and stability per card changed during the evening, for the same-day check. */
   maxRepsGain: number;
+  /** Right answers on counted (graded) entries over the whole evening, and in runs 11 and later (0 when the kid is stalled). */
+  correctAnswers: number;
+  lateCorrect: number;
+  /** Share of the universe whose last two answers were both right: the number the steady unlock and the lair read. */
+  steadyAtEnd: number;
+  /** Right answers on practice entries that did not count (fill on main after the cap). */
+  uncountedRight: number;
 }
 
 type Loose = {
@@ -89,6 +96,9 @@ export function runEvening(inp: EveningInput): EveningResult {
   let capSnapshot: Record<string, string> | null = null;
   let firstUngradedRun: number | undefined;
   let shortRuns = 0;
+  let correctAnswers = 0;
+  let lateCorrect = 0;
+  let uncountedRight = 0;
   const groupOf = (id: string) => {
     const d = getCardDef(id);
     return d && d.kind === 'fact' ? `${d.track}:g${d.groupIndex + 1}` : null;
@@ -131,6 +141,11 @@ export function runEvening(inp: EveningInput): EveningResult {
       const fb = runner.answer(input, 2500);
       const preview = !!(e as { preview?: boolean }).preview;
       log.entries.push({ cardId: e.cardId, kind: e.kind, correct: fb.verdict === 'correct', preview });
+      if (fb.verdict === 'correct' && e.kind === 'graded') {
+        correctAnswers++;
+        if (r > 10) lateCorrect++;
+      }
+      if (fb.verdict === 'correct' && e.kind === 'practice' && (e as { fill?: boolean }).fill) uncountedRight++;
       if (e.kind === 'graded') {
         graded[e.cardId] = (graded[e.cardId] ?? 0) + 1;
         if (fb.verdict !== 'correct') {
@@ -185,6 +200,10 @@ export function runEvening(inp: EveningInput): EveningResult {
     answers: runs.reduce((n, r) => n + r.entries.length, 0),
     top,
     maxRepsGain,
+    correctAnswers,
+    lateCorrect,
+    steadyAtEnd: steadyShare(inp.universe, cards),
+    uncountedRight,
   };
 }
 
