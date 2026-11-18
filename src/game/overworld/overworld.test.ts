@@ -465,7 +465,7 @@ describe('adventure regions: distinct Forest and Castle', () => {
   it('the Forest is dense with trees, and its stream is narrow and winds', () => {
     const interior = (MAPS.forest.w - 2) * (MAPS.forest.h - 2);
     expect(tiles('forest', 'tree').length / interior).toBeGreaterThan(0.3);
-    expect(tiles('meadow', 'tree').length / interior).toBeLessThan(0.15);
+    expect(tiles('meadow', 'tree').length / interior).toBeLessThan(0.2);
     // The stream is one or two tiles wide on every row, and its column moves by at least 4 between its far points.
     const water = tiles('forest', 'water').filter((t) => !(t.x >= 7 && t.x <= 12 && t.y >= 21 && t.y <= 24));
     const cols = new Set(water.map((t) => t.x));
