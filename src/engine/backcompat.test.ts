@@ -16,7 +16,8 @@ import { SessionRunner, planSession } from './session';
  * Re-record only on purpose: RECORD_GOLDEN=1 npx vitest run src/engine/backcompat.test.ts
  */
 const GOLDEN = new URL('./__golden__/backcompat.json', import.meta.url);
-const T0 = new Date('2026-11-16T16:00:00').getTime();
+// A fixed instant (16:00 in US Pacific time), so the golden does not depend on the machine's time zone.
+const T0 = Date.parse('2026-11-17T00:00:00Z');
 const DAY = 86_400_000;
 
 // A stored kid doc: no `modules`, no `learner`. Made-up name and values.
