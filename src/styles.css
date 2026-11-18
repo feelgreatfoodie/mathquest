@@ -536,7 +536,7 @@ legend { padding: 0 6px; color: var(--muted); }
 .toast { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center; max-width: 560px; padding: 10px 14px; border-radius: 10px; background: #5c1a1a; color: #fff; border: 2px solid #ff8a8a; }
 
 /* ---- Pre-reader shop and the chest button on home ---- */
-.early-home-row { display: flex; gap: 28px; align-items: center; justify-content: center; }
+.early-home-row { display: flex; flex-wrap: wrap; gap: 28px; align-items: center; justify-content: center; max-width: 100%; }
 .shop-btn {
   width: 170px; height: 200px;
   display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
