@@ -1,11 +1,11 @@
-import { useMute } from '../../ui/MuteButton';
+import { HearButton, MuteButton, useMute } from '../../ui/MuteButton';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HeroFigure } from '../../ui/HeroFigure';
 import { learnerParams } from '../../engine/models';
 import type { Feedback, SessionRunner } from '../../engine/session';
 import { HoldButton } from '../../ui/early/HoldButton';
 import { unlockSounds } from '../../ui/early/sounds';
-import { speak, stopSpeaking, unlockSpeech } from '../../ui/early/useSpeech';
+import { stopSpeaking, unlockSpeech } from '../../ui/early/useSpeech';
 import { finishRun } from '../../ui/finishRun';
 import { loadRunner } from '../../ui/runShared';
 import { MONSTERS, Sprite, UiIcon } from '../../ui/sprites';
@@ -27,7 +27,7 @@ function PathDots({ done }: { done: number }) {
 /** The run for kids who cannot read yet: pictures, a voice, big buttons. Questions come from QuestionPanel. */
 export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeProps) {
   const block = learnerParams('prereader').blockSize;
-  useMute(kid); // a parent can turn sound off for this kid; the voice and the chime follow it
+  const mute = useMute(kid); // the kid's mute and the parent's voice and sounds settings drive the voice and the chimes
   const runnerRef = useRef<SessionRunner | null>(null);
   const startedAt = useRef(Date.now());
   const finishing = useRef(false);
@@ -141,15 +141,10 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
         <HoldButton onHold={() => void finish()}><UiIcon name="house" size={44} /></HoldButton>
         {saved ? <div className="saved-toast" role="status"><UiIcon name="check" size={32} /> Saved!</div> : null}
         <PathDots done={done} />
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Say it again"
-          disabled={solved}
-          onClick={() => { unlockSounds(); unlockSpeech(); void speak(entry.problem.speech ?? ''); }}
-        >
-          <UiIcon name="speaker" size={44} />
-        </button>
+        <div className="early-top-right">
+          <HearButton text={entry.problem.speech ?? ''} muted={mute.voiceMuted} disabled={solved} big />
+          <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big />
+        </div>
       </div>
 
       <div className="arena early-arena">

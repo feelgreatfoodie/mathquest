@@ -13,6 +13,21 @@ function synth(): SpeechSynthesis | null {
   }
 }
 
+// The voice policy for the screen that is open. `muted`: the kid silenced it. `locked`: a parent set voice off, which
+// nothing can override. Set by `useMute`; every `speak` call obeys it, so no call site needs its own check.
+let voiceMuted = false;
+let voiceLocked = false;
+
+export function setVoicePolicy(p: { muted: boolean; locked: boolean }): void {
+  voiceMuted = p.muted;
+  voiceLocked = p.locked;
+}
+
+/** True when a tap on "Hear it" may speak: the parent has not set voice off. */
+export function canHear(): boolean {
+  return !voiceLocked;
+}
+
 export function speechAvailable(): boolean {
   return synth() !== null && typeof SpeechSynthesisUtterance !== 'undefined';
 }
@@ -26,8 +41,10 @@ function fallbackMs(text: string): number {
  * Says `text`. By default it cuts off whatever is being said; `queue: true` waits its turn.
  * Resolves when the voice finishes, fails, or the fallback timer fires, so callers never hang.
  */
-export function speak(text: string, opts: { queue?: boolean } = {}): Promise<void> {
+export function speak(text: string, opts: { queue?: boolean; hear?: boolean } = {}): Promise<void> {
   const s = synth();
+  // `hear` is a kid's tap on a speaker: it speaks once even while muted, but never past a parent's voice off.
+  if (voiceLocked || (voiceMuted && !opts.hear)) return Promise.resolve();
   if (!s || typeof SpeechSynthesisUtterance === 'undefined' || !text) return Promise.resolve();
   return new Promise<void>((resolve) => {
     let done = false;
@@ -80,7 +97,7 @@ export function unlockSpeech(): void {
 export function useSpeech() {
   const turn = useRef(0);
   useEffect(() => () => stopSpeaking(), []);
-  const say = useCallback(async (text: string, opts: { queue?: boolean } = {}): Promise<boolean> => {
+  const say = useCallback(async (text: string, opts: { queue?: boolean; hear?: boolean } = {}): Promise<boolean> => {
     const mine = ++turn.current;
     await speak(text, opts);
     return mine === turn.current;

@@ -12,6 +12,7 @@ import type { RunInfo } from '../runShared';
 import { Sprite, UiIcon } from '../sprites';
 import { chime, unlockSounds } from './sounds';
 import { speak, unlockSpeech } from './useSpeech';
+import { MuteButton, useMute } from '../MuteButton';
 
 /** One step of the end screen lasts this long. A tap jumps to the last step. */
 export const STEP_MS = 1500;
@@ -74,6 +75,7 @@ function DotCard({ id, faster }: { id: string; faster: boolean }) {
 const CONFETTI = Array.from({ length: 18 }, (_, i) => i);
 
 export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgain, onHome }: Props) {
+  const mute = useMute(kid);
   const [saved, setSaved] = useState(info.saved);
   const [retrying, setRetrying] = useState(false);
   const [shop, setShop] = useState(false);
@@ -172,6 +174,7 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
       if ((e.target as HTMLElement).closest('button') || Date.now() - openedAt.current < TAP_GUARD_MS) return;
       setAt(last);
     }}>
+      <div className="early-sum-mute"><MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big /></div>
       <div className="big-stars" role="img" aria-label={`${stars} of ${total} stars`}>
         {Array.from({ length: total }, (_, i) => (
           <svg key={i} width="64" height="64" viewBox="0 0 24 24" aria-hidden="true" className={i < stars ? 'star on' : 'star'}>

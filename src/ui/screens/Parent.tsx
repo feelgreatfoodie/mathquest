@@ -8,7 +8,7 @@ import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
 import { RATE_MAX, VAULT_TERMS, maturesAtOf, owedOf, payoutOf, rateOf, vaultBalance, vaultOn, type VaultDeposit, type VaultTerm } from '../../game/vault';
-import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modesOnOf, modulesOf, paceOf, shop2On, shopMathOn, soundOf, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
+import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modesOnOf, modulesOf, paceOf, shop2On, shopMathOn, soundsOf, voiceOf, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
@@ -271,6 +271,17 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
               await save();
             } catch (e) {
               reportFailure('The picture was not saved.', e, save);
+            }
+          }}
+          onAudio={async (audio) => {
+            const save = async () => {
+              await repo.setKidAudio(kid.id, audio);
+              onKids(kids.map((x) => (x.id === kid.id ? { ...x, settings: { ...x.settings, ...audio } } : x)));
+            };
+            try {
+              await save();
+            } catch (e) {
+              reportFailure('The sound setting was not saved.', e, save);
             }
           }}
           onPinSet={async () => {
@@ -565,7 +576,7 @@ function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
   );
 }
 
-function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
+function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onAudio, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   // The live build: this bundle's, or a newer one a log shows. A log older than it came from a device still on an old bundle.
@@ -859,10 +870,38 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPictu
           Game modes: Adventure (walk a map, meet monsters and chests, fight a boss)
           <span className="hint">On by default. {learnerOf(settings) === 'prereader' ? 'Picture Run stays. Adventure adds a second button on Home; questions are the same picture questions with 3 big choices.' : 'The Dungeon run stays. Adventure adds a second choice on Home.'} Questions come from the same review schedule.</span>
         </label>
-        <label className="check">
-          <input type="checkbox" checked={soundOf(settings)} onChange={(e) => setSettings({ ...settings, sound: e.target.checked })} />
-          Sound effects
-          <span className="hint">On by default. The player can also mute from the top bar of a round.</span>
+        <label>
+          Voice
+          <select
+            value={voiceOf(settings)}
+            data-testid="setting-voice"
+            onChange={(e) => {
+              const voice = e.target.value as 'on' | 'off' | 'kid';
+              setSettings({ ...settings, voice });
+              void onAudio({ voice });
+            }}
+          >
+            <option value="on">On</option>
+            <option value="kid">Player's choice</option>
+            <option value="off">Off (silent, the player cannot turn it on)</option>
+          </select>
+          <span className="hint">The voice that reads questions aloud. Saves as soon as you pick. The player can also mute from the top bar of a round. With Off, there is no mute or Hear it button for the voice.</span>
+        </label>
+        <label>
+          Sounds
+          <select
+            value={soundsOf(settings)}
+            data-testid="setting-sounds"
+            onChange={(e) => {
+              const sounds = e.target.value as 'on' | 'off';
+              setSettings({ ...settings, sounds });
+              void onAudio({ sounds });
+            }}
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </select>
+          <span className="hint">Chimes, ticks and hit sounds. Saves as soon as you pick.</span>
         </label>
         <label className="check">
           <input type="checkbox" checked={vaultOn(settings)} data-testid="setting-vault" onChange={(e) => setSettings({ ...settings, vault: { ...settings.vault, on: e.target.checked } })} />

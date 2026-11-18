@@ -14,11 +14,13 @@ import { useDeposits, type VaultApi } from '../vaultApi';
 import { HoldButton } from './HoldButton';
 import { unlockSounds } from './sounds';
 import { speak, unlockSpeech } from './useSpeech';
+import { MuteButton, useMute } from '../MuteButton';
 
 const MAX_FLAMES = 7;
 
 /** Home for a pre-reader: the hero, a huge Play triangle, and streak flames. No reading needed. */
 export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, vault }: { kid: Kid; repo: Repo; onStart: (mode: GameModeId) => void; onBack: () => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; vault?: VaultApi }) {
+  const mute = useMute(kid);
   const [shop, setShop] = useState(false);
   const [shopVault, setShopVault] = useState(false);
   const hasVault = !!vault && vaultOn(kid.settings);
@@ -32,6 +34,7 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
       <div className="early-home-top">
         <HoldButton onHold={onBack}><UiIcon name="house" size={44} /></HoldButton>
       </div>
+      <div className="early-home-mute"><MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big /></div>
       <HeroFigure game={kid.game} size={220} className="bob" />
       <CampRow game={kid.game} size={64} />
       <GoalJar game={kid.game} learner="prereader" onClick={() => void speak(`Saving for the ${goalName(kid.game.goal ?? '')}! You have ${kid.game.gems}.`)} />
