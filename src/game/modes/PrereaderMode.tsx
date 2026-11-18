@@ -85,7 +85,7 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
       const done = await saveRun(repo, kid, r, startedAt.current, onSynced);
       if (done) {
         left = true;
-        onDone(done.summary, done.updated);
+        onDone(done.summary, done.updated, done.info);
       }
     } catch (e) {
       console.error('Leaving the run: saving threw.', e);

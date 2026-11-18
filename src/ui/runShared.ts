@@ -23,13 +23,25 @@ export async function loadRunner(repo: Repo, kid: Kid): Promise<{ runner: Sessio
  * it. A replay is safe to repeat because the stored session log marks the delta as applied.
  * `onSynced` gets the stored game after a retry succeeds.
  */
+/** What the summary screen needs besides the summary and the kid. */
+export interface RunInfo {
+  /** The totals reached the server. When false, show no totals: `retry` tries the write again. */
+  saved: boolean;
+  /** The game before this run, so the screen can count up from the old totals. */
+  before: KidGame;
+  /** Facts first answered correctly this run. */
+  newIds: string[];
+  /** Present only when `saved` is false. Resolves with the stored game; rejects when the write fails again. */
+  retry?: () => Promise<KidGame>;
+}
+
 export async function saveRun(
   repo: Repo,
   kid: Kid,
   runner: SessionRunner,
   startedAt: number,
   onSynced?: (game: KidGame) => void,
-): Promise<{ summary: RunSummary; updated: Kid; saved: boolean } | null> {
+): Promise<{ summary: RunSummary; updated: Kid; saved: boolean; info: RunInfo } | null> {
   const raw = runner.summary();
   if (raw.answered === 0) return null;
   const now = Date.now();
@@ -84,7 +96,7 @@ export async function saveRun(
   };
   try {
     const game = await write();
-    return { summary, updated: { ...kid, game }, saved: true };
+    return { summary, updated: { ...kid, game }, saved: true, info: { saved: true, before: kid.game, newIds: runner.newlyLearned() } };
   } catch (e) {
     reportFailure('Your gems and XP from this run were not saved.', e, async () => {
       await attempt();
@@ -96,6 +108,6 @@ export async function saveRun(
     } catch {
       // The delta cannot apply to this copy; keep the old totals on screen.
     }
-    return { summary, updated: { ...kid, game: shown }, saved: false };
+    return { summary, updated: { ...kid, game: shown }, saved: false, info: { saved: false, before: kid.game, newIds: runner.newlyLearned(), retry: attempt } };
   }
 }
