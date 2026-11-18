@@ -238,9 +238,9 @@ describe('pre-reader session runner', () => {
   it('caps a peek at Hard, and a wrong answer after a peek stays Again', () => {
     const cards = reviewAll(['add:1+2', 'add:1+3'], Rating.Good);
     const run = new SessionRunner([{ cardId: 'add:1+2', isNew: false }, { cardId: 'add:1+3', isNew: false }], cards, mulberry32(1), () => T0, PRE);
-    expect(run.answer(right(run.current()!.problem), 300, { peeked: true }).rating).toBe(Rating.Hard);
+    expect(run.answer(right(run.current()!.problem), 300, { helped: true }).rating).toBe(Rating.Hard);
     run.advance();
-    expect(run.answer(wrong(run.current()!.problem), 300, { peeked: true }).rating).toBe(Rating.Again);
+    expect(run.answer(wrong(run.current()!.problem), 300, { helped: true }).rating).toBe(Rating.Again);
   });
 
   it('retries a miss after 2 questions for a pre-reader and after 3 for a reader', () => {

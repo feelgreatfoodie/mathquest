@@ -25,7 +25,7 @@ function Dots({ n }: { n: number }) {
   );
 }
 
-/** Three big answer buttons. Each shows the numeral and a dot pattern. */
+/** Four big answer buttons, in a row on a tablet and 2 by 2 on a phone. Each shows the numeral and a dot pattern. */
 export function ChoiceButtons({ choices, answer, guide, picked, disabled, onChoose }: Props) {
   return (
     <div className="choices" role="group" aria-label="Answers">

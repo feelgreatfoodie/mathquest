@@ -32,6 +32,8 @@ export interface RunInfo {
   before: KidGame;
   /** Facts first answered correctly this run. */
   newIds: string[];
+  /** Pre-reader facts answered right, without help, in under 3 seconds. Absent counts as none. */
+  quickIds?: string[];
   /** Present only when `saved` is false. Resolves with the stored game; rejects when the write fails again. */
   retry?: () => Promise<KidGame>;
 }
@@ -113,7 +115,7 @@ export async function saveRun(
   };
   try {
     const game = await write();
-    return { summary, updated: { ...kid, game }, saved: true, info: { saved: true, before: kid.game, newIds: runner.newlyLearned() } };
+    return { summary, updated: { ...kid, game }, saved: true, info: { saved: true, before: kid.game, newIds: runner.newlyLearned(), quickIds: runner.quickFacts() } };
   } catch (e) {
     reportFailure('Your gems and XP from this run were not saved.', e, async () => {
       await attempt();
@@ -125,6 +127,6 @@ export async function saveRun(
     } catch {
       // The delta cannot apply to this copy; keep the old totals on screen.
     }
-    return { summary, updated: { ...kid, game: shown }, saved: false, info: { saved: false, before: kid.game, newIds: runner.newlyLearned(), retry: attempt } };
+    return { summary, updated: { ...kid, game: shown }, saved: false, info: { saved: false, before: kid.game, newIds: runner.newlyLearned(), quickIds: runner.quickFacts(), retry: attempt } };
   }
 }

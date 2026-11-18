@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { displayModeFor } from './displayMode';
 
 /** The voice and WebAudio are stubbed. No audio asset files exist; every sound is a WebAudio oscillator. */
 type Stub = { spoken: { text: string; lang: string; rate: number }[]; oscillators: number; ctxs: number };
@@ -87,17 +86,5 @@ describe('sounds', () => {
     uninstall();
     const s = await import('./sounds');
     expect(() => { s.unlockSounds(); s.chime(); s.softTone(); s.tick(); }).not.toThrow();
-  });
-});
-
-describe('what the kid sees, by card level', () => {
-  it('pictures for 0 and 1, a ten-frame at 2, numerals with a peek at 3 and 4', () => {
-    expect([0, 1].map((l) => displayModeFor(l as 0 | 1, 'graded'))).toEqual(['groups', 'groups']);
-    expect(displayModeFor(2, 'graded')).toBe('frame');
-    expect([3, 4].map((l) => displayModeFor(l as 3 | 4, 'graded'))).toEqual(['numerals', 'numerals']);
-  });
-
-  it('always shows the pictures on a practice retry', () => {
-    for (const l of [0, 1, 2, 3, 4] as const) expect(displayModeFor(l, 'practice')).toBe('groups');
   });
 });

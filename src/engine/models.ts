@@ -35,7 +35,16 @@ export interface CardState {
   lastResults?: boolean[];
   /** Local day of the last miss. */
   missDay?: string;
+  /** Pre-reader fade (see support.ts): how much help this fact shows. A missing value reads as 'dots'. Read it through `supportOf`. */
+  supportLevel?: SupportLevel;
+  /** Right answers in a row at this support level, without help. Absent reads as 0. */
+  supportRun?: number;
+  /** Right answers still owed before the fact may move up to the pad again, after a miss on the pad. Absent reads as 0. */
+  supportHold?: number;
 }
+
+/** What a pre-reader sees for one fact: counting dots, numerals with 4 close choices, or a number pad. */
+export type SupportLevel = 'dots' | 'numerals' | 'pad';
 
 export type CardMap = Record<string, CardState>;
 

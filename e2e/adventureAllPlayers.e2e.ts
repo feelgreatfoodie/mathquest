@@ -98,8 +98,8 @@ test('a pre-reader sees Play and Adventure at 120 px or more, plays one Adventur
   await expect(page.locator('.question-modal .keypad')).toHaveCount(0);
   await expect(page.getByRole('group', { name: 'Walk' })).toHaveCount(0); // the pad hides so it never covers a choice
   const choices = page.locator('.question-modal .choice');
-  await expect(choices).toHaveCount(3);
-  for (let i = 0; i < 3; i++) {
+  await expect(choices).toHaveCount(4);
+  for (let i = 0; i < 4; i++) {
     const box = (await choices.nth(i).boundingBox())!;
     expect(box.width).toBeGreaterThanOrEqual(120);
     expect(box.height).toBeGreaterThanOrEqual(120);
