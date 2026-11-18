@@ -13,6 +13,8 @@
 // It commits no uid, email, PIN or salt: every value is random per run and gone after it.
 
 import { randomBytes, randomInt, scryptSync } from 'node:crypto';
+// The add-kid defaults live in models.ts. Node strips the types on import (22.18+).
+import { DEFAULT_GAME } from '../src/engine/models.ts';
 
 export const MISMATCH_MESSAGE = "That name and PIN didn't match";
 const GLOBAL = '_global';
@@ -52,7 +54,7 @@ export function buildDocs(p, now = Date.now(), salt = randomBytes(16)) {
   return [
     [`parents/${p.familyUid}`, { email: `${p.familyUid}@probe.invalid`, createdAt: now }],
     [`families/${p.familyUid}`, { createdAt: now, probe: true }],
-    [`families/${p.familyUid}/kids/${p.kidId}`, { id: p.kidId, name: p.name, createdAt: now, settings: {}, game: {}, hasPin: true }],
+    [`families/${p.familyUid}/kids/${p.kidId}`, { id: p.kidId, name: p.name, createdAt: now, settings: {}, game: { ...DEFAULT_GAME, heroes: [...DEFAULT_GAME.heroes] }, hasPin: true }],
     [
       `pinIndex/${p.familyUid}/kids/${p.kidId}`,
       { nameKey: p.nameKey, salt: salt.toString('hex'), hash: hashPin(p.pin, salt).toString('hex'), updatedAt: now },

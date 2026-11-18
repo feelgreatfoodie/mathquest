@@ -109,3 +109,30 @@ export const DEFAULT_GAME: KidGame = {
   heroes: ['knight'],
   hero: 'knight',
 };
+
+/**
+ * The one place a stored kid doc becomes a Kid. A doc written before a game field existed
+ * (or with `game: {}`) reads with that field at its DEFAULT_GAME value, so no screen sees
+ * undefined. Wrong-typed values also fall back. Every repo read goes through this.
+ */
+export function normalizeGame(raw: unknown): KidGame {
+  const g = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  const str = (v: unknown, d: string) => (typeof v === 'string' && v ? v : d);
+  const heroes = Array.isArray(g.heroes) && g.heroes.every((h) => typeof h === 'string') && g.heroes.length > 0
+    ? (g.heroes as string[]).slice()
+    : DEFAULT_GAME.heroes.slice();
+  return {
+    xp: num(g.xp, DEFAULT_GAME.xp),
+    gems: num(g.gems, DEFAULT_GAME.gems),
+    streakDays: num(g.streakDays, DEFAULT_GAME.streakDays),
+    lastPlayedDay: typeof g.lastPlayedDay === 'string' ? g.lastPlayedDay : DEFAULT_GAME.lastPlayedDay,
+    bestCombo: num(g.bestCombo, DEFAULT_GAME.bestCombo),
+    heroes,
+    hero: str(g.hero, DEFAULT_GAME.hero),
+  };
+}
+
+export function normalizeKid(raw: Kid): Kid {
+  return { ...raw, game: normalizeGame((raw as { game?: unknown }).game) };
+}

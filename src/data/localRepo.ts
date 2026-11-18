@@ -1,4 +1,4 @@
-import type { CardMap, CardState, Family, Kid, SessionLog } from '../engine/models';
+import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type SessionLog } from '../engine/models';
 import type { Repo } from './repo';
 
 const PREFIX = 'mathquest:v1';
@@ -33,11 +33,12 @@ export class LocalRepo implements Repo {
   }
 
   async listKids(): Promise<Kid[]> {
-    return read<Kid[]>('kids', []).sort((a, b) => a.createdAt - b.createdAt);
+    return read<Kid[]>('kids', []).map(normalizeKid).sort((a, b) => a.createdAt - b.createdAt);
   }
 
   async getKid(kidId: string): Promise<Kid | null> {
-    return read<Kid[]>('kids', []).find((k) => k.id === kidId) ?? null;
+    const k = read<Kid[]>('kids', []).find((x) => x.id === kidId);
+    return k ? normalizeKid(k) : null;
   }
 
   async saveKid(kid: Kid): Promise<void> {

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { scryptSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_GAME } from '../src/engine/models';
 // @ts-expect-error plain .mjs script, no types
 import { MISMATCH_MESSAGE, buildDocs, callableUrl, checkSignIn, checkWrongPin, decodeJwtPayload, hashPin, makeProbe, parseArgs } from './deploy-probe.mjs';
 
@@ -9,6 +10,11 @@ const P = { familyUid: 'probe-fam', kidId: 'probe-kid', name: 'zprobeabc', nameK
 const good = { result: { token: jwt({ uid: 'kid_probe-kid', claims: { role: 'kid', familyUid: 'probe-fam', kidId: 'probe-kid' } }) } };
 
 describe('deploy-probe pieces (no network)', () => {
+  it('seeds the kid with the full default game map', () => {
+    const kid = (buildDocs(P, 1, Buffer.alloc(16)) as [string, Record<string, unknown>][]).find(([path]) => path.includes('/kids/'))![1];
+    expect(kid.game).toEqual(DEFAULT_GAME);
+    expect(Object.keys(kid.game as object).sort()).toEqual(['bestCombo', 'gems', 'hero', 'heroes', 'lastPlayedDay', 'streakDays', 'xp']);
+  });
   it('builds the callable URL for a project', () => {
     expect(callableUrl('my-proj-1')).toBe('https://us-west1-my-proj-1.cloudfunctions.net/kidSignIn');
   });
