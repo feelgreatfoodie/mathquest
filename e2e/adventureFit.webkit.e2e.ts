@@ -122,3 +122,36 @@ test('a pre-reader Picture Run in landscape fits: no sideways scroll, top bar in
   expect(r.bad).toBe(0);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/prereader-picture-run-1024x768.png` });
 });
+
+/**
+ * The canvas bitmap is 2x or 3x its box. Forced to 2048 px wide, its intrinsic width must not widen the flex parents:
+ * with the canvas in flow its intrinsic width (flex min-content) pushed the page wider than the screen and clipped the Home button. The test sets the canvas to its intrinsic size, so it fails with the canvas in flow and passes with it out of flow.
+ */
+for (const [name, settings] of [['prereader', PRE], ['reader', READER]] as const)
+  test(`${name}: a 2048 px wide canvas bitmap inside the flex parent does not widen the page at 1024x768`, async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 });
+    await seed(page, settings);
+    await openAdventure(page);
+    const r = await page.evaluate(async () => {
+      const c = document.querySelector('.ow-canvas') as HTMLCanvasElement;
+      c.width = 2048;
+      c.height = 1536;
+      // Older WebKit sized a 100% wide canvas from its bitmap. Today's does not, so the test hands the bitmap size to layout directly.
+      c.style.width = 'auto';
+      c.style.height = 'auto';
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      return {
+        px: c.width,
+        sw: document.documentElement.scrollWidth,
+        bw: document.body.scrollWidth,
+        iw: window.innerWidth,
+        stage: (c.parentElement as HTMLElement).getBoundingClientRect().width,
+        home: (document.querySelector('.ow-hud .hold-btn') as HTMLElement).getBoundingClientRect().right,
+      };
+    });
+    expect(r.px, 'the bitmap really is 2048 wide').toBe(2048);
+    expect(r.sw, 'scrollWidth').toBeLessThanOrEqual(r.iw);
+    expect(r.bw, 'body scrollWidth').toBeLessThanOrEqual(r.iw);
+    expect(r.stage, 'stage width').toBeLessThanOrEqual(r.iw);
+    expect(r.home, 'Home inside').toBeLessThanOrEqual(r.iw);
+  });

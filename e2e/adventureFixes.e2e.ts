@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { FACTS } from '../src/engine/modules/facts';
 
 /**
- * Adventure fixes at 820x1180: the castle's closed door, the lair gate with its second unlock rule, the camp guide, and a
+ * Adventure fixes at 820x1180: the castle's closed door, the lair gate with its second unlock rule, the camp-lit message (no guide), and a
  * lair that pays once. Names and ids are made up. SCREENSHOTS=1 writes PNGs under docs/screenshots/adventure-fixes.
  */
 const SHOTS = process.env.SCREENSHOTS ? 'docs/screenshots/adventure-fixes' : null;
@@ -60,7 +60,7 @@ async function seed(page: Page, opts: { settings: object; cards?: Record<string,
 const castleWorld = (over: object = {}) => ({ region: 'castle', x: 33, y: 6, facing: 'up', openedChests: [], bossesDefeated: [], keys: 0, version: 1, updatedAt: 1, ...over });
 
 type Ow = {
-  state(): { region: string; hero: { x: number; y: number }; paused: boolean; guide: number | null; entities: Array<{ id: string; kind: string; x: number; y: number }>; world: { bossesDefeated: string[]; keys: number } };
+  state(): { region: string; hero: { x: number; y: number }; paused: boolean; entities: Array<{ id: string; kind: string; x: number; y: number }>; world: { bossesDefeated: string[]; keys: number } };
   modalAnswer(): number | null;
   tapTile(x: number, y: number): void;
   teleport(x: number, y: number): void;
@@ -156,12 +156,11 @@ test('a lair that was already won pays nothing again: no fight, no gems, no key,
   }
 });
 
-test('Camp is lit: a guide runs from the hero to the campfire, the voice says it once, and the campfire still finishes the trip', async ({ page }) => {
+test('Camp is lit: no guide is drawn, the voice says it once, and the campfire still finishes the trip', async ({ page }) => {
   const now = Date.now();
   const ids = FACTS.groups![0]!.cardIds.slice(0, 6);
   await seed(page, { settings: { ...READER, factGroupsUnlocked: 1, sessionSize: 3 }, cards: cardsOf(now, ids.map((id) => ({ id, stability: 5, lastResults: [true, true], dueIn: -DAY }))) });
   await openAdventure(page);
-  expect((await ow(page, (o) => o.state())).guide).toBeNull();
   expect(await spoken(page)).not.toContain('Walk to the campfire to finish your trip!');
   for (let guard = 0; guard < 8; guard++) {
     const left = (await ow(page, (o) => o.state())).entities.filter((e) => e.shown && e.kind === 'monster');
@@ -175,10 +174,9 @@ test('Camp is lit: a guide runs from the hero to the campfire, the voice says it
     await expect(page.locator('.question-modal')).toHaveCount(0, { timeout: 8000 });
   }
   await expect(page.getByTestId('camp-lit')).toBeVisible();
-  await expect.poll(async () => (await ow(page, (o) => o.state())).guide).toBeGreaterThan(0);
   expect((await spoken(page)).filter((t) => t === 'Walk to the campfire to finish your trip!')).toHaveLength(1);
   await page.waitForTimeout(400);
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/camp-lit-guide-820x1180.png` });
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/camp-lit-820x1180.png` });
   // Walking on does not repeat the voice, and the camp tile still ends the trip.
   await ow(page, (o) => o.tapTile(6, 8));
   await expect(page.locator('.summary')).toBeVisible({ timeout: 25_000 });

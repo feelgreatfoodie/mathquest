@@ -19,7 +19,7 @@ import { BOSS_WIN, bossPlan, bossReady, bossReward } from './boss';
 import { TILE, drawScene, viewFor, type Scene } from './draw';
 import { MAX_VISIBLE, planEntities, retryEntity, type Entity } from './encounters';
 import { MAPS, findTiles, heroStart, isWalkable, tileAt, type Point, type RegionId, type WalkCtx } from './maps';
-import { approach, findPath } from './pathfind';
+import { approach } from './pathfind';
 import { NEXT_REGION, PREV_REGION, REGION_NAMES, gateInfo, lairMessage, regionProgress } from './regions';
 import { fromDoc, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
 
@@ -607,19 +607,6 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       draw(time);
       raf = requestAnimationFrame(loop);
     };
-    const campGuide = (region: RegionId, x: number, y: number): Point[] | null => {
-      if (!hudLit.current) {
-        guide.current = { key: '', path: null };
-        return null;
-      }
-      const key = `${region}:${x},${y}`;
-      if (guide.current.key !== key) {
-        const map = MAPS[region];
-        const camp = findTiles(map, 'camp')[0];
-        guide.current = { key, path: camp ? findPath(map, { x, y }, camp, walkCtx()) : null };
-      }
-      return guide.current.path;
-    };
     const draw = (time: number) => {
       const canvas = canvasRef.current;
       const w = worldRef.current;
@@ -650,7 +637,6 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         lantern: gearRef.current.lantern,
         time,
         marker: markerRef.current,
-        campGuide: campGuide(w.region, h.x, h.y),
       };
       drawScene(g, canvas.width, canvas.height, scale, scene);
       viewScale.current = scale;
@@ -670,8 +656,6 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     campSpoken.current = true;
     voice(CAMP_VOICE);
   }, [hud.lit]);
-  // The guide to the campfire: the walk from the hero to the camp tile, worked out when the hero's tile changes.
-  const guide = useRef<{ key: string; path: Point[] | null }>({ key: '', path: null });
   const gateCache = useRef({ at: 0, open: false });
   const walkCtxCache = (): boolean => {
     const now = performance.now();
@@ -691,7 +675,6 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         entities: entsRef.current.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, shown: e.shown, cardId: e.cardId })),
         world: worldRef.current,
         paused: pausedRef.current,
-        guide: guide.current.path?.length ?? null,
       }),
       answerOf: (id: string) => {
         const a = runnerRef.current!.queue.find((q) => q.id === id)?.problem.answer;
