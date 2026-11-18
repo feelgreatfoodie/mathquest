@@ -3,7 +3,7 @@ import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { HEROES, levelFor } from '../../engine/game';
 import { gemHistory } from '../../engine/gemHistory';
 import { factBaseline, factThresholds } from '../../engine/grading';
-import { LEVEL_LABELS, cardLevel, unlockedFactGroups, type Level } from '../../engine/mastery';
+import { LEVEL_LABELS, cardLevel, groupFloor, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
 import { learnerOf, modulesOf, paceOf, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
@@ -418,6 +418,15 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
   const minutes = Math.round(week.reduce((t, s) => t + (s.endedAt - s.startedAt), 0) / 60_000);
 
   const setModule = (id: ModuleId, value: boolean) => setSettings((s) => withModule(s, id, value));
+  /** 1 clears the key, so a kid with no floor keeps a settings map with no groupsUnlocked. */
+  const setGroupFloor = (id: ModuleId, n: number) =>
+    setSettings((s) => {
+      const next = { ...(s.groupsUnlocked ?? {}) };
+      if (n <= 1) delete next[id];
+      else next[id] = n;
+      const { groupsUnlocked: _drop, ...rest } = s;
+      return Object.keys(next).length ? { ...rest, groupsUnlocked: next } : rest;
+    });
   const bands = [...new Set(MODULES.filter((m) => m.status === 'live').map((m) => m.gradeBand))];
 
   return (
@@ -592,6 +601,14 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
             {PACE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
+        {MODULES.filter((m) => m.status === 'live' && m.groups && m.id !== 'facts' && modulesOf(settings)[m.id]).map((m) => (
+          <label key={m.id}>
+            Start {m.name} at
+            <select value={groupFloor(m, settings)} onChange={(e) => setGroupFloor(m.id, Number(e.target.value))}>
+              {m.groups!.map((g, i) => <option key={g.id} value={i + 1}>{`${i + 1} · ${g.label}`}</option>)}
+            </select>
+          </label>
+        ))}
         <label>
           Start times tables at
           <select value={settings.factGroupsUnlocked} onChange={(e) => setSettings({ ...settings, factGroupsUnlocked: Number(e.target.value) })}>
