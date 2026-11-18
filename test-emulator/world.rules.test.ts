@@ -94,6 +94,18 @@ describe('world/main: what it may hold', () => {
     await assertFails(updateDoc(world(kidDb()), { openedChests: chests(501) }));
     await assertFails(setDoc(world(parentDb()), { ...WORLD, openedChests: chests(501) }));
   });
+  it('lastMode: the 10th field is accepted for the 3 modes, alone as a kid update, and refused for any other value or type', async () => {
+    await assertSucceeds(setDoc(world(kidDb()), WORLD));
+    for (const m of ['dungeon', 'prereader', 'overworld']) await assertSucceeds(updateDoc(world(kidDb()), { lastMode: m }));
+    await assertFails(updateDoc(world(kidDb()), { lastMode: 'coop' }));
+    await assertFails(updateDoc(world(kidDb()), { lastMode: 3 }));
+    await assertFails(updateDoc(world(kidDb(SIB)), { lastMode: 'dungeon' }));
+    await assertSucceeds(setDoc(world(parentDb()), { ...WORLD, lastMode: 'overworld' }));
+    await assertFails(setDoc(world(kidDb()), { ...WORLD, lastMode: 'overworld', extra: 1 })); // an 11th field
+  });
+  it('lastMode alone does not create a world: a create without the 9 fields is refused', async () => {
+    await assertFails(setDoc(world(kidDb()), { lastMode: 'dungeon' }));
+  });
   it('under 20 fields: 19 are accepted by count, 20 are refused', async () => {
     const pad = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`f${i}`, i]));
     await assertFails(setDoc(world(kidDb()), { ...WORLD, ...pad(12) })); // 20 fields
@@ -115,8 +127,8 @@ describe('world/main: what it may hold', () => {
 });
 
 describe('the 1000-expression cap: worst case', () => {
-  it('a full world (500 chests, 3 bosses, 9 fields) is accepted as a kid token and as the parent', async () => {
-    const full = { ...WORLD, openedChests: chests(500), bossesDefeated: ['meadow', 'forest', 'castle'], keys: 3 };
+  it('a full world (500 chests, 3 bosses, 10 fields with lastMode) is accepted as a kid token and as the parent', async () => {
+    const full = { ...WORLD, openedChests: chests(500), bossesDefeated: ['meadow', 'forest', 'castle'], keys: 3, lastMode: 'overworld' };
     await assertSucceeds(setDoc(world(kidDb()), full));
     await assertSucceeds(updateDoc(world(kidDb()), { x: 6, openedChests: chests(500).reverse() }));
     await assertSucceeds(setDoc(world(parentDb()), full));

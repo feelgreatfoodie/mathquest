@@ -2,6 +2,7 @@ import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../e
 import { PAY_CHUNK, bonusFor, depositProblem, maturesAtOf, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { WorldState } from '../game/overworld/worldState';
+import type { GameModeId } from '../game/modes/types';
 import { newId, type Repo } from './repo';
 
 const PREFIX = 'mathquest:v1';
@@ -194,5 +195,10 @@ export class LocalRepo implements Repo {
 
   async saveWorld(kidId: string, world: WorldState): Promise<void> {
     write(`world:${kidId}`, world);
+  }
+
+  async setWorldLastMode(kidId: string, mode: GameModeId): Promise<void> {
+    const w = read<WorldState | null>(`world:${kidId}`, null);
+    if (w) write(`world:${kidId}`, { ...w, lastMode: mode });
   }
 }

@@ -20,6 +20,7 @@ import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../e
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { WorldState } from '../game/overworld/worldState';
+import type { GameModeId } from '../game/modes/types';
 import { newId, type Repo } from './repo';
 
 const BATCH_MAX = 450;
@@ -246,6 +247,14 @@ export class FirestoreRepo implements Repo {
 
   async saveWorld(kidId: string, world: WorldState): Promise<void> {
     await setDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'main'), world);
+  }
+
+  async setWorldLastMode(kidId: string, mode: GameModeId): Promise<void> {
+    try {
+      await updateDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'main'), { lastMode: mode });
+    } catch {
+      // No world doc yet (not-found): the pick stays on the device. Any other failure is a convenience that never blocks play.
+    }
   }
 }
 

@@ -1,3 +1,4 @@
+import type { GameModeId } from '../modes/types';
 import { MAPS, REGION_IDS, heroStart, type RegionId } from './maps';
 
 /** Most chests the save remembers. The rules cap the list at the same number; the oldest drop first. */
@@ -5,8 +6,9 @@ export const MAX_OPENED = 500;
 export type Facing = 'up' | 'down' | 'left' | 'right';
 const FACINGS: readonly Facing[] = ['up', 'down', 'left', 'right'];
 const MAX_KEYS = 99;
+const LAST_MODES: readonly string[] = ['dungeon', 'prereader', 'overworld'];
 
-/** One kid's place in the world. It is also the stored doc (families/{uid}/kids/{kidId}/world/main): 9 fields. */
+/** One kid's place in the world. It is also the stored doc (families/{uid}/kids/{kidId}/world/main): 9 fields, 10 with lastMode. */
 export interface WorldState {
   region: RegionId;
   x: number;
@@ -18,6 +20,8 @@ export interface WorldState {
   keys: number;
   version: 1;
   updatedAt: number;
+  /** The kid's last mode pick. Optional: a doc from before it, or from an old bundle, has none and the device value is used. */
+  lastMode?: GameModeId;
 }
 
 export type WorldAction =
@@ -76,5 +80,6 @@ export function fromDoc(raw: unknown, now: number): WorldState {
     keys: int(r.keys, 0, MAX_KEYS, 0),
     version: 1,
     updatedAt: at,
+    ...(LAST_MODES.includes(r.lastMode as GameModeId) ? { lastMode: r.lastMode as GameModeId } : {}),
   };
 }

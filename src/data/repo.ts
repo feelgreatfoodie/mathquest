@@ -1,5 +1,6 @@
 import type { GameDelta } from '../engine/game';
 import type { WorldState } from '../game/overworld/worldState';
+import type { GameModeId } from '../game/modes/types';
 import type { VaultDeposit, VaultTerm } from '../game/vault';
 import type { CardMap, CardState, Family, Kid, KidAvatar, KidGame, KidSettings, PurchaseLog, SessionLog } from '../engine/models';
 
@@ -52,6 +53,11 @@ export interface Repo {
   loadWorld(kidId: string): Promise<WorldState | null>;
   /** Writes the whole Overworld save. Only the Overworld calls it; nothing else about the kid changes. */
   saveWorld(kidId: string, world: WorldState): Promise<void>;
+  /**
+   * Stores the kid's last mode pick in world/main. Does nothing when world/main does not exist (the pick then lives on the
+   * device only); it never creates the doc. Only that one field changes.
+   */
+  setWorldLastMode(kidId: string, mode: GameModeId): Promise<void>;
 }
 
 /**

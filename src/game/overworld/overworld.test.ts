@@ -293,6 +293,16 @@ describe('encounters come from the plan', () => {
   });
 });
 
+describe('worldState: lastMode', () => {
+  it('is kept by fromDoc when valid and dropped when junk or missing', () => {
+    const base = toDoc(newWorld(1));
+    expect(fromDoc({ ...base, lastMode: 'overworld' }, 2).lastMode).toBe('overworld');
+    expect(fromDoc({ ...base, lastMode: 'moon' }, 2).lastMode).toBeUndefined();
+    expect(fromDoc(base, 2).lastMode).toBeUndefined();
+    expect(toDoc(fromDoc({ ...base, lastMode: 'dungeon' }, 2)).lastMode).toBe('dungeon');
+  });
+});
+
 describe('worldState', () => {
   it('starts in the meadow at the map start with nothing opened', () => {
     const w = newWorld(5);

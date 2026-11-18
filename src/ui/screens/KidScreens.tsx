@@ -7,7 +7,7 @@ import { cardLabel } from '../../engine/modules';
 import { dayKey, levelFor, type GameDelta } from '../../engine/game';
 import { displayStreak, weekDays } from '../../engine/habit';
 import { enabledModes, modeFor } from '../../game/modes/registry';
-import { readLastMode, writeLastMode } from '../../game/modes/lastMode';
+import { lastModeOf, readLastMode, writeLastMode } from '../../game/modes/lastMode';
 import type { GameModeId } from '../../game/modes/types';
 import type { Repo } from '../../data/repo';
 import { readerMapLine } from '../../engine/summaryView';
@@ -237,8 +237,18 @@ function ReaderHome({ kid, repo, onStart, onGame, onBack, vault }: { kid: Kid; r
     };
   }, [repo, kid.id, kid.game.lastPlayedDay]);
   const playedAll = kid.game.lastPlayedDay ? [...new Set([...played, kid.game.lastPlayedDay])] : played;
+  // The last pick: world/main when it has one (it follows the kid across devices), else this device's value.
+  const [worldMode, setWorldMode] = useState<GameModeId | null>(null);
+  useEffect(() => {
+    let live = true;
+    void repo.loadWorld(kid.id).then((w) => live && setWorldMode(lastModeOf(w))).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [repo, kid.id]);
   const start = (mode: GameModeId) => {
     writeLastMode(kid.id, mode);
+    void repo.setWorldLastMode(kid.id, mode).catch(() => undefined);
     onStart(mode);
   };
   return (
@@ -267,7 +277,7 @@ function ReaderHome({ kid, repo, onStart, onGame, onBack, vault }: { kid: Kid; r
         {modes.length >= 2 ? (
           <div className="mode-cards" role="group" aria-label="Pick how to play">
             {modes.map((m) => (
-              <button key={m.id} type="button" className={`mode-card ${modeFor(kid, readLastMode(kid.id)) === m.id ? 'is-last' : ''}`} data-mode={m.id} onClick={() => start(m.id)}>
+              <button key={m.id} type="button" className={`mode-card ${modeFor(kid, worldMode ?? readLastMode(kid.id)) === m.id ? 'is-last' : ''}`} data-mode={m.id} onClick={() => start(m.id)}>
                 <span className="mode-sprites">
                   {m.id === 'overworld' ? (<><Sprite name={kid.game.hero} size={64} /><Sprite name="slime" size={48} /></>) : (<><Sprite name={kid.game.hero} size={64} /><Sprite name="skeleton" size={64} /></>)}
                 </span>

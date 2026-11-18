@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CardMap, Kid } from '../../engine/models';
+import { learnerOf, type CardMap, type Kid } from '../../engine/models';
 import type { Entry, Feedback, SessionRunner } from '../../engine/session';
 import { finishRun } from '../../ui/finishRun';
 import { reportFailure } from '../../ui/failures';
@@ -225,13 +225,19 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   }, [repo, onSynced, onDone, onExit, flushWorld]);
 
   const grant = useCallback(
-    async (gems: number) => {
+    async (base: number) => {
+      // The reward goes through the same throttle as a run's gems, worked out from the stored count when it is written.
+      const k = kidRef.current;
+      const delta = {
+        gemGrant: { base, learner: learnerOf(k.settings), settings: { gemSpeed: k.settings.gemSpeed, gemFullRate: k.settings.gemFullRate } },
+        playedAt: Date.now(),
+      };
       try {
-        const game = await repo.applyGameDelta(kidRef.current.id, { gems });
+        const game = await repo.applyGameDelta(k.id, delta);
         onSynced?.(game);
       } catch (e) {
         reportFailure('A gem from the map was not saved.', e, async () => {
-          onSynced?.(await repo.applyGameDelta(kidRef.current.id, { gems }));
+          onSynced?.(await repo.applyGameDelta(k.id, delta));
         });
       }
     },
@@ -722,7 +728,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           <div className="panel">
             <Sprite name="boss" size={120} />
             <h2 className="pixel">{overlay === 'win' ? 'Boss defeated!' : 'Not this time'}</h2>
-            <p>{overlay === 'win' ? `You won a key and ${BOSS_GEMS} gems.` : 'The boss keeps its lair. Try again on your next trip.'}</p>
+            <p>{overlay === 'win' ? 'You won a key and some gems.' : 'The boss keeps its lair. Try again on your next trip.'}</p>
             <button
               type="button"
               className="btn btn-big"

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 // An old bundle (cached on an iPad) has never heard of the Overworld. For a kid who has a world doc and a parent
@@ -44,6 +44,27 @@ const storedWorld = async () => {
   });
   return data;
 };
+
+describe('old bundle and lastMode (world/main with 10 fields)', () => {
+  const worldRef = () => doc(kidDb(), `families/${FAM}/kids/${KID}/world/main`);
+  it('an old bundle saves its 9-field world over a doc that has lastMode: accepted, and lastMode is gone (the device value then decides)', async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), `families/${FAM}/kids/${KID}/world/main`), { ...WORLD, lastMode: 'overworld' }));
+    await assertSucceeds(setDoc(worldRef(), { ...WORLD, x: 5, updatedAt: 2000 }));
+    expect(await storedWorld()).toEqual({ ...WORLD, x: 5, updatedAt: 2000 });
+  });
+  it('an old bundle reading a 10-field doc ignores lastMode; a run and a hero buy stay accepted next to it', async () => {
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), `families/${FAM}/kids/${KID}/world/main`), { ...WORLD, lastMode: 'dungeon' }));
+    await assertSucceeds(getDoc(worldRef()));
+    await assertSucceeds(updateDoc(kidRef(kidDb()), { game: { ...OLD_GAME, xp: 520, gems: 207, bestCombo: 20 } }));
+    expect(await storedWorld()).toEqual({ ...WORLD, lastMode: 'dungeon' });
+  });
+  it('a new bundle sets lastMode on an existing world with one field; with no world doc the update fails and the device value is used', async () => {
+    await assertSucceeds(updateDoc(worldRef(), { lastMode: 'prereader' }));
+    expect(await storedWorld()).toEqual({ ...WORLD, lastMode: 'prereader' });
+    await env.withSecurityRulesDisabled((ctx) => deleteDoc(doc(ctx.firestore(), `families/${FAM}/kids/${KID}/world/main`)));
+    await assertFails(updateDoc(worldRef(), { lastMode: 'dungeon' }));
+  });
+});
 
 describe('old-shape kid writes with a world doc and modes.overworld set', () => {
   it('a run (game only) is accepted; settings.modes and the world doc are untouched', async () => {

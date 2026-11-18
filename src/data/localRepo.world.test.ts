@@ -30,4 +30,12 @@ describe('LocalRepo world mirror', () => {
     await repo.saveWorld('kidw0000000000000001', toDoc(newWorld(1)));
     expect(await repo.loadWorld('kidw0000000000000002')).toBeNull();
   });
+  it('setWorldLastMode writes the pick only when a world exists, and never creates one', async () => {
+    const repo = new LocalRepo();
+    await repo.setWorldLastMode('kidw0000000000000001', 'overworld');
+    expect(await repo.loadWorld('kidw0000000000000001')).toBeNull();
+    await repo.saveWorld('kidw0000000000000001', toDoc(newWorld(1)));
+    await repo.setWorldLastMode('kidw0000000000000001', 'dungeon');
+    expect((await repo.loadWorld('kidw0000000000000001'))?.lastMode).toBe('dungeon');
+  });
 });

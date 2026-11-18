@@ -393,12 +393,12 @@ service cloud.firestore {
             && after.get('heroes', []).size() == before.get('heroes', []).size()));
     }
 
-    // The Overworld save (world/main). Exactly the 9 fields below, each the right type; openedChests holds at most 500
+    // The Overworld save (world/main). The 9 fields below, each the right type, plus an optional lastMode (10 fields); openedChests holds at most 500
     // card ids, bossesDefeated at most the 3 regions, keys 0 to 99. The checks read sizes and types only, never loop over
     // the lists, so a full save costs a fixed handful of expressions.
     function worldOk() {
       let w = request.resource.data;
-      return w.keys().hasOnly(['region', 'x', 'y', 'facing', 'openedChests', 'bossesDefeated', 'keys', 'version', 'updatedAt'])
+      return w.keys().hasOnly(['region', 'x', 'y', 'facing', 'openedChests', 'bossesDefeated', 'keys', 'version', 'updatedAt', 'lastMode'])
         && w.keys().hasAll(['region', 'x', 'y', 'facing', 'openedChests', 'bossesDefeated', 'keys', 'version', 'updatedAt'])
         && w.region in ['meadow', 'forest', 'castle']
         && w.x is int && w.x >= 0 && w.x < 100
@@ -408,7 +408,8 @@ service cloud.firestore {
         && w.bossesDefeated is list && w.bossesDefeated.size() <= 3
         && w.keys is int && w.keys >= 0 && w.keys <= 99
         && w.version == 1
-        && w.updatedAt is number;
+        && w.updatedAt is number
+        && (!('lastMode' in w) || w.lastMode in ['dungeon', 'prereader', 'overworld']);
     }
 
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
@@ -465,8 +466,8 @@ service cloud.firestore {
         }
 
         // The Overworld save: one doc, world/main. Owner-only: the kid token for this kidId and the parent read and
-        // write it; a sibling's token, another family and anonymous clients match no rule. The doc holds exactly these
-        // 9 fields, so it stays far under 20, and openedChests holds at most 500 card ids. It is written alone: it
+        // write it; a sibling's token, another family and anonymous clients match no rule. The doc holds at most these
+        // 10 fields, so it stays far under 20, and openedChests holds at most 500 card ids. It is written alone: it
         // never touches the kid doc, so the kid doc rules (and their expression count) do not change. A kid cannot delete it.
         match /world/{docId} {
           allow read: if isParent(uid) || isKid(uid, kidId);
