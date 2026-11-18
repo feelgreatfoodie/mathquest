@@ -4,6 +4,7 @@ import type { GameDelta } from '../../engine/game';
 import type { CardMap, Kid } from '../../engine/models';
 import { getCardDef } from '../../engine/modules';
 import { word } from '../../engine/modules/early';
+import { summaryCounts } from '../../engine/runLabel';
 import type { RunSummary } from '../../engine/session';
 import { levelStep, mapRows } from '../../engine/summaryView';
 import { HeroShop } from '../HeroShop';
@@ -78,8 +79,9 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
   const [shop, setShop] = useState(false);
   const [cards, setCards] = useState<CardMap | null>(null);
 
-  const stars = summary.correct;
-  const total = Math.max(summary.graded, stars);
+  const counts = summaryCounts(summary);
+  const stars = counts.right;
+  const total = Math.max(counts.total, stars);
   const gemsAfter = kid.game.gems;
   const gemsBefore = saved ? info.before.gems : gemsAfter;
   const lv = useMemo(() => levelStep(info.before.xp, kid.game.xp), [info.before.xp, kid.game.xp]);
@@ -123,7 +125,7 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
     let line = '';
     if (step === 'stars') {
       chime();
-      line = stars > 0 ? `Great job! You got ${word(stars)} ${stars === 1 ? 'star' : 'stars'}!` : "Nice try! Let's play again!";
+      line = stars > 0 ? `${counts.practiceOnly ? 'Great practice' : 'Great job'}! You got ${word(stars)} ${stars === 1 ? 'star' : 'stars'}!` : "Nice try! Let's play again!";
     } else if (step === 'gems') line = `You have ${gemsAfter} gems!`;
     else if (step === 'xp') line = lv.levelUp ? `Level ${lv.levelAfter}!` : `Level ${lv.levelAfter}`;
     else if (step === 'learned') line = `You learned ${learned.length} new ${learned.length === 1 ? 'one' : 'ones'}!`;

@@ -1,3 +1,4 @@
+import type { RunSummary } from './session';
 import { sessionModeOf, type Learner, type SessionLog, type SessionMode } from './models';
 
 // How the parent area names a run: the mode, for Adventure the region and whether the trip is still open.
@@ -42,4 +43,37 @@ export function adventureLine(world: { region?: unknown; openedChests?: unknown;
   // A beaten boss opens the next region, so the furthest region reached is at least one past the last boss.
   const reached = Math.max(here, Math.min(ORDER.length - 1, bosses), 0);
   return `Adventure: reached the ${ORDER[reached]}, ${chests} ${chests === 1 ? 'chest' : 'chests'} opened, ${bosses} of 3 bosses beaten.`;
+}
+
+/** The counts a kid's end screen shows for one run. */
+export interface SummaryCounts {
+  /** Right answers: graded right plus practice right. */
+  right: number;
+  /** Answers given: graded plus fill practice, without in-run retries. Never 0 for a run with an answer. */
+  total: number;
+  graded: number;
+  fill: number;
+  /** Nothing was graded: every answer was practice. */
+  practiceOnly: boolean;
+}
+
+export function summaryCounts(s: Pick<RunSummary, 'answered' | 'graded' | 'correct' | 'practiceCorrect' | 'fillAnswered'>): SummaryCounts {
+  const practiceRight = s.practiceCorrect ?? 0;
+  // A trip saved before fillAnswered existed has practice answers but no count: the best guess is answers minus graded.
+  const fill = s.fillAnswered ?? (practiceRight ? Math.max(practiceRight, s.answered - s.graded) : 0);
+  const right = s.correct + practiceRight;
+  const total = Math.max(s.graded + fill, right, s.answered > 0 && s.graded + fill === 0 ? s.answered : 0);
+  return { right, total, graded: s.graded, fill, practiceOnly: s.graded === 0 && fill > 0 };
+}
+
+/** The line under the counts when a run holds practice answers; null for a run with none. */
+export function practiceLine(c: SummaryCounts): string | null {
+  if (c.fill <= 0) return null;
+  if (c.practiceOnly) return `Practice round: ${c.right} of ${c.total} right. Practice answers earn gems too.`;
+  return `${c.graded} graded and ${c.fill} practice. Practice answers earn gems too.`;
+}
+
+/** True when the log was written by a bundle older than `live`. A log with no build is never old. */
+export function isOldBuild(log: Pick<SessionLog, 'build'>, live: number): boolean {
+  return typeof log.build === 'number' && Number.isFinite(log.build) && log.build < live;
 }

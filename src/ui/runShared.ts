@@ -5,7 +5,7 @@ import { addRun, tripLog, type TripTotals } from '../game/overworld/trip';
 import { SessionRunner, buildPlan, type RunSummary } from '../engine/session';
 import { newId, type Repo } from '../data/repo';
 import { noteDenied, putQuietly, removeQuietly, replayOutbox } from '../data/outbox';
-import { isSaveDenied } from '../version';
+import { BUILD, isSaveDenied } from '../version';
 import { reportFailure } from './failures';
 
 /** Loads the kid's cards, plans a run and returns a runner. Both run screens start here. */
@@ -54,7 +54,7 @@ export async function saveRun(
   const trip = extra?.trip;
   // An Adventure trip closes with its cumulative totals: what earlier opens of the trip already checkpointed plus this open's runner.
   const t = trip ? addRun(trip.base, run) : null;
-  const raw: RunSummary = t ? { ...run, answered: t.answered, graded: t.graded, correct: t.correct, fast: t.fast, newLearned: t.newLearned, xp: t.xp, bestCombo: t.bestCombo, medianMs: t.medianMs, missed: t.missed, ...(t.practiceCorrect ? { practiceCorrect: t.practiceCorrect } : {}) } : run;
+  const raw: RunSummary = t ? { ...run, answered: t.answered, graded: t.graded, correct: t.correct, fast: t.fast, newLearned: t.newLearned, xp: t.xp, bestCombo: t.bestCombo, medianMs: t.medianMs, missed: t.missed, ...(t.practiceCorrect ? { practiceCorrect: t.practiceCorrect } : {}), ...(t.fillAnswered ? { fillAnswered: t.fillAnswered } : {}) } : run;
   if (raw.answered === 0) return null;
   const now = Date.now();
   // The gems come from the parent settings and today's count. The server transaction works them out again from the
@@ -80,6 +80,7 @@ export async function saveRun(
     missed: summary.missed,
     ...(summary.practiceCorrect ? { practiceCorrect: summary.practiceCorrect } : {}),
     mode,
+    build: BUILD,
   };
   const runId = trip ? `${trip.id}:${trip.seq}` : log.id;
   const delta: GameDelta = { xp: summary.xp, gems: summary.gems, gemRun: { stats, learner, settings: gemSettings }, bestCombo: summary.bestCombo, playedAt: now };
