@@ -153,3 +153,30 @@ test.describe('the update screen', () => {
     });
   }
 });
+
+test.describe('a release during a run', () => {
+  test('minVersion bumped mid-run: the run goes on, saves, and the update prompt shows on the summary', async ({ page }) => {
+    await seed(page, 'prereader');
+    await page.goto('/');
+    await page.locator('.kid-card', { hasText: KID_NAME }).click();
+    await page.getByRole('button', { name: 'Play' }).click();
+    await expect(page.locator('.early-numerals')).toBeVisible();
+    await setMin(page, 200); // a deploy lands, then the tablet comes back to the front
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId('update-screen')).toHaveCount(0); // never mid-round
+    await expect(page.locator('.early-numerals')).toBeVisible();
+    for (let i = 0; i < 40; i++) {
+      if (await page.locator('.big-stars').count()) break;
+      await page.locator('.choice[data-answer="true"]').click();
+      await expect
+        .poll(async () => (await page.locator('.big-stars').count()) > 0 || (await page.locator('.early-check').count()) === 0, { timeout: 8000 })
+        .toBe(true);
+    }
+    await expect(page.locator('.big-stars')).toBeVisible();
+    await expect(page.locator('.toast')).toHaveCount(0); // no "Couldn't save"
+    await expect(page.getByTestId('update-prompt')).toBeVisible(); // after the summary
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('mathquest:v1:kids')!)[0].game.xp as number);
+    expect(stored).toBeGreaterThan(0); // the run saved
+  });
+});
