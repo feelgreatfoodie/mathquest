@@ -43,6 +43,12 @@ export interface EveningResult {
   /** First run (1-based) at whose start each later group was open, e.g. add10:g2. */
   openedAtRun: Record<string, number | undefined>;
   emptyRuns: number;
+  /** Planned items per run (before in-run retries). */
+  planned: number[];
+  /** Cards whose FSRS state changed after the first run with no graded answer in it. */
+  fsrsChangedAfterCap: number;
+  /** First run (1-based) with no graded answer, if any. */
+  firstUngradedRun?: number;
   shortRuns: number;
   answers: number;
   /** Largest number of graded answers any card got, and the 5 cards with the most. */
@@ -79,6 +85,9 @@ export function runEvening(inp: EveningInput): EveningResult {
   let maxPreviewsPerRun = 0;
   const openedAtRun: Record<string, number | undefined> = {};
   let emptyRuns = 0;
+  const planned: number[] = [];
+  let capSnapshot: Record<string, string> | null = null;
+  let firstUngradedRun: number | undefined;
   let shortRuns = 0;
   const groupOf = (id: string) => {
     const d = getCardDef(id);
@@ -94,6 +103,7 @@ export function runEvening(inp: EveningInput): EveningResult {
     const plan = planFor(cards, inp.settings, now, rng);
     const log: RunLog = { entries: [] };
     runs.push(log);
+    planned.push(plan.length);
     if (plan.length === 0) {
       emptyRuns++;
       prevMissed.forEach(() => void 0);
@@ -143,7 +153,11 @@ export function runEvening(inp: EveningInput): EveningResult {
       }
     }
     prevMissed = missedHere;
+    if (firstUngradedRun === undefined && !log.entries.some((x) => x.kind === 'graded')) {
+      firstUngradedRun = r;
+    }
     cards = { ...cards, ...Object.fromEntries(runner.changedCards().map((c: CardState) => [c.id, c])) };
+    if (firstUngradedRun === r && !capSnapshot) capSnapshot = Object.fromEntries(Object.entries(cards).map(([id, c]) => [id, JSON.stringify(c.fsrs)]));
     now += 120_000;
   }
   const seenAtEnd = inp.universe.filter((id) => cards[id]).length;
@@ -164,6 +178,9 @@ export function runEvening(inp: EveningInput): EveningResult {
     maxPreviewsPerRun,
     openedAtRun,
     emptyRuns,
+    planned,
+    fsrsChangedAfterCap: capSnapshot ? Object.entries(capSnapshot).filter(([id, f]) => JSON.stringify(cards[id]!.fsrs) !== f).length : 0,
+    ...(firstUngradedRun !== undefined ? { firstUngradedRun } : {}),
     shortRuns,
     answers: runs.reduce((n, r) => n + r.entries.length, 0),
     top,

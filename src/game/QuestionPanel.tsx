@@ -161,8 +161,8 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
 
   return (
     <>
-      <div className={`panel question ${entry.kind === 'practice' ? 'is-practice' : ''}`} data-preview={entry.preview ? 'true' : undefined}>
-        {entry.kind === 'practice' ? <p className="pixel tag">Try again!</p> : null}
+      <div className={`panel question ${entry.kind === 'practice' && !entry.fill ? 'is-practice' : ''}`} data-preview={entry.preview ? 'true' : undefined}>
+        {entry.kind === 'practice' && !entry.fill ? <p className="pixel tag">Try again!</p> : null}
         {entry.preview ? <p className="pixel tag">A new one to try</p> : null}
         {entry.preview && !feedback ? <p className="hint preview-hint" data-testid="preview-hint">{entry.problem.hint}</p> : null}
         <MathView tokens={entry.problem.tokens} answer={answerDisplay} />
@@ -360,7 +360,7 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
 
   return (
     <>
-      <div data-preview={entry.preview ? 'true' : undefined} className={`early-question ${entry.kind === 'practice' ? 'is-practice' : ''}`} data-mode={showPictures ? (mode === 'frame' && !peeked && !missed ? 'frame' : 'groups') : 'numerals'}>
+      <div data-preview={entry.preview ? 'true' : undefined} className={`early-question ${entry.kind === 'practice' && !entry.fill ? 'is-practice' : ''}`} data-mode={showPictures ? (mode === 'frame' && !peeked && !missed ? 'frame' : 'groups') : 'numerals'}>
         <div className="early-pictures">
           {showPictures && mode === 'frame' && !peeked && !missed ? (
             <div className="frame-row">

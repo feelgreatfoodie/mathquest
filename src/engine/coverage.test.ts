@@ -122,6 +122,55 @@ describe('fill fairness and the daily cap', () => {
   });
 });
 
+describe('cap exhausted: ungraded practice fills the run', () => {
+  const capped = () => {
+    const cards: CardMap = {};
+    factIds(0).forEach((id, i) => (cards[id] = { ...answered(id, T0 - (i + 2) * H), dayGraded: 3, day: TODAY, fsrs: { ...answered(id, T0 - (i + 2) * H).fsrs, due: T0 - H, stability: 1.5 } }) as CardState);
+    return cards;
+  };
+  it('a run with every card at its cap still has a full queue of fill items', () => {
+    const p = plan(capped(), readerSettings({ sessionSize: 10, maxNew: 0 }));
+    const fill = p.filter((x) => (x as { fill?: boolean }).fill);
+    // 2 slots go to previews, the rest is fill; nothing is graded.
+    expect(p.filter((x) => !(x as { preview?: boolean }).preview)).toHaveLength(8);
+    expect(fill).toHaveLength(8);
+    expect(p.filter((x) => !(x as { fill?: boolean }).fill && !(x as { preview?: boolean }).preview)).toHaveLength(0);
+  });
+  it('fill picks the least recently answered first', () => {
+    const cards = capped();
+    const ids = Object.keys(cards);
+    const first = plan(cards, readerSettings({ sessionSize: 3, maxNew: 0 })).filter((x) => (x as { fill?: boolean }).fill).map((x) => x.cardId);
+    expect(first).toContain(ids[ids.length - 1]); // answered longest ago
+  });
+  it('answering fill items changes no FSRS state and no daily count; xp is still earned', () => {
+    const cards = capped();
+    const p = plan(cards, readerSettings({ sessionSize: 6, maxNew: 0 })).filter((x) => (x as { fill?: boolean }).fill);
+    let clock = T0;
+    const runner = new session.SessionRunner(p, cards, mulberry32(9), () => (clock += 5000), readerSettings());
+    let xp = 0;
+    while (!runner.done()) {
+      const e = runner.current()!;
+      expect(e.kind).toBe('practice');
+      xp += runner.answer(e.problem.answer, 1500).xp;
+      runner.advance();
+    }
+    for (const c of runner.changedCards()) {
+      expect(c.fsrs).toEqual(cards[c.id]!.fsrs);
+      expect(c.dayGraded).toBe(3);
+      expect(c.lastResults).toEqual(cards[c.id]!.lastResults);
+    }
+    expect(xp).toBeGreaterThan(0);
+    expect(runner.summary().graded).toBe(0);
+  });
+  it('fill is not used while graded cards remain', () => {
+    const cards = capped();
+    const id = factIds(0)[20]!;
+    cards[id] = { ...answered(id, T0 - 30 * H), fsrs: { ...answered(id, T0 - 30 * H).fsrs, due: T0 - H } };
+    const p = plan(cards, readerSettings({ sessionSize: 4, maxNew: 0 }));
+    expect(p.some((x) => x.cardId === id && !(x as { fill?: boolean }).fill)).toBe(true);
+  });
+});
+
 describe('missed facts come back in the next run', () => {
   it('a card whose last graded answer was wrong is planned in the very next run, though it is not due', () => {
     const cards: CardMap = {};

@@ -65,6 +65,12 @@ describe('one evening: the older boy (25 runs, 93%)', () => {
     expect(r.firstSeenRun['facts:g4']).toBeLessThanOrEqual(3);
   });
   it('previews never exceed 2 per run', () => expect(r.maxPreviewsPerRun).toBeLessThanOrEqual(2));
+  it('every run from 11 to 25 has a full queue, and FSRS does not move once nothing graded is left', () => {
+    expect(r.emptyRuns).toBe(0);
+    for (const n of r.planned.slice(10)) expect(n).toBeGreaterThanOrEqual(30);
+    expect(r.firstUngradedRun).toBeDefined();
+    expect(r.fsrsChangedAfterCap).toBe(0);
+  });
 });
 
 describe('one evening: the younger boy (20 runs, 93%)', () => {

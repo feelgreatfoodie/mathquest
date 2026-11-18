@@ -13,6 +13,8 @@ export interface PlanItem {
   isNew: boolean;
   /** An unseen card from a locked group, shown with its hint. A miss on it does not count against the kid. */
   preview?: boolean;
+  /** Ungraded practice that fills a run once no card has graded answers left today. FSRS does not change. */
+  fill?: boolean;
 }
 
 export interface PlanInput {
@@ -87,7 +89,20 @@ export function planSession({ cards, available, now, size, maxNew, rng, locked =
     fresh.push(...unseen.filter((d) => d.kind !== 'skill' && !have.has(d.id)).slice(0, short).map((d) => ({ cardId: d.id, isNew: true })));
   }
 
-  const base: PlanItem[] = shuffle([...reviews, ...ahead], rng).map((d) => ({ cardId: d.id, isNew: false }));
+  // Nothing graded is left (every seen card hit today's cap)? Fill the rest of the run with ungraded practice,
+  // least recently answered first, then weakest. The kid never meets an empty run; FSRS is not touched.
+  const placed = reviews.length + ahead.length + fresh.length + previews.length;
+  const aheadIds = new Set(ahead.map((d) => d.id));
+  const practicePool = seen.filter((d) => !chosen.has(d.id) && !aheadIds.has(d.id)).sort(byFill);
+  const practiceItems: PlanItem[] = [];
+  for (let i = 0; practicePool.length && placed + practiceItems.length < size; i++) {
+    practiceItems.push({ cardId: practicePool[i % practicePool.length]!.id, isNew: false, fill: true });
+  }
+
+  const base: PlanItem[] = shuffle(
+    [...reviews, ...ahead].map((d): PlanItem => ({ cardId: d.id, isNew: false })).concat(practiceItems),
+    rng,
+  );
   const out = [...base];
   const spread = [...fresh, ...previews];
   const span = Math.max(1, Math.floor(Math.max(out.length, spread.length) * 0.7));
@@ -131,6 +146,8 @@ export interface Entry {
   isNew: boolean;
   /** A preview of a locked group: the hint shows first and a miss does not count against the kid. */
   preview?: boolean;
+  /** Ungraded fill practice: answered through practice(), so FSRS does not change. */
+  fill?: boolean;
   problem: Problem;
 }
 
@@ -205,6 +222,8 @@ export class SessionRunner {
       if (item.isNew && def.kind === 'skill') {
         this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'teach', isNew: true, problem });
         this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: true, problem: this.make(item.cardId, rng) });
+      } else if (item.fill) {
+        this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'practice', isNew: false, fill: true, problem });
       } else {
         this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: item.isNew, ...(item.preview ? { preview: true } : {}), problem });
       }
