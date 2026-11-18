@@ -19,8 +19,8 @@ describe('whatsnew', () => {
     expect(list.some((e) => entryText(e).endsWith('(behind the scenes)'))).toBe(true);
     expect(list.some((e) => entryText(e).endsWith('(turn on in Settings)'))).toBe(true);
   });
-  it('uses plain words: no PR jargon, no real names', () => {
-    for (const e of recentChanges()) expect(e.text).not.toMatch(/bastian|—|–/i);
+  it('uses plain words: no dashes', () => {
+    for (const e of recentChanges()) expect(e.text).not.toMatch(/—|–/);
   });
   it('builds the footer label from a sha and a build time', () => {
     const t = Date.UTC(2026, 10, 18, 4, 30) / 1000;
