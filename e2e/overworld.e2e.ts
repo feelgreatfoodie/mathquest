@@ -100,7 +100,7 @@ async function clear(page: Page, id: string, tapReal = false) {
 test.use({ viewport: { width: 820, height: 1180 }, deviceScaleFactor: 1 });
 
 test('the picker shows one start button with Adventure off and two mode cards with it on', async ({ page }) => {
-  await seed(page);
+  await seed(page, { settings: { modes: { overworld: false } } });
   await page.goto('/');
   await page.locator('.kid-card', { hasText: 'Ada' }).click();
   await expect(page.getByRole('button', { name: 'Start Quest' })).toBeVisible();

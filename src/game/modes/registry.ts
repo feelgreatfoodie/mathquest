@@ -9,7 +9,7 @@ export const MODES: readonly GameModeDef[] = [
   { id: 'dungeon', name: 'Dungeon Run', learners: ['reader'], inputs: ['keypad', 'fraction'], status: 'live', Component: DungeonMode },
   { id: 'prereader', name: 'Picture Run', learners: ['prereader'], inputs: ['choices'], status: 'live', Component: PrereaderMode },
   // The Overworld loads its map, renderer and sprites in a separate chunk, only when a kid opens Adventure.
-  { id: 'overworld', name: 'Adventure', learners: ['reader'], inputs: ['keypad', 'fraction'], status: 'beta', Component: OverworldMode },
+  { id: 'overworld', name: 'Adventure', learners: ['reader', 'prereader'], inputs: ['keypad', 'fraction', 'choices'], status: 'beta', Component: OverworldMode },
 ];
 
 /** The modes this kid has on, in picker order. A mode a parent has not turned on is never listed. */

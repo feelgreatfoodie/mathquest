@@ -43,7 +43,7 @@ async function seed(page: Page, who: 'reader' | 'prereader') {
   const add = getModule('add10')!;
   const settings =
     who === 'reader'
-      ? { tracks: { facts: true, multidigit: false, fractions: false }, sessionSize: 12, maxNew: 0, factGroupsUnlocked: 1, paceMultiplier: 3 }
+      ? { modes: { overworld: false }, tracks: { facts: true, multidigit: false, fractions: false }, sessionSize: 12, maxNew: 0, factGroupsUnlocked: 1, paceMultiplier: 3 }
       : { learner: 'prereader', modules: { add10: true }, tracks: { facts: false, multidigit: false, fractions: false }, sessionSize: 10, maxNew: 0, factGroupsUnlocked: 1, paceMultiplier: 3 };
   const ids = who === 'reader' ? facts.groups![0]!.cardIds : add.groups![0]!.cardIds;
   await page.addInitScript(

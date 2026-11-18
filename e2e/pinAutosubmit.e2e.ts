@@ -131,7 +131,7 @@ async function seedParent(page: Page, withKid: boolean) {
           JSON.stringify([
             {
               id: 'kidpin000000000001', name: 'Pip', createdAt: 1,
-              settings: { tracks: { facts: true, multidigit: true, fractions: true }, sessionSize: 30, maxNew: 8, factGroupsUnlocked: 1, paceMultiplier: 3 },
+              settings: { modes: { overworld: false }, tracks: { facts: true, multidigit: true, fractions: true }, sessionSize: 30, maxNew: 8, factGroupsUnlocked: 1, paceMultiplier: 3 },
               game: { xp: 0, gems: 0, streakDays: 0, lastPlayedDay: null, bestCombo: 0, heroes: ['knight'], hero: 'knight' },
             },
           ]),

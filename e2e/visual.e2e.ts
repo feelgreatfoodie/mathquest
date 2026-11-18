@@ -18,8 +18,8 @@ type Who = 'reader' | 'skills' | 'prereader';
 
 async function seed(page: Page, who: Who) {
   const settings = {
-    reader: { tracks: { facts: true, multidigit: false, fractions: false }, sessionSize: 12, maxNew: 6, factGroupsUnlocked: 1, paceMultiplier: 3 },
-    skills: { tracks: { facts: false, multidigit: true, fractions: false }, sessionSize: 12, maxNew: 6, factGroupsUnlocked: 1, paceMultiplier: 3 },
+    reader: { modes: { overworld: false }, tracks: { facts: true, multidigit: false, fractions: false }, sessionSize: 12, maxNew: 6, factGroupsUnlocked: 1, paceMultiplier: 3 },
+    skills: { modes: { overworld: false }, tracks: { facts: false, multidigit: true, fractions: false }, sessionSize: 12, maxNew: 6, factGroupsUnlocked: 1, paceMultiplier: 3 },
     prereader: { learner: 'prereader', modules: { add10: true }, tracks: { facts: false, multidigit: false, fractions: false }, sessionSize: 10, maxNew: 4, factGroupsUnlocked: 1, paceMultiplier: 3 },
   }[who];
   await page.addInitScript(

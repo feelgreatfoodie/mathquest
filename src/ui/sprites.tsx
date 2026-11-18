@@ -147,7 +147,7 @@ export function Sprite({ name, size = 96, className }: { name: string; size?: nu
   );
 }
 
-export type UiIconName = 'house' | 'speaker' | 'eye' | 'play' | 'flame' | 'arrow-down' | 'gem' | 'check' | 'chest' | 'sparkle' | 'refresh' | 'close' | 'lock' | 'bolt';
+export type UiIconName = 'house' | 'speaker' | 'eye' | 'play' | 'flame' | 'arrow-down' | 'gem' | 'check' | 'chest' | 'sparkle' | 'refresh' | 'close' | 'lock' | 'bolt' | 'map';
 
 /** Plain icons for the pre-reader screens. They carry no text: a shape and an aria-label. */
 export function UiIcon({ name, size = 40, label }: { name: UiIconName; size?: number; label?: string }) {
@@ -179,6 +179,8 @@ export function UiIcon({ name, size = 40, label }: { name: UiIconName; size?: nu
       return <svg {...common}><rect x="5" y="11" width="14" height="10" rx="2" fill="#94a3b8" stroke="#334155" strokeWidth="1.5" /><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="#334155" strokeWidth="2.2" strokeLinecap="round" /></svg>;
     case 'bolt':
       return <svg {...common}><path d="M13 1 4 14h6l-1 9 9-13h-6z" fill="#facc15" stroke="#a16207" strokeWidth="1.4" strokeLinejoin="round" /></svg>;
+    case 'map':
+      return <svg {...common}><path d="M3 5l6-2 6 2 6-2v16l-6 2-6-2-6 2z" fill="#86efac" stroke="#166534" strokeWidth="1.5" strokeLinejoin="round" /><path d="M9 3v16M15 5v16" stroke="#166534" strokeWidth="1.3" /><path d="M5 13l3-3 2 2M17 9l2 2" fill="none" stroke="#a16207" strokeWidth="2" strokeLinecap="round" /><path d="M12 8l1.2 2.4L16 11l-2 1.8.5 2.7-2.5-1.4-2.5 1.4.5-2.7-2-1.8 2.8-.6z" fill="#ef4444" stroke="#7f1d1d" strokeWidth="0.8" /></svg>;
     case 'close':
       return <svg {...common} fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>;
   }

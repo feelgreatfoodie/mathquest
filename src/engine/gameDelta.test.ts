@@ -151,6 +151,13 @@ describe('applyDelta: map rewards (gemGrant) go through the throttle', () => {
     g = applyDelta(g, grant(1)); // 24 + 1 = 25
     expect(g.gemsEarnedToday).toBe(25);
   });
+  it('a pre-reader grant uses the pre-reader throttle: the half tier starts at 15 gems a day, not 25', () => {
+    const g = applyDelta(applyDelta(rich, { gems: 10, playedAt: T0 }), { gems: 5, playedAt: T0 });
+    expect(g.gemsEarnedToday).toBe(15);
+    const grantAs = (learner: 'reader' | 'prereader') => applyDelta(g, { gemGrant: { base: 10, learner, settings: {} }, playedAt: T0 });
+    expect(grantAs('prereader').gems).toBe(g.gems + 5);
+    expect(grantAs('reader').gems).toBe(g.gems + 10);
+  });
   it('a grant without the time it was earned is refused', () => {
     expect(() => applyDelta(rich, { gemGrant: { base: 10, learner: 'reader', settings: {} } })).toThrow(GameDeltaError);
   });

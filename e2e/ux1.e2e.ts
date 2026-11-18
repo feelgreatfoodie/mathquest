@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
  * Screenshots go to docs/screenshots/ux1 when SCREENSHOTS=1. Names and ids are made up.
  */
 const SHOTS = process.env.SCREENSHOTS ? 'docs/screenshots/ux1' : null;
-const settings = { tracks: { facts: true, multidigit: false, fractions: false }, sessionSize: 12, maxNew: 6, factGroupsUnlocked: 1, paceMultiplier: 3 };
+const settings = { modes: { overworld: false }, tracks: { facts: true, multidigit: false, fractions: false }, sessionSize: 12, maxNew: 6, factGroupsUnlocked: 1, paceMultiplier: 3 };
 const game = { xp: 0, gems: 0, streakDays: 2, lastPlayedDay: null, bestCombo: 0, heroes: ['knight'], hero: 'knight' };
 
 async function seed(page: Page, kids: unknown[], noUuid = false) {
