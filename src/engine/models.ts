@@ -203,6 +203,8 @@ export interface SessionLog {
   practiceCorrect?: number;
   /** Which mode played it. A log from before this field reads as 'dungeon' for a reader and 'prereader' for a pre-reader (`sessionModeOf`). */
   mode?: SessionMode;
+  /** The build number of the bundle that wrote the log (src/version.ts BUILD). A log from before this field has none, and shows no old-version badge. */
+  build?: number;
   /** Adventure only: the region the trip was in at its last checkpoint. */
   region?: string;
   /** Adventure only: false while the trip is open, true once it was closed at the campfire. It never goes back to false. */

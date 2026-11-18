@@ -1,5 +1,6 @@
 import type { RunSummary } from '../../engine/session';
 import type { SessionLog } from '../../engine/models';
+import { BUILD } from '../../version';
 
 // One Adventure trip = one session doc, sessions/{tripId}. The trip's identity and totals-so-far live on this device
 // (world/main holds exactly 10 fields by rule, so they cannot go there) and in the session doc itself. A trip under
@@ -23,6 +24,8 @@ export interface TripTotals {
   missed: string[];
   /** Right answers on fill practice. A trip stored before this field reads as 0. */
   practiceCorrect?: number;
+  /** Fill practice answers given, without retries. A trip stored before this field reads as 0. */
+  fillAnswered?: number;
 }
 
 export interface TripState {
@@ -81,6 +84,7 @@ export function addRun(base: TripTotals, run: RunSummary): TripTotals {
     medianMs: run.medianMs || base.medianMs,
     missed: [...new Set([...base.missed, ...run.missed])].slice(0, MISSED_MAX),
     ...((base.practiceCorrect ?? 0) + (run.practiceCorrect ?? 0) ? { practiceCorrect: (base.practiceCorrect ?? 0) + (run.practiceCorrect ?? 0) } : {}),
+    ...((base.fillAnswered ?? 0) + (run.fillAnswered ?? 0) ? { fillAnswered: (base.fillAnswered ?? 0) + (run.fillAnswered ?? 0) } : {}),
   };
 }
 
@@ -102,6 +106,7 @@ export function tripLog(trip: Pick<TripState, 'tripId' | 'startedAt'>, t: TripTo
     missed: t.missed,
     ...(t.practiceCorrect ? { practiceCorrect: t.practiceCorrect } : {}),
     mode: 'overworld',
+    build: BUILD,
     region,
     finished: end === 'camp',
     ...(end ? { endedBy: end } : {}),

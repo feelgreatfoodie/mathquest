@@ -121,7 +121,9 @@ export function planSession({ cards, available, now, size, maxNew, rng, locked =
   // least recently answered first, then weakest. The kid never meets an empty run; FSRS is not touched.
   const placed = reviews.length + ahead.length + fresh.length + previews.length;
   const aheadIds = new Set(ahead.map((d) => d.id));
-  const practicePool = seen.filter((d) => !chosen.has(d.id) && !aheadIds.has(d.id)).sort(byFill);
+  // A card answered in the last hour goes to the back, so a round does not repeat the cards the kid just saw; then the byFill order.
+  const recent = (d: CardDef) => (now - cards[d.id]!.updatedAt < FILL_REST_MS ? 1 : 0);
+  const practicePool = seen.filter((d) => !chosen.has(d.id) && !aheadIds.has(d.id)).sort((a, b) => recent(a) - recent(b) || byFill(a, b));
   const practiceItems: PlanItem[] = [];
   for (let i = 0; practicePool.length && placed + practiceItems.length < size; i++) {
     practiceItems.push({ cardId: practicePool[i % practicePool.length]!.id, isNew: false, fill: true });
@@ -205,11 +207,15 @@ export interface RunSummary {
   missed: string[];
   /** Right answers on ungraded fill practice. Present only when above 0, so the golden summary keeps its shape; a missing value reads as 0. */
   practiceCorrect?: number;
+  /** Fill practice answers given (right or wrong), without in-run retries. Present only when above 0; a missing value reads as 0. */
+  fillAnswered?: number;
   /** Facts whose time this run beat their previous median. */
   faster: string[];
 }
 
 const MAX_RETRIES = 2;
+/** Fill practice prefers cards not answered in the last hour. */
+export const FILL_REST_MS = 60 * 60 * 1000;
 
 /**
  * Runs one session. Pure and UI-free: the UI shows `current()`, times the answer, and calls
@@ -233,6 +239,7 @@ export class SessionRunner {
   private stats = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0 };
   private newIds: string[] = [];
   private practiceCorrect = 0;
+  private fillAnswered = 0;
   private missed = new Set<string>();
   private faster = new Set<string>();
   private nextId = 0;
@@ -396,6 +403,7 @@ export class SessionRunner {
     } else {
       next = practice(prev, ms, correct, now);
       // Fill practice only: an in-run retry of a missed card is not a new answer, and a teach card is not an answer.
+      if (entry.fill) this.fillAnswered++;
       if (correct && entry.fill) this.practiceCorrect++;
     }
     this.cards[entry.cardId] = next;
@@ -464,6 +472,7 @@ export class SessionRunner {
       missed: [...this.missed],
       faster: [...this.faster],
       ...(this.practiceCorrect ? { practiceCorrect: this.practiceCorrect } : {}),
+      ...(this.fillAnswered ? { fillAnswered: this.fillAnswered } : {}),
     };
   }
 }

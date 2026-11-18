@@ -21,7 +21,8 @@ import { reportFailure } from '../failures';
 import { buildLabel, entryText, recentChanges } from '../../whatsnew';
 import { AvatarPicker } from '../AvatarPicker';
 import { InsightsPanel, clearInsightsCache } from '../InsightsPanel';
-import { adventureLine, fillLine, runLabel } from '../../engine/runLabel';
+import { adventureLine, fillLine, isOldBuild, runLabel } from '../../engine/runLabel';
+import { BUILD } from '../../version';
 import { UiIcon } from '../sprites';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
@@ -567,6 +568,8 @@ function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
 function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
+  // The live build: this bundle's, or a newer one a log shows. A log older than it came from a device still on an old bundle.
+  const liveBuild = Math.max(BUILD, ...sessions.map((s) => s.build ?? 0));
   const [purchases, setPurchases] = useState<PurchaseLog[]>([]);
   const [deposits, setDeposits] = useState<VaultDeposit[]>([]);
   const [world, setWorld] = useState<unknown>(null);
@@ -773,6 +776,7 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPictu
                   <td data-label="Mode" data-testid="run-mode" data-mode={runLabel(s, learnerOf(kid.settings)).mode}>
                     {runLabel(s, learnerOf(kid.settings)).mode === 'overworld' ? <UiIcon name="map" size={18} /> : null} {runLabel(s, learnerOf(kid.settings)).text}
                     {fillLine(s) ? <div className="muted" data-testid="run-counts">{fillLine(s)}</div> : null}
+                    {isOldBuild(s, liveBuild) ? <div className="muted" data-testid="run-old-build">old app version</div> : null}
                   </td>
                   <td className="num" data-label="Questions">{s.graded}</td>
                   <td className="num" data-label="Correct">{s.graded ? `${Math.round((s.correct / s.graded) * 100)}%` : '–'}</td>
