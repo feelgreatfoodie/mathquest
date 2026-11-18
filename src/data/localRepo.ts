@@ -1,5 +1,6 @@
 import { applyDelta, purchaseTarget, type GameDelta } from '../engine/game';
 import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import type { WorldState } from '../game/overworld/worldState';
 import { newId, type Repo } from './repo';
 
 const PREFIX = 'mathquest:v1';
@@ -138,5 +139,13 @@ export class LocalRepo implements Repo {
     return read<SessionLog[]>(`sessions:${kidId}`, [])
       .sort((a, b) => b.startedAt - a.startedAt)
       .slice(0, max);
+  }
+
+  async loadWorld(kidId: string): Promise<WorldState | null> {
+    return read<WorldState | null>(`world:${kidId}`, null);
+  }
+
+  async saveWorld(kidId: string, world: WorldState): Promise<void> {
+    write(`world:${kidId}`, world);
   }
 }

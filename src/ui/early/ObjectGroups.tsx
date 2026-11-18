@@ -37,7 +37,7 @@ function Group({ icon, n, size, from, count, crossed }: { icon: IconId; n: numbe
 }
 
 /** Group A, a big operator, group B. All icons are the same picture. */
-export function ObjectGroups({ visual, size = 60, count = 0, crossOut = false }: Props) {
+export function ObjectGroups({ visual, size = 64, count = 0, crossOut = false }: Props) {
   const sub = visual.op === '−';
   return (
     <div className="object-groups">

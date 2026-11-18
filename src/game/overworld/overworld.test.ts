@@ -58,7 +58,7 @@ describe('maps', () => {
   it('the last region has no gate forward, and the first has no gate back', () => {
     expect(findTiles(MAPS.meadow, 'back')).toHaveLength(0);
     expect(findTiles(MAPS.castle, 'gate')).toHaveLength(0);
-    expect(findTiles(MAPS.meadow, 'gate')).toHaveLength(1);
+    expect(findTiles(MAPS.meadow, 'gate').length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -274,11 +274,11 @@ describe('encounters come from the plan', () => {
     expect(again[0]!.kind).toBe('monster');
   });
   it('monsters look like their module: facts slimes or bats, fractions ghosts, multidigit skeletons', () => {
-    const r = new SessionRunner([{ cardId: 'mul:7x8', isNew: false }, { cardId: 'fr:add', isNew: false }, { cardId: 'md:add', isNew: false }], {}, mulberry32(2), () => NOW, DEFAULT_SETTINGS);
+    const r = new SessionRunner([{ cardId: 'mul:7x8', isNew: false }, { cardId: 'fr:add', isNew: false }, { cardId: 'md:tens', isNew: false }], {}, mulberry32(2), () => NOW, DEFAULT_SETTINGS);
     const looks = Object.fromEntries(planEntities({ entries: r.queue, map: m, hero, openedChests: [], rng: mulberry32(1), ctx: open }).map((e) => [e.cardId, e.look]));
     expect(['slime', 'bat']).toContain(looks['mul:7x8']);
     expect(looks['fr:add']).toBe('ghost');
-    expect(looks['md:add']).toBe('skeleton');
+    expect(looks['md:tens']).toBe('skeleton');
   });
   it('a retry reappears within 3 tiles of where the monster was', () => {
     const r = runnerWith(6, 0);

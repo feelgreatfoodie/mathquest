@@ -1,4 +1,5 @@
 import type { GameDelta } from '../engine/game';
+import type { WorldState } from '../game/overworld/worldState';
 import type { CardMap, CardState, Family, Kid, KidAvatar, KidGame, KidSettings, PurchaseLog, SessionLog } from '../engine/models';
 
 /** Storage boundary. Firestore in production; localStorage for offline demos and dev. */
@@ -33,6 +34,10 @@ export interface Repo {
   saveCards(kidId: string, cards: CardState[]): Promise<void>;
   addSession(kidId: string, log: SessionLog): Promise<void>;
   listSessions(kidId: string, max: number): Promise<SessionLog[]>;
+  /** The Overworld save (families/{uid}/kids/{kidId}/world/main), or null before the first save. Callers read it through `fromDoc`. */
+  loadWorld(kidId: string): Promise<WorldState | null>;
+  /** Writes the whole Overworld save. Only the Overworld calls it; nothing else about the kid changes. */
+  saveWorld(kidId: string, world: WorldState): Promise<void>;
 }
 
 /**

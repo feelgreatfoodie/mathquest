@@ -37,8 +37,13 @@ beforeEach(async () => {
 
 const stored = async () => (await getDoc(kidRef(parentDb()))).data() as { settings: typeof SETTINGS; game: { xp: number } };
 // Read with the rules off: this file tests what an old bundle may write, so the read must not depend on a world rule.
-const storedWorld = () =>
-  env.withSecurityRulesDisabled(async (ctx) => (await getDoc(doc(ctx.firestore(), `families/${FAM}/kids/${KID}/world/main`))).data());
+const storedWorld = async () => {
+  let data: unknown;
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    data = (await getDoc(doc(ctx.firestore(), `families/${FAM}/kids/${KID}/world/main`))).data();
+  });
+  return data;
+};
 
 describe('old-shape kid writes with a world doc and modes.overworld set', () => {
   it('a run (game only) is accepted; settings.modes and the world doc are untouched', async () => {

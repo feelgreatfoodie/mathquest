@@ -3,6 +3,16 @@
 type AudioCtor = new () => AudioContext;
 
 let ctx: AudioContext | null = null;
+let muted = false;
+
+/** Sound is on by default. A parent can switch it off for a kid, and the kid can mute from the top bar. */
+export function setMuted(value: boolean): void {
+  muted = value;
+}
+
+export function isMuted(): boolean {
+  return muted;
+}
 
 function audio(): AudioContext | null {
   try {
@@ -26,6 +36,7 @@ export function unlockSounds(): void {
 }
 
 function tone(freq: number, at: number, dur: number, type: OscillatorType, gain: number): void {
+  if (muted) return;
   const c = audio();
   if (!c) return;
   try {
@@ -68,4 +79,29 @@ export function risingTone(): void {
   tone(392, 0, 0.3, 'sine', 0.08);
   tone(523.25, 0.3, 0.3, 'sine', 0.08);
   tone(659.25, 0.6, 0.4, 'sine', 0.08);
+}
+
+/** A short punch: the hero hits the monster. */
+export function hit(): void {
+  tone(196, 0, 0.09, 'square', 0.12);
+  tone(392, 0.04, 0.12, 'triangle', 0.14);
+}
+
+/** The monster is defeated: a quick rising run. */
+export function defeat(): void {
+  tone(392, 0, 0.1, 'square', 0.1);
+  tone(523.25, 0.08, 0.1, 'square', 0.1);
+  tone(659.25, 0.16, 0.1, 'square', 0.1);
+  tone(1046.5, 0.24, 0.25, 'triangle', 0.12);
+}
+
+/** A level up: a longer fanfare. */
+export function levelUp(): void {
+  [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => tone(f, i * 0.11, 0.22, 'triangle', 0.15));
+}
+
+/** A chest opens: two bright notes. */
+export function chest(): void {
+  tone(784, 0, 0.12, 'sine', 0.14);
+  tone(1174.7, 0.1, 0.25, 'sine', 0.14);
 }

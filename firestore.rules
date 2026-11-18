@@ -248,6 +248,24 @@ service cloud.firestore {
             && after.get('heroes', []).size() == before.get('heroes', []).size()));
     }
 
+    // The Overworld save (world/main). Exactly the 9 fields below, each the right type; openedChests holds at most 500
+    // card ids, bossesDefeated at most the 3 regions, keys 0 to 99. The checks read sizes and types only, never loop over
+    // the lists, so a full save costs a fixed handful of expressions.
+    function worldOk() {
+      let w = request.resource.data;
+      return w.keys().hasOnly(['region', 'x', 'y', 'facing', 'openedChests', 'bossesDefeated', 'keys', 'version', 'updatedAt'])
+        && w.keys().hasAll(['region', 'x', 'y', 'facing', 'openedChests', 'bossesDefeated', 'keys', 'version', 'updatedAt'])
+        && w.region in ['meadow', 'forest', 'castle']
+        && w.x is int && w.x >= 0 && w.x < 100
+        && w.y is int && w.y >= 0 && w.y < 100
+        && w.facing in ['up', 'down', 'left', 'right']
+        && w.openedChests is list && w.openedChests.size() <= 500
+        && w.bossesDefeated is list && w.bossesDefeated.size() <= 3
+        && w.keys is int && w.keys >= 0 && w.keys <= 99
+        && w.version == 1
+        && w.updatedAt is number;
+    }
+
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
     // touches them.
     match /parents/{document=**} {
@@ -299,6 +317,16 @@ service cloud.firestore {
           allow read: if isParent(uid);
           allow create: if (isParent(uid) || isKid(uid, kidId)) && purchaseEntryOk(uid, kidId, purchaseId);
           allow update, delete: if false;
+        }
+
+        // The Overworld save: one doc, world/main. Owner-only: the kid token for this kidId and the parent read and
+        // write it; a sibling's token, another family and anonymous clients match no rule. The doc holds exactly these
+        // 9 fields, so it stays far under 20, and openedChests holds at most 500 card ids. It is written alone: it
+        // never touches the kid doc, so the kid doc rules (and their expression count) do not change. A kid cannot delete it.
+        match /world/{docId} {
+          allow read: if isParent(uid) || isKid(uid, kidId);
+          allow create, update: if (isParent(uid) || isKid(uid, kidId)) && docId == 'main' && smallDoc() && worldOk();
+          allow delete: if isParent(uid);
         }
 
         match /sessions/{sessionId} {
