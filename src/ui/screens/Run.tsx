@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { cardLabel, getCardDef } from '../../engine/content';
-import { applyRun } from '../../engine/game';
-import { availableCards } from '../../engine/mastery';
-import type { Kid, SessionLog } from '../../engine/models';
+import { cardLabel, getCardDef } from '../../engine/modules';
+import { learnerOf, learnerParams, type Kid } from '../../engine/models';
 import type { AnswerInput } from '../../engine/problems';
-import { SessionRunner, planSession, type Feedback, type RunSummary } from '../../engine/session';
-import { newId, type Repo } from '../../data/repo';
+import { SessionRunner, type Feedback, type RunSummary } from '../../engine/session';
+import type { Repo } from '../../data/repo';
+import { PrereaderRun } from '../early/PrereaderRun';
+import { loadRunner, saveRun } from '../runShared';
 import { Keypad, type Field } from '../Keypad';
 import { FracView, MathView } from '../MathView';
 import { MONSTERS, Sprite } from '../sprites';
@@ -19,9 +19,14 @@ interface RunProps {
 
 type Mixed = { w: string; n: string; d: string };
 const EMPTY_MIXED: Mixed = { w: '', n: '', d: '' };
-const BLOCK = 5;
 
-export function Run({ repo, kid, onDone, onExit }: RunProps) {
+/** Picks the screen by who is playing. Both drive the same SessionRunner. */
+export function Run(props: RunProps) {
+  return learnerOf(props.kid.settings) === 'prereader' ? <PrereaderRun {...props} /> : <ReaderRun {...props} />;
+}
+
+function ReaderRun({ repo, kid, onDone, onExit }: RunProps) {
+  const BLOCK = learnerParams('reader').blockSize;
   const runnerRef = useRef<SessionRunner | null>(null);
   const startedAt = useRef(Date.now());
   const shownAt = useRef(0);
@@ -42,19 +47,10 @@ export function Run({ repo, kid, onDone, onExit }: RunProps) {
     let alive = true;
     (async () => {
       try {
-        const cards = await repo.loadCards(kid.id);
-        const now = Date.now();
-        const plan = planSession({
-          cards,
-          available: availableCards(cards, kid.settings),
-          now,
-          size: kid.settings.sessionSize,
-          maxNew: kid.settings.maxNew,
-          rng: Math.random,
-        });
+        const { runner: r, startedAt: at } = await loadRunner(repo, kid);
         if (!alive) return;
-        runnerRef.current = new SessionRunner(plan, cards, Math.random, Date.now, kid.settings);
-        startedAt.current = now;
+        runnerRef.current = r;
+        startedAt.current = at;
         setLoading(false);
       } catch (e) {
         setError((e as Error).message);
@@ -82,36 +78,12 @@ export function Run({ repo, kid, onDone, onExit }: RunProps) {
     const r = runnerRef.current;
     if (!r || finishing.current) return;
     finishing.current = true;
-    const summary = r.summary();
-    if (summary.answered === 0) {
+    const saved = await saveRun(repo, kid, r, startedAt.current);
+    if (!saved) {
       onExit();
       return;
     }
-    const now = Date.now();
-    const log: SessionLog = {
-      id: newId(),
-      startedAt: startedAt.current,
-      endedAt: now,
-      answered: summary.answered,
-      graded: summary.graded,
-      correct: summary.correct,
-      fast: summary.fast,
-      newLearned: summary.newLearned,
-      medianMs: summary.medianMs,
-      xp: summary.xp,
-      gems: summary.gems,
-      bestCombo: summary.bestCombo,
-      missed: summary.missed,
-    };
-    const updated: Kid = { ...kid, game: applyRun(kid.game, summary, now) };
-    try {
-      await repo.saveCards(kid.id, r.changedCards());
-      await repo.addSession(kid.id, log);
-      await repo.saveKid(updated);
-    } catch (e) {
-      console.error('Saving the run failed; it will retry from the offline cache.', e);
-    }
-    onDone(summary, updated);
+    onDone(saved.summary, saved.updated);
   }, [kid, repo, onDone, onExit]);
 
   const next = useCallback(() => {

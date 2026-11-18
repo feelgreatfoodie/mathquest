@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { cardLabel } from '../../engine/content';
+import { cardLabel } from '../../engine/modules';
 import { HEROES, buyHero, levelFor } from '../../engine/game';
-import type { Kid } from '../../engine/models';
+import { learnerOf, type Kid } from '../../engine/models';
+import { PrereaderHome, PrereaderSummary } from '../early/PrereaderScreens';
 import type { RunSummary } from '../../engine/session';
 import { TABS, readTab, tabForKey, writeTab, type LandingTab } from '../landingTab';
 import { PinPad } from '../PinPad';
@@ -128,8 +129,8 @@ export function Picker({ kids, onPick, onParent }: { kids: Kid[]; onPick: (k: Ki
       <h1 className="pixel title center-text">Who is playing?</h1>
       <div className="kid-grid">
         {kids.map((k) => (
-          <button key={k.id} type="button" className="kid-card" onClick={() => onPick(k)}>
-            <Sprite name={k.game.hero} size={96} />
+          <button key={k.id} type="button" className={`kid-card ${learnerOf(k.settings) === 'prereader' ? 'is-prereader' : ''}`} onClick={() => onPick(k)}>
+            <Sprite name={k.game.hero} size={learnerOf(k.settings) === 'prereader' ? 128 : 96} />
             <span className="kid-name">{k.name}</span>
             <span className="muted pixel small">LV {levelFor(k.game.xp).level}</span>
           </button>
@@ -149,7 +150,13 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function KidHome({ kid, onStart, onSave, onBack }: { kid: Kid; onStart: () => void; onSave: (k: Kid) => void; onBack: () => void }) {
+export function KidHome(props: { kid: Kid; onStart: () => void; onSave: (k: Kid) => void; onBack: () => void }) {
+  return learnerOf(props.kid.settings) === 'prereader'
+    ? <PrereaderHome kid={props.kid} onStart={props.onStart} onBack={props.onBack} />
+    : <ReaderHome {...props} />;
+}
+
+function ReaderHome({ kid, onStart, onSave, onBack }: { kid: Kid; onStart: () => void; onSave: (k: Kid) => void; onBack: () => void }) {
   const [shop, setShop] = useState(false);
   const lv = levelFor(kid.game.xp);
   return (
@@ -219,7 +226,11 @@ function HeroShop({ kid, onSave, onClose }: { kid: Kid; onSave: (k: Kid) => void
   );
 }
 
-export function Summary({ kid, summary, onAgain, onHome }: { kid: Kid; summary: RunSummary; onAgain: () => void; onHome: () => void }) {
+export function Summary(props: { kid: Kid; summary: RunSummary; onAgain: () => void; onHome: () => void }) {
+  return learnerOf(props.kid.settings) === 'prereader' ? <PrereaderSummary {...props} /> : <ReaderSummary {...props} />;
+}
+
+function ReaderSummary({ kid, summary, onAgain, onHome }: { kid: Kid; summary: RunSummary; onAgain: () => void; onHome: () => void }) {
   const acc = summary.graded ? summary.correct / summary.graded : 0;
   const stars = acc >= 0.9 ? 3 : acc >= 0.75 ? 2 : 1;
   return (

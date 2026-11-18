@@ -1,7 +1,8 @@
 import { Rating, State } from 'ts-fsrs';
-import { FACT_CARDS, FACT_GROUPS, SKILL_CARDS, getCardDef, type CardDef, type Track } from './content';
+import { FACTS } from './modules/facts';
+import { MODULES, getCardDef, getModule, type CardDef, type ModuleDef } from './modules';
 import { thresholdsFor } from './grading';
-import { DEFAULT_PACE, type CardMap, type CardState, type KidSettings } from './models';
+import { DEFAULT_PACE, modulesOf, type CardMap, type CardState, type KidSettings } from './models';
 import { median } from './scheduler';
 
 /** 0 new · 1 learning · 2 reviewing · 3 solid · 4 fluent (solid and fast) */
@@ -33,18 +34,28 @@ export function cardLevel(state: CardState | undefined, factBaselineMs: number, 
   return Number.isFinite(med) && med <= fastMs ? 4 : 3;
 }
 
-/** Share of a fact group's cards that are at least "reviewing". */
-export function groupProgress(groupIndex: number, cards: CardMap): number {
-  const group = FACT_CARDS.filter((c) => c.groupIndex === groupIndex);
-  const ok = group.filter((c) => cardLevel(cards[c.id], Infinity, DEFAULT_PACE) >= 2).length;
-  return group.length ? ok / group.length : 1;
+/** Share of one of a module's groups that is at least "reviewing". */
+export function groupProgress(mod: ModuleDef, groupIndex: number, cards: CardMap): number {
+  const group = mod.groups?.[groupIndex];
+  if (!group || !group.cardIds.length) return 1;
+  const ok = group.cardIds.filter((id) => cardLevel(cards[id], Infinity, DEFAULT_PACE) >= 2).length;
+  return ok / group.cardIds.length;
+}
+
+/**
+ * How many of a module's groups are open: group 1, plus any earned by progress (80% of the group
+ * before it in review). For times tables the parent's "start at" setting also counts.
+ */
+export function unlockedGroups(mod: ModuleDef, cards: CardMap, settings: Pick<KidSettings, 'factGroupsUnlocked'>): number {
+  const total = mod.groups?.length ?? 0;
+  let n = mod.id === 'facts' ? Math.max(1, Math.min(total, settings.factGroupsUnlocked)) : Math.min(1, total);
+  while (n < total && groupProgress(mod, n - 1, cards) >= GROUP_UNLOCK_SHARE) n++;
+  return n;
 }
 
 /** How many fact groups are open: the parent's setting, plus any earned by progress. */
-export function unlockedFactGroups(cards: CardMap, settings: KidSettings): number {
-  let n = Math.max(1, Math.min(FACT_GROUPS.length, settings.factGroupsUnlocked));
-  while (n < FACT_GROUPS.length && groupProgress(n - 1, cards) >= GROUP_UNLOCK_SHARE) n++;
-  return n;
+export function unlockedFactGroups(cards: CardMap, settings: Pick<KidSettings, 'factGroupsUnlocked'>): number {
+  return unlockedGroups(FACTS, cards, settings);
 }
 
 function skillReady(id: string, cards: CardMap): boolean {
@@ -52,26 +63,33 @@ function skillReady(id: string, cards: CardMap): boolean {
   return !!s && s.fsrs.reps >= 3 && cardLevel(s, Infinity, DEFAULT_PACE) >= 2;
 }
 
+/** A prerequisite is a card id ("fr:add") or a group ref ("facts:g2": module id, then group id). */
 export function prereqMet(ref: string, cards: CardMap, settings: KidSettings): boolean {
-  if (ref.startsWith('facts:')) {
-    if (!settings.tracks.facts) return true; // facts handled outside the app
-    const idx = FACT_GROUPS.findIndex((g) => `facts:${g.id}` === ref);
-    if (idx < settings.factGroupsUnlocked - 1) return true; // parent says these are known
-    return groupProgress(idx, cards) >= GROUP_UNLOCK_SHARE;
+  const [prefix, groupId] = ref.split(':');
+  const mod = prefix ? getModule(prefix as never) : undefined;
+  if (mod?.groups) {
+    if (!modulesOf(settings)[mod.id]) return true; // that module is handled outside the app
+    const idx = mod.groups.findIndex((g) => g.id === groupId);
+    if (mod.id === 'facts' && idx < settings.factGroupsUnlocked - 1) return true; // parent says these are known
+    return groupProgress(mod, idx, cards) >= GROUP_UNLOCK_SHARE;
   }
   return skillReady(ref, cards);
 }
 
-/** Every card the kid may see right now, in curriculum order. */
+/** Every card the kid may see right now: each enabled module in registry order, in curriculum order. */
 export function availableCards(cards: CardMap, settings: KidSettings): CardDef[] {
+  const on = modulesOf(settings);
   const out: CardDef[] = [];
-  if (settings.tracks.facts) {
-    const groups = unlockedFactGroups(cards, settings);
-    out.push(...FACT_CARDS.filter((c) => c.groupIndex < groups));
-  }
-  for (const s of SKILL_CARDS) {
-    if (!settings.tracks[s.track as Track]) continue;
-    if (cards[s.id] || s.prereqs.every((p) => prereqMet(p, cards, settings))) out.push(s);
+  for (const mod of MODULES) {
+    if (!on[mod.id]) continue;
+    if (mod.groups) {
+      const open = new Set(mod.groups.slice(0, unlockedGroups(mod, cards, settings)).flatMap((g) => g.cardIds));
+      out.push(...mod.cards.filter((c) => open.has(c.id)));
+      continue;
+    }
+    for (const c of mod.cards) {
+      if (cards[c.id] || c.kind !== 'skill' || c.prereqs.every((p) => prereqMet(p, cards, settings))) out.push(c);
+    }
   }
   return out;
 }

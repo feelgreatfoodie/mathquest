@@ -76,6 +76,41 @@ export const SPRITES: Record<string, SpriteDef> = {
       '..dddddddd..', '..dyyyyyyd..', '...dddddd...', '...dd..dd...', '..ddd..ddd..', '............',
     ],
   },
+  apple: {
+    palette: { r: '#ef4444', n: '#92400e', g: '#22c55e', w: '#fecaca' },
+    rows: [
+      '.....n......', '....n..gg...', '..rrrrrrrr..', '.rrrrrrrrrr.', '.rwrrrrrrrr.', '.rwrrrrrrrr.',
+      '.rrrrrrrrrr.', '.rrrrrrrrrr.', '..rrrrrrrr..', '..rrrrrrrr..', '...rr..rr...', '............',
+    ],
+  },
+  star: {
+    palette: { y: '#facc15', o: '#ca8a04' },
+    rows: [
+      '.....yy.....', '.....yy.....', '....yyyy....', 'yyyyyyyyyyyy', '.yyyyyyyyyy.', '..yyyyyyyy..',
+      '...yyyyyy...', '..yyyyyyyy..', '..yyyoyyyy..', '.yyy....yyy.', '.yy......yy.', '............',
+    ],
+  },
+  fish: {
+    palette: { b: '#38bdf8', B: '#0369a1', w: '#ffffff', k: INK },
+    rows: [
+      '............', '............', '.....BBB....', '..bbbbbbb..B', '.bbbbbbbbbBB', 'bbwkbbbbbbBB',
+      'bbbbbbbbbbbB', '.bbbbbbbbbBB', '..bbbbbbb..B', '.....BBB....', '............', '............',
+    ],
+  },
+  bug: {
+    palette: { r: '#ef4444', k: INK },
+    rows: [
+      '...k....k...', '....k..k....', '....kkkk....', '...rrkkrr...', '..rrrkkrrr..', '.rkrrkkrrkr.',
+      '.rrrrkkrrrr.', '.rrkrkkrkrr.', '..rrrkkrrr..', '...rrkkrr...', '....rrrr....', '............',
+    ],
+  },
+  dino: {
+    palette: { g: '#4ade80', G: '#15803d', k: INK, w: '#ffffff' },
+    rows: [
+      '............', '.....gggg...', '....gkgggg..', '....ggggggg.', '....gggg....', 'G...gggg....',
+      'GG.ggggggg..', 'GGgggggggg..', '.gggggggg...', '..gggggggg..', '..gg....gg..', '.ggg...ggg..',
+    ],
+  },
 };
 
 export const MONSTERS = ['slime', 'bat', 'ghost', 'skeleton'] as const;
@@ -108,4 +143,29 @@ export function Sprite({ name, size = 96, className }: { name: string; size?: nu
       ))}
     </svg>
   );
+}
+
+export type UiIconName = 'house' | 'speaker' | 'eye' | 'play' | 'flame' | 'arrow-down' | 'gem' | 'check';
+
+/** Plain icons for the pre-reader screens. They carry no text: a shape and an aria-label. */
+export function UiIcon({ name, size = 40, label }: { name: UiIconName; size?: number; label?: string }) {
+  const common = { width: size, height: size, viewBox: '0 0 24 24', role: label ? 'img' : undefined, 'aria-label': label, 'aria-hidden': label ? undefined : true } as const;
+  switch (name) {
+    case 'house':
+      return <svg {...common} fill="currentColor"><path d="M12 3 2 12h3v8h5v-5h4v5h5v-8h3z" /></svg>;
+    case 'speaker':
+      return <svg {...common} fill="currentColor"><path d="M3 9v6h4l5 4V5L7 9zM15 8.5a5 5 0 0 1 0 7M17.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="currentColor" /></svg>;
+    case 'eye':
+      return <svg {...common} fill="none" stroke="currentColor" strokeWidth="2"><path d="M1.5 12S5.5 5 12 5s10.5 7 10.5 7S18.5 19 12 19 1.5 12 1.5 12z" /><circle cx="12" cy="12" r="3.2" fill="currentColor" /></svg>;
+    case 'play':
+      return <svg {...common} fill="currentColor"><path d="M7 3.5v17L21 12z" /></svg>;
+    case 'flame':
+      return <svg {...common} viewBox="0 0 24 24"><path d="M12 2c1 4 6 6 6 12a6 6 0 0 1-12 0c0-3 2-4 2-7 2 1 3 2 3 4 1-3 1-6 1-9z" fill="#fb923c" stroke="#9a3412" strokeWidth="1.5" strokeLinejoin="round" /></svg>;
+    case 'arrow-down':
+      return <svg {...common} fill="currentColor"><path d="M10 3h4v10h5l-7 8-7-8h5z" /></svg>;
+    case 'gem':
+      return <svg {...common}><path d="M6 3h12l4 6-10 12L2 9z" fill="#38bdf8" stroke="#075985" strokeWidth="1.5" strokeLinejoin="round" /></svg>;
+    case 'check':
+      return <svg {...common} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 13l5 5L20 6" /></svg>;
+  }
 }

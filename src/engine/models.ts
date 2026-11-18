@@ -1,4 +1,5 @@
 import type { Track } from './content';
+import { MODULE_IDS, type ModuleId } from './modules/types';
 
 /** ts-fsrs Card, flattened to JSON-safe numbers (epoch ms) for Firestore and localStorage. */
 export interface StoredFsrs {
@@ -41,7 +42,16 @@ export interface KidSettings {
    * Optional on stored docs: a missing value reads as 3. Read it through `paceOf`.
    */
   paceMultiplier?: number;
+  /** Who plays: a missing value reads as 'reader'. Read it through `learnerOf`. */
+  learner?: Learner;
+  /**
+   * Which modules are on. Optional on stored docs: a missing value derives them from `tracks`.
+   * Read it through `modulesOf`. `tracks` is still written for old clients.
+   */
+  modules?: Partial<Record<ModuleId, boolean>>;
 }
+
+export type Learner = 'prereader' | 'reader';
 
 export interface KidGame {
   xp: number;
@@ -93,6 +103,61 @@ export const DEFAULT_SETTINGS: KidSettings = {
 };
 
 export const DEFAULT_PACE = 3;
+
+/** Starting settings for the two kinds of player. `reader` is today's DEFAULT_SETTINGS. */
+export const PRESETS: Record<Learner, KidSettings> = {
+  reader: DEFAULT_SETTINGS,
+  prereader: {
+    learner: 'prereader',
+    modules: { add10: true },
+    tracks: { facts: false, multidigit: false, fractions: false },
+    sessionSize: 10,
+    maxNew: 4,
+    factGroupsUnlocked: 1,
+    paceMultiplier: 3,
+  },
+};
+
+export function learnerOf(settings: { learner?: Learner } | undefined | null): Learner {
+  return settings?.learner === 'prereader' ? 'prereader' : 'reader';
+}
+
+const LEGACY_TRACKS: readonly ModuleId[] = ['facts', 'multidigit', 'fractions'];
+
+/**
+ * Which modules are on. `modules` wins when it names an id. The three old tracks fall back to
+ * `tracks`, so a doc written before modules existed reads the same. Every other id defaults to off.
+ */
+export function modulesOf(settings: Pick<KidSettings, 'tracks' | 'modules'> | undefined | null): Record<ModuleId, boolean> {
+  const out = {} as Record<ModuleId, boolean>;
+  for (const id of MODULE_IDS) {
+    const explicit = settings?.modules?.[id];
+    out[id] = typeof explicit === 'boolean' ? explicit : LEGACY_TRACKS.includes(id) ? settings?.tracks?.[id as Track] === true : false;
+  }
+  return out;
+}
+
+/**
+ * Turns one module on or off. `tracks` is kept in step for old clients. `modules` is written only
+ * when it already exists or a new-style module is touched, so a reader doc that never uses one stays as it was.
+ */
+export function withModule(settings: KidSettings, id: ModuleId, on: boolean): KidSettings {
+  const legacy = LEGACY_TRACKS.includes(id);
+  const next: KidSettings = { ...settings, tracks: legacy ? { ...settings.tracks, [id as Track]: on } : settings.tracks };
+  if (!legacy || settings.modules) next.modules = { ...settings.modules, [id]: on };
+  return next;
+}
+
+export interface LearnerParams {
+  /** Questions between a miss and its retry. */
+  retryGap: number;
+  /** Questions per monster. */
+  blockSize: number;
+}
+
+export function learnerParams(learner: Learner): LearnerParams {
+  return learner === 'prereader' ? { retryGap: 2, blockSize: 3 } : { retryGap: 3, blockSize: 5 };
+}
 
 /** The pace to grade with: a missing, zero, negative or non-finite value reads as 3. */
 export function paceOf(settings: { paceMultiplier?: number } | undefined | null): number {

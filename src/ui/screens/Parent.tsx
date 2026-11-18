@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
-import { FACT_GROUPS, SKILL_CARDS, factId, type Track } from '../../engine/content';
+import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { levelFor } from '../../engine/game';
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, unlockedFactGroups, type Level } from '../../engine/mastery';
-import { DEFAULT_GAME, DEFAULT_SETTINGS, paceOf, type CardMap, type Family, type Kid, type KidSettings, type SessionLog } from '../../engine/models';
+import { makeKid } from '../../engine/newKid';
+import { learnerOf, modulesOf, paceOf, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type SessionLog } from '../../engine/models';
+import { MODULES, type ModuleId } from '../../engine/modules';
+import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
-import { hashPin, newId, type Repo } from '../../data/repo';
+import { hashPin, type Repo } from '../../data/repo';
 import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { PinPad } from '../PinPad';
 
-export function makeKid(name: string): Kid {
-  return { id: newId(), name: name.trim(), createdAt: Date.now(), settings: { ...DEFAULT_SETTINGS }, game: { ...DEFAULT_GAME } };
-}
+export { makeKid };
 
 /** First run: set the parent PIN, then add the first kid. */
 export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone: (family: Family, kids: Kid[]) => void }) {
@@ -45,8 +46,8 @@ export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone
       <div className="panel">
         <h2 className="pixel">Add a player</h2>
         <AddKidForm
-          onAdd={async (name) => {
-            const kid = makeKid(name);
+          onAdd={async (name, type) => {
+            const kid = makeKid(name, type);
             await repo.saveKid(kid);
             onDone(family!, [kid]);
           }}
@@ -61,8 +62,9 @@ export function nameKey(name: string): string {
   return name.trim().normalize('NFC').toLowerCase();
 }
 
-function AddKidForm({ onAdd, existing = [] }: { onAdd: (name: string) => Promise<void> | void; existing?: string[] }) {
+function AddKidForm({ onAdd, existing = [] }: { onAdd: (name: string, type: Learner) => Promise<void> | void; existing?: string[] }) {
   const [name, setName] = useState('');
+  const [type, setType] = useState<Learner>('reader');
   const taken = !!name.trim() && existing.some((n) => nameKey(n) === nameKey(name));
   return (
     <form
@@ -70,12 +72,29 @@ function AddKidForm({ onAdd, existing = [] }: { onAdd: (name: string) => Promise
       onSubmit={async (e) => {
         e.preventDefault();
         if (!name.trim() || taken) return;
-        await onAdd(name);
+        await onAdd(name, type);
         setName('');
+        setType('reader');
       }}
     >
       <label htmlFor="kid-name">Player name</label>
       <input id="kid-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={20} autoComplete="off" />
+      <fieldset className="player-type">
+        <legend>Player type</legend>
+        <label className="check">
+          <input type="radio" name="player-type" checked={type === 'reader'} onChange={() => setType('reader')} />
+          Reader (7+)
+        </label>
+        <label className="check">
+          <input type="radio" name="player-type" checked={type === 'prereader'} onChange={() => setType('prereader')} />
+          Pre-reader (4–6)
+        </label>
+        <p className="muted">
+          {type === 'prereader'
+            ? 'Pictures, a voice and big buttons. Starts with addition within 10, 10 questions a run.'
+            : 'Times tables, multi-digit multiplication and fractions, with a keypad.'}
+        </p>
+      </fieldset>
       {taken ? <p className="error">Another player already has that name. Names are how kids sign in, so each needs its own.</p> : null}
       <button type="submit" className="btn" disabled={!name.trim() || taken}>Add player</button>
     </form>
@@ -134,8 +153,8 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
         <section className="panel">
           <AddKidForm
             existing={kids.map((x) => x.name)}
-            onAdd={async (name) => {
-              const k = makeKid(name);
+            onAdd={async (name, type) => {
+              const k = makeKid(name, type);
               await repo.saveKid(k);
               onKids([...kids, k]);
               setSelected(k.id);
@@ -289,6 +308,8 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
   const pace = paceOf(kid.settings);
   const fastBar = factThresholds(baseline, pace).fastMs;
   const groups = unlockedFactGroups(cards, kid.settings);
+  const on = modulesOf(kid.settings);
+  const learner = learnerOf(kid.settings);
   const factStates = Object.values(cards).filter((c) => c.id.startsWith('mul:'));
   const leeches = factStates.filter((c) => c.fsrs.lapses >= 3).sort((a, b) => b.fsrs.lapses - a.fsrs.lapses);
   const slow = factStates
@@ -297,7 +318,8 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
   const week = sessions.filter((s) => s.startedAt > Date.now() - 7 * 86_400_000);
   const minutes = Math.round(week.reduce((t, s) => t + (s.endedAt - s.startedAt), 0) / 60_000);
 
-  const setTrack = (t: Track, on: boolean) => setSettings((s) => ({ ...s, tracks: { ...s.tracks, [t]: on } }));
+  const setModule = (id: ModuleId, value: boolean) => setSettings((s) => withModule(s, id, value));
+  const bands = [...new Set(MODULES.filter((m) => m.status === 'live').map((m) => m.gradeBand))];
 
   return (
     <div className="detail">
@@ -306,9 +328,40 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
         <div className="stat"><span className="stat-value">{kid.game.streakDays}</span><span className="stat-label">day streak</span></div>
         <div className="stat"><span className="stat-value">{week.length}</span><span className="stat-label">runs this week</span></div>
         <div className="stat"><span className="stat-value">{minutes}</span><span className="stat-label">minutes this week</span></div>
-        <div className="stat"><span className="stat-value">{fmtSec(baseline)}</span><span className="stat-label">typical fact time</span></div>
+        {on.facts || learner === 'reader' ? <div className="stat"><span className="stat-value">{fmtSec(baseline)}</span><span className="stat-label">typical fact time</span></div> : null}
       </section>
 
+      {on.add10 ? (
+        <section className="panel">
+          <h2>Addition within 10</h2>
+          <p className="muted">Each square is one sum. Rows and columns are the two numbers; the square shows the answer.</p>
+          <TriangleGrid
+            label="Addition within 10 mastery"
+            cards={cards}
+            baseline={baseline}
+            pace={pace}
+            cell={(a, b) => (a + b <= 10 ? { id: addId(a, b), shown: a + b, tip: `${a} + ${b} = ${a + b}` } : null)}
+          />
+          <GridLegend />
+        </section>
+      ) : null}
+
+      {on.sub10 ? (
+        <section className="panel">
+          <h2>Subtraction within 10</h2>
+          <p className="muted">Rows are the number you start with, columns the number taken away. The square shows what is left.</p>
+          <TriangleGrid
+            label="Subtraction within 10 mastery"
+            cards={cards}
+            baseline={baseline}
+            pace={pace}
+            cell={(a, b) => (b <= a ? { id: subId(a, b), shown: a - b, tip: `${a} − ${b} = ${a - b}` } : null)}
+          />
+          <GridLegend />
+        </section>
+      ) : null}
+
+      {on.facts || learner === 'reader' ? (
       <section className="panel">
         <h2>Times tables</h2>
         <p className="muted">
@@ -333,6 +386,7 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
           </div>
         </div>
       </section>
+      ) : null}
 
       <section className="panel">
         <h2>Skills</h2>
@@ -341,7 +395,7 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
             <tr><th scope="col">Skill</th><th scope="col">Status</th><th scope="col" className="num">Accuracy</th><th scope="col" className="num">Typical time</th></tr>
           </thead>
           <tbody>
-            {SKILL_CARDS.filter((s) => kid.settings.tracks[s.track]).map((s) => {
+            {SKILL_CARDS.filter((s) => on[s.track]).map((s) => {
               const c = cards[s.id];
               return (
                 <tr key={s.id}>
@@ -385,25 +439,37 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
 
       <section className="panel settings">
         <h2>Settings for {kid.name}</h2>
+        <label>
+          Player type
+          <select value={learnerOf(settings)} onChange={(e) => setSettings({ ...settings, learner: e.target.value as Learner })}>
+            <option value="reader">Reader (7+)</option>
+            <option value="prereader">Pre-reader (4–6)</option>
+          </select>
+        </label>
         <fieldset>
-          <legend>Tracks</legend>
-          {(['facts', 'multidigit', 'fractions'] as Track[]).map((t) => (
-            <label key={t} className="check">
-              <input type="checkbox" checked={settings.tracks[t]} onChange={(e) => setTrack(t, e.target.checked)} />
-              {t === 'facts' ? 'Times tables' : t === 'multidigit' ? 'Multi-digit multiplication' : 'Fractions'}
-            </label>
+          <legend>Modules</legend>
+          {bands.map((band) => (
+            <div key={band} className="module-band">
+              <p className="muted band-label">Grade {band}</p>
+              {MODULES.filter((m) => m.status === 'live' && m.gradeBand === band).map((m) => (
+                <label key={m.id} className="check">
+                  <input type="checkbox" checked={modulesOf(settings)[m.id]} onChange={(e) => setModule(m.id, e.target.checked)} />
+                  {m.name}
+                </label>
+              ))}
+            </div>
           ))}
         </fieldset>
         <label>
           Questions per run
           <select value={settings.sessionSize} onChange={(e) => setSettings({ ...settings, sessionSize: Number(e.target.value) })}>
-            {[15, 20, 30, 40, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+            {[10, 15, 20, 30, 40, 50].map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
         <label>
           Most new cards per run
           <select value={settings.maxNew} onChange={(e) => setSettings({ ...settings, maxNew: Number(e.target.value) })}>
-            {[3, 5, 8, 12].map((n) => <option key={n} value={n}>{n}</option>)}
+            {[3, 4, 5, 8, 12].map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </label>
         <label>
@@ -456,6 +522,59 @@ const PACE_OPTIONS = [
   { value: 1.5, label: '1.5x: a little extra time' },
   { value: 1, label: '1x: original speed bars (strictest)' },
 ];
+
+function GridLegend() {
+  return (
+    <div className="legend">
+      {([0, 1, 2, 3, 4] as Level[]).map((l) => (
+        <span key={l} className="legend-item"><span className={`swatch ${LEVEL_CLASS[l]}`} />{LEVEL_LABELS[l]}</span>
+      ))}
+      <span className="legend-item"><span className="swatch lv1 leech" />Missed 3+ times</span>
+    </div>
+  );
+}
+
+/** A 0 to 10 grid where only the squares that are real cards are drawn. */
+function TriangleGrid({
+  label,
+  cards,
+  baseline,
+  pace,
+  cell,
+}: {
+  label: string;
+  cards: CardMap;
+  baseline: number;
+  pace: number;
+  cell: (a: number, b: number) => { id: string; shown: number; tip: string } | null;
+}) {
+  const nums = Array.from({ length: 11 }, (_, i) => i);
+  return (
+    <div className="heatmap triangle" role="table" aria-label={label}>
+      <div className="hm-row" role="row">
+        <span className="hm-head" role="columnheader" />
+        {nums.map((b) => <span key={b} className="hm-head" role="columnheader">{b}</span>)}
+      </div>
+      {nums.map((a) => (
+        <div key={a} className="hm-row" role="row">
+          <span className="hm-head" role="rowheader">{a}</span>
+          {nums.map((b) => {
+            const c = cell(a, b);
+            if (!c) return <span key={b} className="hm-cell hm-gap" role="cell" aria-hidden="true" />;
+            const st = cards[c.id];
+            const lv = cardLevel(st, baseline, pace);
+            const tip = `${c.tip}: ${LEVEL_LABELS[lv]}${st?.recentMs.length ? `, ${fmtSec(median(st.recentMs))}` : ''}${st?.fsrs.lapses ? `, missed ${st.fsrs.lapses}×` : ''}`;
+            return (
+              <span key={b} role="cell" title={tip} aria-label={tip} data-card={c.id} className={`hm-cell ${LEVEL_CLASS[lv]} ${st && st.fsrs.lapses >= 3 ? 'leech' : ''}`}>
+                {c.shown}
+              </span>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Heatmap({ cards, baseline, pace }: { cards: CardMap; baseline: number; pace: number }) {
   const nums = Array.from({ length: 13 }, (_, i) => i);

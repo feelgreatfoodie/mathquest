@@ -1,0 +1,87 @@
+import type { Mixed } from './fraction';
+
+export type Rng = () => number;
+
+/** Render tokens; the UI turns these into big readable math. */
+export type Token =
+  | { t: 'num'; v: number }
+  | { t: 'op'; v: '×' | '+' | '−' }
+  | { t: 'frac'; w?: number; n: number; d: number };
+
+export type Answer =
+  | { kind: 'int'; value: number }
+  | { kind: 'mixed'; value: Mixed; requireProper: boolean };
+
+export type IconId = 'apple' | 'star' | 'fish' | 'bug' | 'dino';
+export const ICON_IDS: readonly IconId[] = ['apple', 'star', 'fish', 'bug', 'dino'];
+
+/** Pictures for a pre-reader problem: `a` icons, the operator, then `b` icons (all the same icon). */
+export interface Visual {
+  kind: 'groups';
+  op: '+' | '−';
+  a: number;
+  b: number;
+  icon: IconId;
+}
+
+export interface Problem {
+  cardId: string;
+  tokens: Token[];
+  answer: Answer;
+  /** Shown after a miss, and on the "learn" card for new material. Pre-reader modules speak it. */
+  hint: string;
+  /** What the voice reads for the question, e.g. "three plus two". */
+  speech?: string;
+  visual?: Visual;
+  /** Answer buttons for choice input, in display order. */
+  choices?: number[];
+}
+
+export type MixedInput = { w: number | null; n: number | null; d: number | null };
+export type AnswerInput = { kind: 'int'; value: number | null } | { kind: 'mixed'; value: MixedInput };
+
+/** correct | almost (right amount, wrong form) | wrong */
+export type Verdict = 'correct' | 'almost' | 'wrong';
+
+export function int(rng: Rng, lo: number, hi: number): number {
+  return lo + Math.floor(rng() * (hi - lo + 1));
+}
+
+export function pick<T>(rng: Rng, xs: readonly T[]): T {
+  return xs[Math.floor(rng() * xs.length)]!;
+}
+
+export function shuffled<T>(xs: readonly T[], rng: Rng): T[] {
+  const a = [...xs];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
+/** Deterministic PRNG for tests and reproducible sessions. */
+export function mulberry32(seed: number): Rng {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Three answer buttons: the answer plus its nearest neighbours in 0..max. The neighbours are
+ * answer±1, then answer±2 when ±1 falls outside the range (answer 0 gives 0,1,2; answer 10 gives 8,9,10).
+ * The order is shuffled with `rng`, so the same seed always gives the same buttons.
+ */
+export function choicesFor(answer: number, max: number, rng: Rng): number[] {
+  if (!Number.isInteger(answer) || answer < 0 || answer > max || max < 2) throw new Error(`choicesFor(${answer}, ${max})`);
+  const out = [answer];
+  for (const d of [1, 2]) {
+    for (const v of [answer - d, answer + d]) if (out.length < 3 && v >= 0 && v <= max && !out.includes(v)) out.push(v);
+  }
+  return shuffled(out, rng);
+}

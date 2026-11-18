@@ -1,18 +1,16 @@
 import { Rating, type Grade } from 'ts-fsrs';
-import type { CardDef } from './content';
+import { moduleOfCard, type CardDef } from './modules';
+import { factThresholds } from './modules/facts';
+import type { Thresholds } from './modules/types';
 import type { CardMap } from './models';
 import type { Verdict } from './problems';
 import { median } from './scheduler';
 
-export interface Thresholds {
-  fastMs: number;
-  slowMs: number;
-}
+export type { Thresholds };
+export { factThresholds };
 
 const DEFAULT_FACT_BASELINE = 3500;
 const MIN_SAMPLES = 12;
-
-const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
 
 /**
  * The kid's typical correct-answer time on facts (ms), from recent answers.
@@ -26,25 +24,15 @@ export function factBaseline(cards: CardMap): number {
 }
 
 /**
- * Facts: Easy means automatic recall. At pace 1 the fast bar never exceeds 3 s (the usual fluency
- * target) and tightens toward 1.5 s as the kid's own baseline drops. Pace multiplies all of it.
- */
-export function factThresholds(baselineMs: number, pace: number): Thresholds {
-  return {
-    fastMs: clamp(baselineMs * 0.9 * pace, 1500 * pace, 3000 * pace),
-    slowMs: clamp(baselineMs * 2.5 * pace, 5000 * pace, 9000 * pace),
-  };
-}
-
-/**
  * The one place that turns a card and a pace into fast and slow bars. `pace` multiplies the bars
  * and the clamp bounds (3 = three times the time). Grading, the run summary, mastery levels and the
  * parent view all call this, so they agree. Callers pass `paceOf(kid.settings)`.
  */
 export function thresholdsFor(def: CardDef, baselineMs: number, pace: number): Thresholds {
-  return def.kind === 'fact'
-    ? factThresholds(baselineMs, pace)
-    : { fastMs: def.fastMs * pace, slowMs: def.slowMs * pace };
+  const mod = moduleOfCard(def.id);
+  if (!mod) throw new Error(`No module for card ${def.id}`);
+  const base = mod.baseBars(def, { baselineMs });
+  return { fastMs: base.fastMs * pace, slowMs: base.slowMs * pace };
 }
 
 /**

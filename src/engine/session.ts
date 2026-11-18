@@ -1,10 +1,10 @@
 import type { Grade } from 'ts-fsrs';
 import { Rating } from 'ts-fsrs';
-import { getCardDef, type CardDef } from './content';
+import { getCardDef, moduleOfCard, type CardDef } from './modules';
 import { factBaseline, gradeAnswer, thresholdsFor } from './grading';
 import { cardLevel } from './mastery';
-import { paceOf, type CardMap, type CardState, type KidSettings } from './models';
-import { answerText, checkAnswer, generateProblem, type AnswerInput, type Problem, type Rng, type Verdict } from './problems';
+import { learnerOf, learnerParams, paceOf, type CardMap, type CardState, type KidSettings } from './models';
+import { answerText, checkAnswer, generateProblem, ICON_IDS, type AnswerInput, type IconId, type Problem, type Rng, type Verdict } from './problems';
 import { isDue, median, newCardState, practice, retrievability, review } from './scheduler';
 
 export interface PlanItem {
@@ -50,7 +50,7 @@ export function planSession({ cards, available, now, size, maxNew, rng }: PlanIn
   const room = Math.max(0, size - reviews.length);
   const unseen = available.filter((d) => !cards[d.id]);
   const newSkills = unseen.filter((d) => d.kind === 'skill').slice(0, Math.min(MAX_NEW_SKILLS, room, maxNew));
-  const newFacts = unseen.filter((d) => d.kind === 'fact').slice(0, Math.min(room, maxNew) - newSkills.length);
+  const newFacts = unseen.filter((d) => d.kind !== 'skill').slice(0, Math.min(room, maxNew) - newSkills.length);
   const fresh = [...newSkills, ...newFacts];
 
   const fillCount = Math.max(0, size - reviews.length - fresh.length);
@@ -62,7 +62,7 @@ export function planSession({ cards, available, now, size, maxNew, rng }: PlanIn
   const short = size - reviews.length - fresh.length - ahead.length;
   if (short > 0) {
     const chosen = new Set(fresh.map((d) => d.id));
-    fresh.push(...unseen.filter((d) => d.kind === 'fact' && !chosen.has(d.id)).slice(0, short));
+    fresh.push(...unseen.filter((d) => d.kind !== 'skill' && !chosen.has(d.id)).slice(0, short));
   }
 
   const base: PlanItem[] = shuffle([...reviews, ...ahead], rng).map((d) => ({ cardId: d.id, isNew: false }));
@@ -108,7 +108,6 @@ export interface RunSummary {
   faster: string[];
 }
 
-const RETRY_GAP = 3;
 const MAX_RETRIES = 2;
 
 /**
@@ -123,6 +122,8 @@ export class SessionRunner {
   private retries = new Map<string, number>();
   private baseline: number;
   private pace: number;
+  private retryGap: number;
+  private lastIcon: IconId | null = null;
   private combo = 0;
   private bestCombo = 0;
   private xp = 0;
@@ -136,22 +137,33 @@ export class SessionRunner {
     cards: CardMap,
     private rng: Rng,
     private clock: () => number = Date.now,
-    settings?: Pick<KidSettings, 'paceMultiplier'>,
+    settings?: Pick<KidSettings, 'paceMultiplier' | 'learner'>,
   ) {
     this.pace = paceOf(settings);
+    this.retryGap = learnerParams(learnerOf(settings)).retryGap;
     this.cards = { ...cards };
     this.baseline = factBaseline(cards);
     for (const item of plan) {
       const def = getCardDef(item.cardId);
       if (!def) continue;
-      const problem = generateProblem(item.cardId, rng);
+      const problem = this.make(item.cardId, rng);
       if (item.isNew && def.kind === 'skill') {
         this.queue.push({ cardId: item.cardId, kind: 'teach', isNew: true, problem });
-        this.queue.push({ cardId: item.cardId, kind: 'graded', isNew: true, problem: generateProblem(item.cardId, rng) });
+        this.queue.push({ cardId: item.cardId, kind: 'graded', isNew: true, problem: this.make(item.cardId, rng) });
       } else {
         this.queue.push({ cardId: item.cardId, kind: 'graded', isNew: item.isNew, problem });
       }
     }
+  }
+
+  /** Builds a problem and gives picture problems a different icon from the one before. */
+  private make(cardId: string, rng: Rng): Problem {
+    const p = generateProblem(cardId, rng);
+    if (p.visual) {
+      if (p.visual.icon === this.lastIcon) p.visual = { ...p.visual, icon: ICON_IDS[(ICON_IDS.indexOf(p.visual.icon) + 1) % ICON_IDS.length]! };
+      this.lastIcon = p.visual.icon;
+    }
+    return p;
   }
 
   current(): Entry | null {
@@ -178,10 +190,14 @@ export class SessionRunner {
     this.index++;
   }
 
-  answer(input: AnswerInput, ms: number): Feedback {
+  /**
+   * Grades one answer. `peeked` is for pre-readers who hid the pictures and looked: a peek grades Hard at best.
+   */
+  answer(input: AnswerInput, ms: number, opts: { peeked?: boolean } = {}): Feedback {
     const entry = this.current();
     if (!entry || entry.kind === 'teach') throw new Error('No question to answer');
     const def = getCardDef(entry.cardId)!;
+    const mod = moduleOfCard(entry.cardId);
     const now = this.clock();
     const verdict = checkAnswer(entry.problem, input);
     const correct = verdict === 'correct';
@@ -196,6 +212,9 @@ export class SessionRunner {
       rating = gradeAnswer(verdict, ms, th);
       // A new skill was just demonstrated, so its first answer can't prove long-term memory.
       if (entry.isNew && def.kind === 'skill' && rating === Rating.Easy) rating = Rating.Good;
+      // With three buttons a first-time right answer may be a guess, so it can't be Easy.
+      if (entry.isNew && correct && mod?.input === 'choices' && rating === Rating.Easy) rating = Rating.Good;
+      if (opts.peeked && correct && (rating === Rating.Easy || rating === Rating.Good)) rating = Rating.Hard;
       next = review(prev, rating, ms, correct, now);
       this.stats.graded++;
       if (correct) this.stats.correct++;
@@ -217,12 +236,12 @@ export class SessionRunner {
     const learningSkill = correct && entry.kind === 'graded' && def.kind === 'skill' && cardLevel(prev, this.baseline, this.pace) < 3;
     if ((!correct || slow || learningSkill) && tries < MAX_RETRIES) {
       this.retries.set(entry.cardId, tries + 1);
-      const at = Math.min(this.queue.length, this.index + 1 + RETRY_GAP);
+      const at = Math.min(this.queue.length, this.index + 1 + this.retryGap);
       this.queue.splice(at, 0, {
         cardId: entry.cardId,
         kind: 'practice',
         isNew: false,
-        problem: generateProblem(entry.cardId, this.rng),
+        problem: this.make(entry.cardId, this.rng),
       });
     }
 
