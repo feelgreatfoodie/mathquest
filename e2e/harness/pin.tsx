@@ -5,7 +5,7 @@ import '../../src/styles.css';
 
 /**
  * Test-only page. It mounts the real Landing (kid tab) or the real PinPad with a fake sign-in, so the e2e can
- * drive the kid PIN screens without Firebase. ?mode=kid|pad&slow=<ms>. PIN 0000 is the wrong PIN.
+ * drive the kid PIN screens without Firebase. ?mode=kid|pad&slow=<ms>. PIN 0000 and picture iiii are wrong.
  * Every call is recorded on window.__calls.
  */
 const q = new URLSearchParams(location.search);
@@ -18,7 +18,7 @@ let wrong = false;
 async function fakeSignIn(label: string): Promise<boolean> {
   w.__calls.push(label);
   if (slow) await new Promise((r) => setTimeout(r, slow));
-  wrong = label.endsWith('0000');
+  wrong = label.endsWith('0000') || label.endsWith(':iiii');
   rerender();
   return !wrong;
 }

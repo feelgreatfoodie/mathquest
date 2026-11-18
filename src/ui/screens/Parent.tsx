@@ -14,7 +14,9 @@ import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
 import { hashPin, type Repo } from '../../data/repo';
 import { outbox, type ParkedRun } from '../../data/outbox';
-import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
+import { dataMode, kidLockStatus, setKidPicturePin, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
+import { PICTURE_LENGTH, pictureCode } from '../../data/deviceKids';
+import { PicturePad, PictureIcon } from '../early/PicturePad';
 import { reportFailure } from '../failures';
 import { buildLabel, entryText, recentChanges } from '../../whatsnew';
 import { AvatarPicker } from '../AvatarPicker';
@@ -272,6 +274,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
               reportFailure('The PIN setting was not saved.', e, save);
             }
           }}
+          onPicturePinSet={() => onKids(kids.map((x) => (x.id === kid.id ? { ...x, hasPicturePin: true } : x)))}
           onDelete={async () => {
             try {
               await repo.deleteKid(kid.id);
@@ -404,6 +407,69 @@ function KidPinPanel({ kid, onSet }: { kid: Kid; onSet: () => Promise<void> }) {
   );
 }
 
+/**
+ * Set or change one kid's picture PIN (4 of 9 animal pictures, repeats allowed). It goes to the setKidPicturePin function,
+ * which hashes it like the digit PIN, and is never stored client-side. Off for a kid until it is set; the digit PIN keeps working.
+ */
+function KidPicturePinPanel({ kid, onSet }: { kid: Kid; onSet: () => void }) {
+  const [code, setCode] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  if (dataMode !== 'firestore' || !kid.hasPin) return null;
+  return (
+    <section className="panel picture-set" data-testid="picture-pin-panel">
+      <h2>Picture PIN for {kid.name}</h2>
+      <p className="muted">
+        For players who cannot read digits yet: {kid.name} taps the face on the Kid tab, then 4 pictures. {kid.hasPicturePin ? 'A picture PIN is set.' : 'No picture PIN yet.'} The digit PIN still works. Same wrong-try limits as the digit PIN.
+      </p>
+      {open ? (
+        <>
+          <PicturePad
+            compact
+            onComplete={(c) => {
+              setCode(c);
+              return true;
+            }}
+          />
+          {code ? (
+            <div className="row" aria-label="Chosen pictures">
+              {[...code].map((ch, i) => <PictureIcon key={i} n={ch.charCodeAt(0) - 97} size={28} />)}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={busy || !code || code.length !== PICTURE_LENGTH}
+            onClick={async () => {
+              if (!code) return;
+              setBusy(true);
+              setMsg(null);
+              try {
+                await setKidPicturePin(kid.id, pictureCode([...code].map((c) => c.charCodeAt(0) - 97)));
+                onSet();
+                setMsg({ ok: true, text: 'Picture PIN saved.' });
+                setCode(null);
+                setOpen(false);
+              } catch (err) {
+                console.error('Setting the picture PIN failed.', err);
+                setMsg({ ok: false, text: (err as Error).message });
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Save picture PIN
+          </button>
+        </>
+      ) : (
+        <button type="button" className="btn btn-small" onClick={() => setOpen(true)}>{kid.hasPicturePin ? 'Change picture PIN' : 'Set a picture PIN'}</button>
+      )}
+      {msg ? <span className={msg.ok ? 'muted' : 'error'}>{msg.text}</span> : null}
+    </section>
+  );
+}
+
 /** The iOS keyboard covers the lower half of the screen. After it opens, bring the focused field to the middle. */
 function keepFocusVisible(e: FocusEvent<HTMLElement>) {
   const t = e.target;
@@ -489,7 +555,7 @@ function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
   );
 }
 
-function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onPinSet: () => Promise<void>; onDelete: () => Promise<void> }) {
+function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   const [purchases, setPurchases] = useState<PurchaseLog[]>([]);
@@ -704,6 +770,7 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onDelet
       </section>
 
       <KidPinPanel kid={kid} onSet={onPinSet} />
+      <KidPicturePinPanel kid={kid} onSet={onPicturePinSet} />
 
       <section className="panel settings">
         <h2>Settings for {kid.name}</h2>
