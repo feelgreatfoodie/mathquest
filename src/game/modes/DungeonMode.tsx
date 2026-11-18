@@ -56,7 +56,7 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
     if (!r || finishing.current) return;
     finishing.current = true;
     // Whatever the save does, the kid leaves the run.
-    await finishRun({ repo, kid, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit });
+    await finishRun({ repo, kid, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit, extra: { mode: 'dungeon' } });
   }, [kid, repo, onDone, onExit, onSynced]);
 
   const next = useCallback(() => {

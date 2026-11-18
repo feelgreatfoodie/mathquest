@@ -84,7 +84,7 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
     stopSpeaking();
     setSaved(true);
     // Whatever the save does, the kid leaves the run.
-    await finishRun({ repo, kid, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit });
+    await finishRun({ repo, kid, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit, extra: { mode: 'prereader' } });
   }, [kid, repo, onDone, onExit, onSynced]);
 
   const next = useCallback(() => {

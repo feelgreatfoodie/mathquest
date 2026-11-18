@@ -21,6 +21,8 @@ import { reportFailure } from '../failures';
 import { buildLabel, entryText, recentChanges } from '../../whatsnew';
 import { AvatarPicker } from '../AvatarPicker';
 import { InsightsPanel, clearInsightsCache } from '../InsightsPanel';
+import { adventureLine, runLabel } from '../../engine/runLabel';
+import { UiIcon } from '../sprites';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
 
@@ -181,6 +183,10 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
   const kid = kids.find((k) => k.id === selected);
   // The learning-progress reads are kept while the parent area is open and dropped when it closes.
   useEffect(() => clearInsightsCache, []);
+  // Learning progress reads fresh when the area opens and whenever the kid tab changes, so a trip checkpointed since is never missing.
+  useEffect(() => {
+    clearInsightsCache();
+  }, [selected]);
 
   if (changingPin)
     return (
@@ -563,6 +569,7 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPictu
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   const [purchases, setPurchases] = useState<PurchaseLog[]>([]);
   const [deposits, setDeposits] = useState<VaultDeposit[]>([]);
+  const [world, setWorld] = useState<unknown>(null);
   const kid = useLiveKid(repo, kidProp);
   const [settings, setSettings] = useState<KidSettings>(kid.settings);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
@@ -579,8 +586,10 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPictu
       reportFailure('Could not load the vault history.', e);
       return [] as VaultDeposit[];
     });
-    void Promise.all([repo.loadCards(kid.id), repo.listSessions(kid.id, 20), purchasesRead, vaultRead]).then(([c, s, p, v]) => {
+    const worldRead = repo.loadWorld(kid.id).catch(() => null); // world/main by its exact path; a missing or unreadable save is no Adventure line
+    void Promise.all([repo.loadCards(kid.id), repo.listSessions(kid.id, 20), purchasesRead, vaultRead, worldRead]).then(([c, s, p, v, w]) => {
       if (!alive) return;
+      setWorld(w);
       setCards(c);
       setSessions(s);
       setPurchases(p);
@@ -751,15 +760,19 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPictu
 
       <section className="panel">
         <h2>Recent runs</h2>
+        {adventureLine(world as never) ? <p className="muted" data-testid="adventure-line">{adventureLine(world as never)}</p> : null}
         {sessions.length ? (
           <table className="table">
             <thead>
-              <tr><th scope="col">When</th><th scope="col" className="num">Questions</th><th scope="col" className="num">Correct</th><th scope="col" className="num">Fast</th><th scope="col" className="num">New</th><th scope="col" className="num">Minutes</th></tr>
+              <tr><th scope="col">When</th><th scope="col">Mode</th><th scope="col" className="num">Questions</th><th scope="col" className="num">Correct</th><th scope="col" className="num">Fast</th><th scope="col" className="num">New</th><th scope="col" className="num">Minutes</th></tr>
             </thead>
             <tbody>
               {sessions.map((s) => (
                 <tr key={s.id}>
                   <td data-label="When">{new Date(s.startedAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
+                  <td data-label="Mode" data-testid="run-mode" data-mode={runLabel(s, learnerOf(kid.settings)).mode}>
+                    {runLabel(s, learnerOf(kid.settings)).mode === 'overworld' ? <UiIcon name="map" size={18} /> : null} {runLabel(s, learnerOf(kid.settings)).text}
+                  </td>
                   <td className="num" data-label="Questions">{s.graded}</td>
                   <td className="num" data-label="Correct">{s.graded ? `${Math.round((s.correct / s.graded) * 100)}%` : '–'}</td>
                   <td className="num" data-label="Fast">{s.fast}</td>

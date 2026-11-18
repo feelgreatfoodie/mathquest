@@ -1,6 +1,7 @@
 import { applyRun, type GameDelta } from '../engine/game';
 import { earnedTodayOf, gemsForRun } from '../engine/gems';
-import { learnerOf, type CardMap, type Kid, type KidGame, type SessionLog } from '../engine/models';
+import { learnerOf, type CardMap, type Kid, type KidGame, type SessionLog, type SessionMode } from '../engine/models';
+import { addRun, tripLog, type TripTotals } from '../game/overworld/trip';
 import { SessionRunner, buildPlan, type RunSummary } from '../engine/session';
 import { newId, type Repo } from '../data/repo';
 import { noteDenied, putQuietly, removeQuietly, replayOutbox } from '../data/outbox';
@@ -35,14 +36,25 @@ export interface RunInfo {
   retry?: () => Promise<KidGame>;
 }
 
+/** What a run screen adds to saveRun: the mode tag for the log, and for an Adventure trip its identity and the totals before this open. */
+export interface SaveExtra {
+  mode: SessionMode;
+  trip?: { id: string; startedAt: number; seq: number; base: TripTotals; region: string };
+}
+
 export async function saveRun(
   repo: Repo,
   kid: Kid,
   runner: SessionRunner,
   startedAt: number,
   onSynced?: (game: KidGame) => void,
+  extra?: SaveExtra,
 ): Promise<{ summary: RunSummary; updated: Kid; saved: boolean; info: RunInfo } | null> {
-  const raw = runner.summary();
+  const run = runner.summary();
+  const trip = extra?.trip;
+  // An Adventure trip closes with its cumulative totals: what earlier opens of the trip already checkpointed plus this open's runner.
+  const t = trip ? addRun(trip.base, run) : null;
+  const raw: RunSummary = t ? { ...run, answered: t.answered, graded: t.graded, correct: t.correct, fast: t.fast, newLearned: t.newLearned, xp: t.xp, bestCombo: t.bestCombo, medianMs: t.medianMs, missed: t.missed } : run;
   if (raw.answered === 0) return null;
   const now = Date.now();
   // The gems come from the parent settings and today's count. The server transaction works them out again from the
@@ -51,7 +63,8 @@ export async function saveRun(
   const gemSettings = { gemSpeed: kid.settings.gemSpeed, gemFullRate: kid.settings.gemFullRate };
   const stats = { correct: raw.correct, graded: raw.graded, bestCombo: raw.bestCombo, newLearned: raw.newLearned };
   const summary = { ...raw, gems: gemsForRun(stats, learner, gemSettings, earnedTodayOf(kid.game, now)) };
-  const log: SessionLog = {
+  const mode: SessionMode = extra?.mode ?? (learner === 'prereader' ? 'prereader' : 'dungeon');
+  const log: SessionLog = trip && t ? { ...tripLog({ tripId: trip.id, startedAt: trip.startedAt }, t, now, trip.region, 'camp'), gems: summary.gems } : {
     id: newId(),
     startedAt,
     endedAt: now,
@@ -65,7 +78,9 @@ export async function saveRun(
     gems: summary.gems,
     bestCombo: summary.bestCombo,
     missed: summary.missed,
+    mode,
   };
+  const runId = trip ? `${trip.id}:${trip.seq}` : log.id;
   const delta: GameDelta = { xp: summary.xp, gems: summary.gems, gemRun: { stats, learner, settings: gemSettings }, bestCombo: summary.bestCombo, playedAt: now };
 
   const cards = runner.changedCards();
@@ -75,16 +90,16 @@ export async function saveRun(
     reportFailure('Some of this run was not saved.', e, () => repo.saveCards(kid.id, cards));
   }
 
-  await putQuietly({ runId: log.id, kidId: kid.id, sessionLog: log, gameDelta: delta, savedAt: now });
+  await putQuietly({ runId, kidId: kid.id, sessionLog: log, gameDelta: delta, savedAt: now, ...(trip ? { checkpoint: true } : {}) });
   const write = async (): Promise<KidGame> => {
     let game: KidGame;
     try {
-      game = await repo.applyGameDelta(kid.id, delta, { session: log });
+      game = await repo.applyGameDelta(kid.id, delta, { session: log, ...(trip ? { checkpoint: true } : {}) });
     } catch (e) {
-      if (isSaveDenied(e)) await noteDenied(log.id); // the third refusal parks the run on replay
+      if (isSaveDenied(e)) await noteDenied(runId); // the third refusal parks the run on replay
       throw e;
     }
-    await removeQuietly(log.id); // both writes are confirmed
+    await removeQuietly(runId); // both writes are confirmed
     return game;
   };
   const attempt = async (): Promise<KidGame> => {

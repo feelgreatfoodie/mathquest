@@ -3,7 +3,10 @@ import { learnerOf, type CardMap, type Kid } from '../../engine/models';
 import type { Entry, Feedback, SessionRunner } from '../../engine/session';
 import { finishRun } from '../../ui/finishRun';
 import { reportFailure } from '../../ui/failures';
-import { loadRunner } from '../../ui/runShared';
+import { loadRunner, type SaveExtra } from '../../ui/runShared';
+import { newId } from '../../data/repo';
+import { CHECKPOINT_EVERY, addRun, loadTrip, resolveTrip, saveTrip, type TripState, type TripTotals } from './trip';
+import { queueCheckpoint } from './tripWrite';
 import { HoldButton } from '../../ui/early/HoldButton';
 import { chest as chestSound, defeat, unlockSounds } from '../../ui/early/sounds';
 import { unlockSpeech } from '../../ui/early/useSpeech';
@@ -74,6 +77,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const finishing = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dirty = useRef(false);
+  // The trip: one session doc that grows. `tripRef` is its identity and totals as of the last checkpoint; `baseRef` is what earlier opens of it already counted.
+  const tripRef = useRef<TripState | null>(null);
+  const baseRef = useRef<TripTotals | null>(null);
+  const cpGraded = useRef(0);
+  const cpAnswered = useRef(0);
   const markerRef = useRef<Point | null>(null);
   const hero = useRef({ x: 0, y: 0, fx: 0, fy: 0, facing: 'down' as Facing, frame: 0, moving: null as null | { from: Point; to: Point; p: number } });
   const [loaded, setLoaded] = useState(false);
@@ -200,6 +208,14 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         const s = heroStart(map);
         const w = ok ? w0 : { ...w0, x: s.x, y: s.y };
         runnerRef.current = runner;
+        // The trip: resume an open one under 24 h old, else start a new one (and close the expired one as 'left').
+        const { trip, close } = resolveTrip(loadTrip(kidRef.current.id), Date.now(), newId);
+        tripRef.current = trip;
+        baseRef.current = trip.totals;
+        cpAnswered.current = trip.totals.answered;
+        cpGraded.current = trip.totals.graded;
+        if (close) sendCheckpoint(close, close.totals, w0.region, 'left');
+        saveTrip(kidRef.current.id, trip);
         cardsRef.current = cards;
         startedAt.current = at;
         worldRef.current = w;
@@ -219,24 +235,74 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repo]);
 
-  useEffect(
-    () => () => {
-      void flushWorld();
-    },
-    [flushWorld],
-  );
 
   // ---- game actions ----
   const say = useCallback((m: Msg | null) => setMsg(m), []);
 
+  const sendCheckpoint = useCallback(
+    (trip: TripState, totals: TripTotals, region: string, end?: 'left') => {
+      void queueCheckpoint(repo, kidRef.current.id, trip, totals, region, end);
+    },
+    [repo],
+  );
+
+  const checkpoint = useCallback(() => {
+    const r = runnerRef.current;
+    const trip = tripRef.current;
+    if (!r || !trip || !baseRef.current || finishing.current) return;
+    const totals = addRun(baseRef.current, r.summary());
+    if (totals.answered === cpAnswered.current) return; // nothing new since the last one
+    cpAnswered.current = totals.answered;
+    cpGraded.current = totals.graded;
+    const cards = r.changedCards();
+    void repo.saveCards(kidRef.current.id, cards).catch((e) => reportFailure('Some answers were not saved.', e, () => repo.saveCards(kidRef.current.id, cards)));
+    sendCheckpoint(trip, totals, worldRef.current?.region ?? 'meadow');
+  }, [repo, sendCheckpoint]);
+
   const finishTrip = useCallback(async () => {
     const r = runnerRef.current;
+    const trip = tripRef.current;
     if (!r || finishing.current) return;
     finishing.current = true;
     pausedRef.current = true;
     await flushWorld();
-    await finishRun({ repo, kid: kidRef.current, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit });
+    // The campfire closes the trip: the final checkpoint carries the cumulative totals and finished = true, and the next open starts a new trip.
+    let extra: SaveExtra = { mode: 'overworld' };
+    if (trip && baseRef.current) {
+      trip.seq += 1;
+      trip.finished = true;
+      trip.updatedAt = Date.now();
+      trip.totals = addRun(baseRef.current, r.summary());
+      saveTrip(kidRef.current.id, trip);
+      extra = { mode: 'overworld', trip: { id: trip.tripId, startedAt: trip.startedAt, seq: trip.seq, base: baseRef.current, region: worldRef.current?.region ?? 'meadow' } };
+    }
+    await finishRun({ repo, kid: kidRef.current, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit, extra });
   }, [repo, onSynced, onDone, onExit, flushWorld]);
+
+  useEffect(
+    () => () => {
+      void flushWorld();
+      checkpoint(); // leaving by any road keeps the answers: a checkpoint on unmount
+    },
+    [flushWorld, checkpoint],
+  );
+
+  // A tab sent to the background or closed is a checkpoint too (save-first: the outbox holds it if the page dies mid-write).
+  useEffect(() => {
+    const away = () => {
+      void flushWorld();
+      checkpoint();
+    };
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') away();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('pagehide', away);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pagehide', away);
+    };
+  }, [flushWorld, checkpoint]);
 
   const grant = useCallback(
     async (base: number) => {
@@ -419,6 +485,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     (fb: Feedback | null) => {
       const m = modal;
       if (!m) return;
+      // Every 10 graded answers of the trip is a checkpoint.
+      const r0 = runnerRef.current;
+      if (r0 && baseRef.current && addRun(baseRef.current, r0.summary()).graded - cpGraded.current >= CHECKPOINT_EVERY) checkpoint();
       if (m.boss) {
         if (fb) resolveBoss(fb);
         return;
@@ -431,7 +500,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       }
       resolveEntity(m.entity!, fb);
     },
-    [modal, resolveBoss, resolveEntity],
+    [modal, resolveBoss, resolveEntity, checkpoint],
   );
 
   // ---- movement ----
