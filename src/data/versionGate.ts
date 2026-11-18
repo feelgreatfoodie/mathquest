@@ -1,39 +1,33 @@
 import { doc, getDocFromServer, type Firestore } from 'firebase/firestore';
-import { BUILD, StaleBuildError, isBehind, parseMinVersion } from '../version';
-
-export { StaleBuildError };
+import { BUILD, isBehind, parseMinVersion } from '../version';
 
 export interface GuardOptions {
   /** This bundle's build. Defaults to the build number baked in at build time. */
   build?: number;
-  /** A check younger than this is trusted. 0 reads every time. */
-  maxAgeMs?: number;
-  /** Gives up on a read after this long, so an offline kid is never stuck on a write. */
+  /** Gives up on a read after this long, so an offline kid is never stuck. */
   timeoutMs?: number;
   /** Where minVersion comes from. Defaults to config/app in Firestore. */
   read?: () => Promise<unknown>;
 }
 
 /**
- * Compares this bundle's build with config/app.minVersion. Behind means no game, card or session write
- * and no new run: the screen shows the update page. The check fails open: a missing doc, a bad value or an
+ * Compares this bundle's build with config/app.minVersion. Behind means the app offers the update on the home
+ * and summary screens and starts no new run. It never blocks a write: the server rules guard the data, and a
+ * round that finished is saved. The check fails open: a missing doc, a bad value or an
  * unreadable doc keeps the last known answer (first answer: not stale). The rules still guard the data,
  * and a kid on a plane must still be able to play.
  */
 export class VersionGuard {
   private min: number | null = null;
-  private lastTry = -Infinity;
   /** The read in progress, shared by every caller so none of them passes the gate while it is pending. */
   private inflight: Promise<void> | null = null;
   private listeners = new Set<() => void>();
   private build: number;
-  private maxAgeMs: number;
   private timeoutMs: number;
   private read: () => Promise<unknown>;
 
   constructor(db: Firestore | null, opts: GuardOptions = {}) {
     this.build = opts.build ?? BUILD;
-    this.maxAgeMs = opts.maxAgeMs ?? 30_000;
     this.timeoutMs = opts.timeoutMs ?? 4_000;
     this.read =
       opts.read ??
@@ -42,6 +36,11 @@ export class VersionGuard {
         const snap = await getDocFromServer(doc(db, 'config', 'app'));
         return snap.exists() ? (snap.data() as { minVersion?: unknown }).minVersion : undefined;
       });
+  }
+
+  /** The build and the last minVersion read, for settleUpdate. */
+  get state(): { build: number; min: number | null } {
+    return { build: this.build, min: this.min };
   }
 
   get stale(): boolean {
@@ -66,7 +65,6 @@ export class VersionGuard {
   }
 
   private async doRefresh(): Promise<void> {
-    this.lastTry = Date.now();
     const before = this.stale;
     try {
       const raw = await Promise.race([
@@ -79,14 +77,6 @@ export class VersionGuard {
       // Unreadable: keep what is known.
     }
     if (this.stale !== before) for (const l of this.listeners) l();
-  }
-
-  /** Throws StaleBuildError when this bundle is behind. Reads minVersion first when the last check is old. */
-  async check(): Promise<void> {
-    // A read in progress is awaited by every caller: the first writer at launch must not be the only one to wait.
-    if (this.inflight) await this.inflight;
-    else if (!this.stale && Date.now() - this.lastTry >= this.maxAgeMs) await this.refresh();
-    if (this.stale) throw new StaleBuildError();
   }
 }
 

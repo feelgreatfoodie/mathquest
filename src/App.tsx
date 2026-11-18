@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FirestoreRepo } from './data/firestoreRepo';
 import { LocalRepo } from './data/localRepo';
 import { hashPin, type Repo } from './data/repo';
@@ -9,9 +9,10 @@ import { learnerOf, type Family, type Kid, type KidGame } from './engine/models'
 import type { RunSummary } from './engine/session';
 import type { RunInfo } from './ui/runShared';
 import { dataMode, getFirebase, kidClaims, registerParent, signInKid, signInParent, signOutParent } from './firebase';
-import { clearUpdateAttempt } from './update';
+import { replayOutbox } from './data/outbox';
+import { settleUpdate } from './update';
 import { FailureToasts } from './ui/FailureToasts';
-import { UpdateScreen } from './ui/UpdateScreen';
+import { UpdatePrompt, UpdateScreen } from './ui/UpdateScreen';
 import { reportFailure } from './ui/failures';
 import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
@@ -40,7 +41,6 @@ function makeGuard(): VersionGuard | null {
   if (import.meta.env.DEV) {
     return new VersionGuard(null, {
       build: 100,
-      maxAgeMs: 0,
       read: async () => {
         const v = localStorage.getItem('mathquest:test:minVersion');
         return v === null ? undefined : Number(v);
@@ -135,8 +135,8 @@ export function App() {
   useEffect(() => {
     if (!guard) return;
     const sync = () => {
-      setStale(guard.stale);
-      if (!guard.stale) clearUpdateAttempt();
+      const { build, min } = guard.state;
+      setStale(settleUpdate(build, min)); // a current bundle clears the update attempt
     };
     sync();
     const off = guard.subscribe(sync);
@@ -152,6 +152,15 @@ export function App() {
   useEffect(() => {
     if (guard && repo) void guard.refresh();
   }, [guard, repo]);
+
+  // Launch: a run the last launch could not save (refused, offline, tab closed) is written now, in order, once.
+  useEffect(() => {
+    if (!repo) return;
+    const replay = async () => {
+      await replayOutbox(repo, undefined, (kidId, game) => showGameRef.current(kidId, game));
+    };
+    replay().catch((e) => reportFailure('Your gems and XP from a past run were not saved.', e, replay));
+  }, [repo]);
 
   const startRun = useCallback(
     async (kidId: string) => {
@@ -172,6 +181,9 @@ export function App() {
     setKids((ks) => ks.map((x) => (x.id === kidId ? { ...x, game } : x)));
   }, []);
 
+  const showGameRef = useRef(showGame);
+  showGameRef.current = showGame;
+
   /** The shop's writes. The screen shows the stored result, so a failed purchase never looks bought. */
   const applyGame = useCallback(
     async (kidId: string, delta: GameDelta) => {
@@ -189,7 +201,9 @@ export function App() {
     [repo, showGame],
   );
 
-  const body = stale ? <UpdateScreen picture={pictureMode} /> : renderScreen();
+  // A release never interrupts a round or replaces the save: the update screen waits for home, and the summary
+  // (after the save) carries the prompt.
+  const body = stale && screen.name !== 'run' && screen.name !== 'summary' ? <UpdateScreen picture={pictureMode} /> : renderScreen();
   return (
     <>
       {body}
@@ -295,15 +309,18 @@ export function App() {
       ) : null;
     case 'summary':
       return kid ? (
-        <Summary
-          kid={kid}
-          summary={screen.summary}
-          info={screen.info}
-          loadCards={() => repo.loadCards(kid.id)}
-          onGame={(d) => applyGame(kid.id, d)}
-          onAgain={() => void startRun(kid.id)}
-          onHome={() => setScreen({ name: 'home', kidId: kid.id })}
-        />
+        <>
+          <Summary
+            kid={kid}
+            summary={screen.summary}
+            info={screen.info}
+            loadCards={() => repo.loadCards(kid.id)}
+            onGame={(d) => applyGame(kid.id, d)}
+            onAgain={() => (stale ? setScreen({ name: 'home', kidId: kid.id }) : void startRun(kid.id))}
+            onHome={() => setScreen({ name: 'home', kidId: kid.id })}
+          />
+          {stale ? <UpdatePrompt picture={pictureMode} /> : null}
+        </>
       ) : null;
     case 'pin':
       return (

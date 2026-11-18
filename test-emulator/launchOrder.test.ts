@@ -3,12 +3,10 @@ import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/
 import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FirestoreRepo } from '../src/data/firestoreRepo';
-import { VersionGuard } from '../src/data/versionGate';
-import { StaleBuildError } from '../src/version';
 import type { SessionLog } from '../src/engine/models';
 
-// Launch write ordering: with the minVersion check still pending, a game, card or session write must not
-// reach Firestore. Every name, id and number is made up.
+// A game, card or session write never waits for the minVersion check and never fails on it. Every name, id and
+// number is made up.
 const RULES = readFileSync(process.env.RULES_FILE ?? 'firestore.rules', 'utf8');
 const FAM = 'fam-parent-uid';
 const KID = 'kidlaunch01';
@@ -49,71 +47,26 @@ async function serverState() {
   });
   return out!;
 }
-const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Runs the three writers a run uses while minVersion is unread, then releases the read. */
-async function launchWrites(which: Array<'applyGameDelta' | 'saveCards' | 'addSession'>) {
-  const events: string[] = [];
-  let release!: (v: unknown) => void;
-  const guard = new VersionGuard(null, {
-    build: 100,
-    read: () => {
-      events.push('guard:read-start');
-      return new Promise((res) => (release = res)).then((v) => {
-        events.push('guard:resolved');
-        return v;
-      });
-    },
-  });
-  const repo = new FirestoreRepo(kidDb(), FAM, guard);
-  const fire: Record<string, () => Promise<void>> = {
-    applyGameDelta: () => repo.applyGameDelta(KID, { xp: 20, gems: 2, playedAt: 1 }, { session: session('s1') }).then(() => void events.push('write:applyGameDelta')),
-    saveCards: () => repo.saveCards(KID, [card]).then(() => void events.push('write:saveCards')),
-    addSession: () => repo.addSession(KID, session('s2')).then(() => void events.push('write:addSession')),
-  };
-  const writes = which.map((w) => fire[w]!());
-  await pause(500);
-  const before = { events: [...events], server: await serverState() };
-  release(50); // minVersion 50, this build is 100: not stale
-  await Promise.all(writes);
-  return { before, events, server: await serverState() };
-}
-
-describe('launch write ordering against the minVersion gate', () => {
-  for (const w of ['applyGameDelta', 'saveCards', 'addSession'] as const) {
-    it(`${w} on its own: nothing is written until the check resolves, then it lands`, async () => {
-      const r = await launchWrites([w]);
-      expect(r.before.events).toEqual(['guard:read-start']);
-      expect(r.before.server).toEqual({ xp: 100, sessions: 0, cards: 0 });
-      expect(r.events.indexOf('guard:resolved')).toBeLessThan(r.events.findIndex((e) => e.startsWith('write:')));
-      expect(r.server).not.toEqual({ xp: 100, sessions: 0, cards: 0 });
-    });
-  }
-
-  // VersionGuard.check() once let a second writer skip the gate while the first read was pending: refresh()
-  // stamped lastTry before its read returned. The in-flight read is now shared and every caller awaits it.
-  it('three writers fired together: none writes before the one check resolves', async () => {
-    const r = await launchWrites(['applyGameDelta', 'saveCards', 'addSession']);
-    expect(r.before.events.some((e) => e.startsWith('write:'))).toBe(false);
-    expect(r.before.server).toEqual({ xp: 100, sessions: 0, cards: 0 });
+describe('writes do not depend on minVersion', () => {
+  it('the three writers a run uses land at once', async () => {
+    const repo = new FirestoreRepo(kidDb(), FAM);
+    await Promise.all([
+      repo.applyGameDelta(KID, { xp: 20, gems: 2, playedAt: 1 }, { session: session('s1') }),
+      repo.saveCards(KID, [card]).catch(() => undefined), // the stub card may fail the card rules; it must not wait on minVersion
+      repo.addSession(KID, session('s2')),
+    ]);
+    const s = await serverState();
+    expect(s.xp).toBe(120);
+    expect(s.sessions).toBe(2);
   });
 
-  it('a stale build (minVersion above this build) writes nothing at all', async () => {
-    const guard = new VersionGuard(null, { build: 100, read: async () => 200 });
-    const repo = new FirestoreRepo(kidDb(), FAM, guard);
-    await expect(repo.applyGameDelta(KID, { xp: 20 }, { session: session('s1') })).rejects.toBeInstanceOf(StaleBuildError);
-    await expect(repo.saveCards(KID, [card])).rejects.toBeInstanceOf(StaleBuildError);
-    await expect(repo.addSession(KID, session('s2'))).rejects.toBeInstanceOf(StaleBuildError);
-    expect(await serverState()).toEqual({ xp: 100, sessions: 0, cards: 0 });
-  });
-
-  it('an unreadable minVersion fails open after the timeout: the write waits for it, then lands', async () => {
-    const guard = new VersionGuard(null, { build: 100, timeoutMs: 300, read: () => new Promise(() => {}) });
-    const repo = new FirestoreRepo(kidDb(), FAM, guard);
-    const done = repo.addSession(KID, session('s3'));
-    await pause(150);
-    expect((await serverState()).sessions).toBe(0); // still waiting on the check
-    await done;
-    expect((await serverState()).sessions).toBe(1);
+  it('a stale build (minVersion above this build) still writes: the update prompt waits for the summary', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => setDoc(doc(ctx.firestore(), 'config/app'), { minVersion: 4_000_000_000 }));
+    const repo = new FirestoreRepo(kidDb(), FAM);
+    await repo.applyGameDelta(KID, { xp: 20 }, { session: session('s1') });
+    await repo.addSession(KID, session('s2'));
+    const s = await serverState();
+    expect(s.xp).toBe(120);
+    expect(s.sessions).toBe(2);
   });
 });

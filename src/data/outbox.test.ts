@@ -1,0 +1,126 @@
+import 'fake-indexeddb/auto';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { LocalRepo } from './localRepo';
+import { outbox, replayOutbox, type OutboxEntry } from './outbox';
+import { makeKid } from '../engine/newKid';
+import { planSession, SessionRunner } from '../engine/session';
+import { availableCards } from '../engine/mastery';
+import { mulberry32 } from '../engine/problems';
+import { clearFailures, getFailures } from '../ui/failures';
+import { saveRun } from '../ui/runShared';
+
+function installStorage() {
+  const store = new Map<string, string>();
+  (globalThis as { localStorage?: unknown }).localStorage = {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+  };
+}
+
+function playedRun(kid: ReturnType<typeof makeKid>) {
+  const cards = {};
+  const plan = planSession({ cards, available: availableCards(cards, kid.settings), now: Date.now(), size: 5, maxNew: 5, rng: mulberry32(1) });
+  const run = new SessionRunner(plan, cards, mulberry32(2), Date.now, kid.settings);
+  let n = 0;
+  while (!run.done() && n++ < 40) {
+    const e = run.current()!;
+    if (e.kind === 'teach') {
+      run.acknowledge();
+      continue;
+    }
+    const a = e.problem.answer;
+    run.answer(a.kind === 'int' ? { kind: 'int', value: a.value } : { kind: 'int', value: 0 }, 1200);
+    run.advance();
+  }
+  return run;
+}
+
+describe('the outbox keeps a finished run until both writes are confirmed', () => {
+  let errors: ReturnType<typeof vi.spyOn>;
+  beforeEach(async () => {
+    installStorage();
+    clearFailures();
+    await outbox.clear();
+    errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => errors.mockRestore());
+
+  it('a refused write lands in the outbox and replays on the next launch exactly once', async () => {
+    const repo = new LocalRepo();
+    const kid = makeKid('Testkid', 'reader');
+    await repo.createKid(kid);
+    const run = playedRun(kid);
+    repo.applyGameDelta = async () => {
+      throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+    };
+    const saved = (await saveRun(repo, kid, run, Date.now() - 1000))!;
+    expect(saved.saved).toBe(false);
+    const queued = await outbox.list(kid.id);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.runId).toBe(queued[0]!.sessionLog.id);
+    expect(queued[0]!.gameDelta.xp).toBe(run.summary().xp);
+
+    // Next launch: a fresh repo on the same storage, the outbox read back from IndexedDB.
+    const next = new LocalRepo();
+    const first = await replayOutbox(next);
+    expect(first.replayed).toBe(1);
+    expect((await next.getKid(kid.id))!.game.xp).toBe(run.summary().xp);
+    expect(await next.listSessions(kid.id, 10)).toHaveLength(1);
+    expect(await outbox.list(kid.id)).toHaveLength(0);
+    const again = await replayOutbox(next);
+    expect(again.replayed).toBe(0);
+    expect((await next.getKid(kid.id))!.game.xp).toBe(run.summary().xp);
+  });
+
+  it('a run that saves leaves nothing in the outbox', async () => {
+    const repo = new LocalRepo();
+    const kid = makeKid('Testkid', 'reader');
+    await repo.createKid(kid);
+    const saved = (await saveRun(repo, kid, playedRun(kid), Date.now() - 1000))!;
+    expect(saved.saved).toBe(true);
+    expect(await outbox.list()).toHaveLength(0);
+  });
+
+  it('the Try again button replays the outbox, once', async () => {
+    const repo = new LocalRepo();
+    const kid = makeKid('Testkid', 'reader');
+    await repo.createKid(kid);
+    const run = playedRun(kid);
+    const real = repo.applyGameDelta.bind(repo);
+    let calls = 0;
+    repo.applyGameDelta = async (...a) => {
+      if (calls++ === 0) throw new Error('offline');
+      return real(...a);
+    };
+    await saveRun(repo, kid, run, Date.now() - 1000);
+    const toast = getFailures().find((f) => /not saved/.test(f.message))!;
+    await toast.retry!();
+    await toast.retry?.();
+    expect((await repo.getKid(kid.id))!.game.xp).toBe(run.summary().xp);
+    expect(await outbox.list()).toHaveLength(0);
+  });
+
+  it('replaying the same runId twice changes game and sessions once', async () => {
+    const repo = new LocalRepo();
+    const kid = makeKid('Testkid', 'reader');
+    await repo.createKid(kid);
+    const entry: OutboxEntry = {
+      runId: 'run-aaaa',
+      kidId: kid.id,
+      sessionLog: { id: 'run-aaaa', startedAt: 1, endedAt: 2, answered: 5, graded: 5, correct: 5, fast: 0, newLearned: 0, medianMs: 1000, xp: 50, gems: 5, bestCombo: 5, missed: [] },
+      gameDelta: { xp: 50, gems: 5, bestCombo: 5, playedAt: 2 },
+      savedAt: 3,
+    };
+    await outbox.put(entry);
+    await replayOutbox(repo);
+    await outbox.put(entry);
+    await replayOutbox(repo);
+    await replayOutbox(repo);
+    const stored = (await repo.getKid(kid.id))!;
+    expect(stored.game.xp).toBe(50);
+    expect(stored.game.gems).toBe(5);
+    expect(await repo.listSessions(kid.id, 10)).toHaveLength(1);
+    expect(await outbox.list()).toHaveLength(0);
+  });
+});

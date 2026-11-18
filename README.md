@@ -98,18 +98,24 @@ the player saw nothing. Now:
 
 - Every build has a number (seconds since the epoch at build time), baked into the bundle and written to `dist/version.json`.
 - `config/app` in Firestore holds `{ minVersion }`. Rules: any signed-in account reads it, no client writes it.
-- The app reads it after sign-in, when it comes back to the front, and before every run and every game, card or
-  session write. A bundle behind `minVersion` shows the update screen (one big picture button and a voice for a
-  pre-reader, two lines of text for everyone else), starts no run and writes nothing. A missing doc, a bad value or
-  no network lets the app run: the rules still guard the data.
-- A write that the server refuses (`permission-denied`) or the gate blocks shows "Couldn't save. Tap to update or try
-  again." with an Update button. The Update button asks the service worker for the new release and reloads. A second
-  tap drops the worker and every cache, then reloads.
-- **The release sets minVersion.** `npm run deploy` builds, deploys, then runs `scripts/set-min-version.mjs`. The script
-  waits until the live site serves this build in `/version.json`, refuses to lower an existing minVersion (`--force`
-  overrides), writes `config/app` through the Admin SDK (application default credentials), and reads it back. It never
-  runs before the new bundle is live, so no client is told to update to a bundle that does not exist yet.
-  `node scripts/set-min-version.mjs --project <id> --dry-run` shows what it would write.
+- The app reads it after sign-in and when it comes back to the front. A bundle behind `minVersion` offers the update
+  on the home screen (one big picture button and a voice for a pre-reader, two lines of text for everyone else) and
+  starts no new run. It never interrupts a round and never blocks a save: the summary saves first, then shows an
+  update prompt. The server rules guard the data. A missing doc, a bad value or no network lets the app run.
+- A write that the server refuses (`permission-denied`) shows "Couldn't save. Tap to update or try again." with an
+  Update button. The Update button asks the service worker for the new release and reloads. A second tap drops the
+  worker and every cache, then reloads. A bundle at or above `minVersion` clears that state after the reload.
+- **A finished run is kept in IndexedDB (the outbox) until the server confirms it.** Each run's session log, game delta
+  and run id (the session log id) are stored before the writes. The outbox entry is removed once `applyGameDelta`
+  (session log and game totals in one transaction) succeeds. A refused or offline save stays in the outbox. The next
+  launch and the Try again button replay it, in order, idempotent by run id: a run whose session log is already stored
+  writes nothing.
+- **A deploy does not touch minVersion.** `npm run deploy` builds and deploys only. Raise minVersion by hand, only when
+  a release breaks older clients (a rules or schema change that would refuse their writes):
+  `node scripts/set-min-version.mjs --from-firebaserc --force` after the deploy. The script waits until the live site
+  serves this build in `/version.json`, refuses to lower an existing minVersion without `--force`, writes `config/app`
+  through the Admin SDK (application default credentials), and reads it back. `--dry-run` shows what it would write.
+  Every bump turns every open device stale, so batch it with a release that needs it.
 - To open the gate again by hand, delete `config/app` or set `minVersion` to 0 with the Admin SDK.
 - A bundle built before this release has no gate. Those are covered only by the rules and the service worker's auto
   update; the first tap of Update on any newer bundle fixes the rest.
