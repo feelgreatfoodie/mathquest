@@ -126,6 +126,35 @@ export interface Kid {
   inventory?: Inventory;
   /** Set by the setKidPin function. The PIN hash itself lives server-side only. */
   hasPin?: boolean;
+  /**
+   * The picture on the "Who is playing?" screen: a hero face and a color, free to pick. Top-level and parent-only: a
+   * kid token may write only `game` and `inventory`, so it cannot change this, and an old bundle that never writes it
+   * leaves it alone. A doc with no avatar reads through `avatarOf`. It is not the shop hero (`game.hero`).
+   */
+  avatar?: KidAvatar;
+}
+
+export interface KidAvatar {
+  hero: string;
+  color: string;
+}
+
+/** Picker colors, in the order the parent sees them. The id is stored; the screen maps it to a color. */
+export const AVATAR_COLORS = ['blue', 'green', 'orange', 'pink', 'purple', 'teal'] as const;
+/** Picker heroes: the sprites the app has. Picking one here is free and changes only the picker. */
+export const AVATAR_HEROES = ['knight', 'wizard', 'ranger', 'robot', 'dragon'] as const;
+
+/** The avatar to show: the stored one, else the game hero with a color taken from the kid id (the same id, the same color). */
+export function avatarOf(kid: Pick<Kid, 'id' | 'avatar' | 'game'>): KidAvatar {
+  const heroOk = (h: unknown): h is string => typeof h === 'string' && (AVATAR_HEROES as readonly string[]).includes(h);
+  const colorOk = (c: unknown): c is string => typeof c === 'string' && (AVATAR_COLORS as readonly string[]).includes(c);
+  let h = 0;
+  for (const ch of kid.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const stored = kid.avatar;
+  return {
+    hero: heroOk(stored?.hero) ? stored.hero : heroOk(kid.game?.hero) ? kid.game.hero : 'knight',
+    color: colorOk(stored?.color) ? stored.color : AVATAR_COLORS[h % AVATAR_COLORS.length]!,
+  };
 }
 
 export interface Family {

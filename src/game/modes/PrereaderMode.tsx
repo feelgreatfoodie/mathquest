@@ -5,7 +5,8 @@ import type { Feedback, SessionRunner } from '../../engine/session';
 import { HoldButton } from '../../ui/early/HoldButton';
 import { unlockSounds } from '../../ui/early/sounds';
 import { speak, stopSpeaking, unlockSpeech } from '../../ui/early/useSpeech';
-import { loadRunner, saveRun } from '../../ui/runShared';
+import { finishRun } from '../../ui/finishRun';
+import { loadRunner } from '../../ui/runShared';
 import { MONSTERS, Sprite, UiIcon } from '../../ui/sprites';
 import { QuestionPanel, type QuestionPanelHandle } from '../QuestionPanel';
 import type { GameModeProps } from './types';
@@ -81,18 +82,7 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
     stopSpeaking();
     setSaved(true);
     // Whatever the save does, the kid leaves the run.
-    let left = false;
-    try {
-      const done = await saveRun(repo, kid, r, startedAt.current, onSynced);
-      if (done) {
-        left = true;
-        onDone(done.summary, done.updated, done.info);
-      }
-    } catch (e) {
-      console.error('Leaving the run: saving threw.', e);
-    } finally {
-      if (!left) onExit();
-    }
+    await finishRun({ repo, kid, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit });
   }, [kid, repo, onDone, onExit, onSynced]);
 
   const next = useCallback(() => {
@@ -141,7 +131,7 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
   const solved = feedback?.verdict === 'correct';
   const monster = runner.position >= runner.length - block ? 'boss' : MONSTERS[Math.floor(runner.position / block) % MONSTERS.length]!;
   const hp = Math.max(0, 1 - hits / block);
-  const done = Math.min(PATH_DOTS, Math.round((runner.position / Math.max(1, runner.length)) * PATH_DOTS));
+  const done = Math.min(PATH_DOTS, Math.round(runner.progress() * PATH_DOTS));
 
   return (
     <div className="screen run early-run">

@@ -1,5 +1,5 @@
 import type { GameDelta } from '../engine/game';
-import type { CardMap, CardState, Family, Kid, KidGame, KidSettings, PurchaseLog, SessionLog } from '../engine/models';
+import type { CardMap, CardState, Family, Kid, KidAvatar, KidGame, KidSettings, PurchaseLog, SessionLog } from '../engine/models';
 
 /** Storage boundary. Firestore in production; localStorage for offline demos and dev. */
 export interface Repo {
@@ -12,8 +12,8 @@ export interface Repo {
   createKid(kid: Kid): Promise<void>;
   /** Writes `settings` and nothing else. Fails when the kid was removed. */
   saveKidSettings(kidId: string, settings: KidSettings): Promise<void>;
-  /** Writes the named flags and nothing else. */
-  setKidFlags(kidId: string, flags: { hasPin?: boolean }): Promise<void>;
+  /** Writes the named flags and nothing else. `avatar` is the picker hero and color; only the parent sets it. */
+  setKidFlags(kidId: string, flags: { hasPin?: boolean; avatar?: KidAvatar }): Promise<void>;
   /**
    * The only writer of `game`. Reads the stored game inside a transaction, applies the delta and writes
    * `game` back, so a stale screen cannot overwrite newer totals. With `session`, the run's log is written
@@ -35,8 +35,26 @@ export interface Repo {
   listSessions(kidId: string, max: number): Promise<SessionLog[]>;
 }
 
+/**
+ * A 20-character hex id. crypto.randomUUID is missing on an insecure http origin (a local build opened by IP), so
+ * the fallback is crypto.getRandomValues, and Math.random is the last resort. Ids are labels, never secrets: nothing
+ * here is used for a PIN, salt or token.
+ */
 export function newId(): string {
-  return crypto.randomUUID().replace(/-/g, '').slice(0, 20);
+  const c = (globalThis as { crypto?: Partial<Crypto> }).crypto;
+  try {
+    if (typeof c?.randomUUID === 'function') return c.randomUUID().replace(/-/g, '').slice(0, 20);
+  } catch {
+    // Fall through to the next source.
+  }
+  const bytes = new Uint8Array(10);
+  try {
+    if (typeof c?.getRandomValues === 'function') c.getRandomValues(bytes);
+    else throw new Error('no getRandomValues');
+  } catch {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export async function hashPin(salt: string, pin: string): Promise<string> {

@@ -13,7 +13,7 @@ import { displayModeFor, type DisplayMode } from '../ui/early/displayMode';
 import { ObjectGroups } from '../ui/early/ObjectGroups';
 import { chime, softTone, tick, unlockSounds } from '../ui/early/sounds';
 import { TenFrame } from '../ui/early/TenFrame';
-import { speak, stopSpeaking } from '../ui/early/useSpeech';
+import { speak, stopSpeaking, unlockSpeech } from '../ui/early/useSpeech';
 import { UiIcon } from '../ui/sprites';
 import { reportFailure } from '../ui/failures';
 
@@ -146,7 +146,17 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
   }
 
   const canSubmit = isFraction ? mixed.w !== '' || (mixed.n !== '' && mixed.d !== '') : intVal !== '';
-  const answerDisplay = isFraction ? (
+  const missed = !!feedback && feedback.verdict !== 'correct';
+  // The kid's own answer, as typed, shown small and struck through next to the right one.
+  const wasText = isFraction ? [mixed.w, mixed.n !== '' && mixed.d !== '' ? `${mixed.n}/${mixed.d}` : ''].filter(Boolean).join(' ') : intVal;
+  const answerDisplay = missed ? (
+    // After a miss the equation shows the right answer, large, with a check. The wrong number is small and struck through.
+    <span className="answer-fixed">
+      <AnswerView problem={entry.problem} />
+      <span className="answer-check"><UiIcon name="check" size={44} /></span>
+      {wasText ? <s className="answer-was" aria-label={`You said ${wasText}`}>{wasText}</s> : null}
+    </span>
+  ) : isFraction ? (
     <span className="mixed-entry">
       <EntryBox value={mixed.w} active={field === 'w'} onClick={() => setField('w')} label="whole" big />
       <span className="frac">
@@ -225,7 +235,20 @@ function FeedbackView({ fb, onContinue }: { fb: Feedback; onContinue: () => void
         {fb.verdict === 'almost' ? 'Right amount! Now make a whole.' : fb.preview ? `Now you know: ${fb.correctAnswer}` : `The answer is ${fb.correctAnswer}`}
       </p>
       {fb.verdict === 'almost' ? <p>Best form: <strong>{fb.correctAnswer}</strong></p> : null}
-      <p className="hint">{fb.hint}</p>
+      <p className="hint hint-big">
+        <span>{fb.hint}</span>
+        <button
+          type="button"
+          className="icon-btn hint-speaker"
+          aria-label="Read it to me"
+          onClick={() => {
+            unlockSpeech();
+            void speak(fb.hint);
+          }}
+        >
+          <UiIcon name="speaker" size={36} />
+        </button>
+      </p>
       <button type="button" className="btn btn-big" onClick={onContinue} autoFocus>
         Got it
       </button>

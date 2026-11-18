@@ -15,6 +15,7 @@ export interface WhatsNewEntry {
 }
 
 export const WHATS_NEW: readonly WhatsNewEntry[] = [
+  { pr: 26, text: 'Leaving a round can no longer freeze the screen: if a save fails, you still go back and a note says so. The progress bar only moves forward, even after a retry. After a miss, the right answer shows big in the sum with a check, your answer small and crossed out, and a bigger hint with a speaker that reads it. Each player picks a hero and a color, so the player screen shows each one with their own picture.' },
   { pr: 25, text: 'A round never opens with a preview of a locked group. Pre-readers get no preview in the first 3 questions, readers none in the first 2, and previews never come back to back.', behindTheScenes: true },
   { pr: 24, text: 'A new shop with weapons, gear, pets, adventure items and camp decorations, from 15 to 350 gems. Every price is fixed and shown up front. Buy something, wear it on your hero, and pin one thing to save for: a jar on Home fills as your gems grow. Weapons change how your hero strikes on a correct answer. Nothing makes the math easier.', setting: true },
   { pr: 23, text: 'Gems come in more slowly. A round gives at most 10 gems, and gems earned later in the same day count for less. A parent can set the Gem speed for each player. A round saved by an older copy of the app is cut to 10 gems instead of failing to save.' },
