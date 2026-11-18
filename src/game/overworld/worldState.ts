@@ -1,5 +1,5 @@
 import type { GameModeId } from '../modes/types';
-import { MAPS, REGION_IDS, heroStart, type RegionId } from './maps';
+import { MAPS, REGION_IDS, heroStart, isWalkable, type RegionId } from './maps';
 
 /** Most chests the save remembers. The rules cap the list at the same number; the oldest drop first. */
 export const MAX_OPENED = 500;
@@ -82,4 +82,15 @@ export function fromDoc(raw: unknown, now: number): WorldState {
     updatedAt: at,
     ...(LAST_MODES.includes(r.lastMode as GameModeId) ? { lastMode: r.lastMode as GameModeId } : {}),
   };
+}
+
+/**
+ * A saved hero standing on a tile that is not walkable now (a map was redrawn since the save) moves to the region's start.
+ * Gates count as open and the key and bridge kit as missing, so a hero never loads onto a tile that needs an item.
+ */
+export function settleHero(w: WorldState): WorldState {
+  const map = MAPS[w.region];
+  if (isWalkable(map, w.x, w.y, { gateOpen: true, hasKey: false, hasBridgeKit: false })) return w;
+  const s = heroStart(map);
+  return { ...w, x: s.x, y: s.y };
 }
