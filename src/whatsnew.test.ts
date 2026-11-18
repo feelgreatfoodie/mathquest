@@ -12,7 +12,7 @@ describe('whatsnew', () => {
   });
   it('covers every merged change from #19 to #27, and this PR (the footer shows the newest 10)', () => {
     const prs = recentChanges().map((e) => e.pr);
-    for (const n of [19, 20, 21, 22, 23, 24, 25, 26, 27, 28]) expect(prs).toContain(n);
+    for (const n of [19, 20, 21, 22, 23, 24, 25, 26, 27, 29]) expect(prs).toContain(n);
   });
   it('marks changes kids cannot see and changes behind a setting', () => {
     const list = recentChanges();
