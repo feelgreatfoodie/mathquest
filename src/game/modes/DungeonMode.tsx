@@ -165,7 +165,7 @@ function RunTop({ progress, mute, onQuit }: { progress: number; mute: ReturnType
       <div className="progress" aria-label={`${Math.round(progress * 100)}% through the dungeon`}>
         <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
       </div>
-      <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} />
+      <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} chimesOnly={mute.chimesOnly} />
     </div>
   );
 }

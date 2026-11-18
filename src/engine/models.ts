@@ -83,6 +83,14 @@ export interface KidSettings {
   modes?: Partial<Record<'dungeon' | 'prereader' | 'overworld', boolean>>;
   /** Sound effects: on unless this is false. A missing value reads as on. Read it through `soundOf`. */
   sound?: boolean;
+  /**
+   * The voice: 'kid' (the default: the kid's mute button decides), 'on' (the parent pins the voice on; the kid's button
+   * mutes the chimes only) or 'off' (silent, the kid cannot turn it back on). A missing value reads as 'kid', except that
+   * the old `sound: false` lock reads as 'off'. Read it through `voiceOf`.
+   */
+  voice?: 'on' | 'off' | 'kid';
+  /** Chimes, ticks and hit sounds: 'on' or 'off'. A missing value reads as on. Read it through `soundsOf`. */
+  sounds?: 'on' | 'off';
 }
 
 export type Learner = 'prereader' | 'reader';
@@ -252,6 +260,20 @@ export function shop2On(settings: { shop2?: boolean } | undefined | null): boole
 
 export function shopMathOn(settings: { shopMath?: boolean } | undefined | null): boolean {
   return settings?.shopMath === true;
+}
+
+/** The voice setting. Missing reads as 'kid'; the old `sound: false` parent lock reads as 'off'. Nothing is migrated. */
+export function voiceOf(settings: { voice?: string; sound?: boolean } | undefined | null): 'on' | 'off' | 'kid' {
+  const v = settings?.voice;
+  if (v === 'on' || v === 'off' || v === 'kid') return v;
+  return settings?.sound === false ? 'off' : 'kid';
+}
+
+/** The sounds setting. Missing reads as on, except that the old `sound: false` lock keeps the chimes off too. */
+export function soundsOf(settings: { sounds?: string; sound?: boolean } | undefined | null): 'on' | 'off' {
+  const v = settings?.sounds;
+  if (v === 'on' || v === 'off') return v;
+  return settings?.sound === false ? 'off' : 'on';
 }
 
 /** Sound effects are on unless a parent turned them off for this kid. */

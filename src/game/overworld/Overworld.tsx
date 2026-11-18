@@ -8,7 +8,7 @@ import { newId } from '../../data/repo';
 import { CHECKPOINT_EVERY, addRun, loadTrip, resolveTrip, saveTrip, type TripState, type TripTotals } from './trip';
 import { queueCheckpoint } from './tripWrite';
 import { HoldButton } from '../../ui/early/HoldButton';
-import { chest as chestSound, defeat, isMuted, unlockSounds } from '../../ui/early/sounds';
+import { chest as chestSound, defeat, unlockSounds } from '../../ui/early/sounds';
 import { speak, unlockSpeech } from '../../ui/early/useSpeech';
 import { MuteButton, useMute } from '../../ui/MuteButton';
 import { Sprite, UiIcon } from '../../ui/sprites';
@@ -48,9 +48,9 @@ interface Msg {
   dots?: { done: number; total: number };
 }
 
-/** The voice, unless the kid is muted. */
+/** The voice. `speak` stays silent while the kid is muted or a parent set voice off. */
 function voice(text: string) {
-  if (!isMuted()) void speak(text);
+  void speak(text);
 }
 
 export const CAMP_VOICE = 'Walk to the campfire to finish your trip!';
@@ -798,7 +798,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           {waiting.length === 0 ? <span className="ow-camp-lit" data-testid="camp-lit"><UiIcon name="flame" size={30} /> Camp is lit!</span> : null}
         </span>
         {adventureItems.map((id) => <Sprite key={id} name={id} size={28} className="ow-item" />)}
-        <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} />
+        <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} chimesOnly={mute.chimesOnly} />
       </div>
       <div className="ow-stage" ref={stageRef}>
         <canvas ref={canvasRef} className="ow-canvas" data-testid="ow-canvas" onPointerUp={onCanvasTap} aria-label="The map. Tap a tile to walk there." role="img" />

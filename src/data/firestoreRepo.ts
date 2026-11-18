@@ -100,6 +100,13 @@ export class FirestoreRepo implements Repo {
     await updateDoc(doc(this.kids(), kidId), { settings });
   }
 
+  async setKidAudio(kidId: string, audio: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }): Promise<void> {
+    const update: Record<string, unknown> = {};
+    if (audio.voice !== undefined) update['settings.voice'] = audio.voice;
+    if (audio.sounds !== undefined) update['settings.sounds'] = audio.sounds;
+    if (Object.keys(update).length) await updateDoc(doc(this.kids(), kidId), update);
+  }
+
   async setKidFlags(kidId: string, flags: { hasPin?: boolean; avatar?: KidAvatar }): Promise<void> {
     const update: Record<string, unknown> = {};
     if (flags.hasPin !== undefined) update.hasPin = flags.hasPin;

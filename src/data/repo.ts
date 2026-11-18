@@ -15,6 +15,8 @@ export interface Repo {
   createKid(kid: Kid): Promise<void>;
   /** Writes `settings` and nothing else. Fails when the kid was removed. */
   saveKidSettings(kidId: string, settings: KidSettings): Promise<void>;
+  /** Writes `settings.voice` and `settings.sounds` (only the ones given) and nothing else in settings. */
+  setKidAudio(kidId: string, audio: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }): Promise<void>;
   /** Writes the named flags and nothing else. `avatar` is the picker hero and color; only the parent sets it. */
   setKidFlags(kidId: string, flags: { hasPin?: boolean; avatar?: KidAvatar }): Promise<void>;
   /**

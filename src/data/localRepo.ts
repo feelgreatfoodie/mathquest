@@ -59,6 +59,13 @@ export class LocalRepo implements Repo {
     this.patchKid(kidId, (k) => ({ ...k, settings }));
   }
 
+  async setKidAudio(kidId: string, audio: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }): Promise<void> {
+    this.patchKid(kidId, (k) => ({
+      ...k,
+      settings: { ...k.settings, ...(audio.voice !== undefined ? { voice: audio.voice } : {}), ...(audio.sounds !== undefined ? { sounds: audio.sounds } : {}) },
+    }));
+  }
+
   async setKidFlags(kidId: string, flags: { hasPin?: boolean; avatar?: KidAvatar }): Promise<void> {
     this.patchKid(kidId, (k) => ({ ...k, ...(flags.hasPin !== undefined ? { hasPin: flags.hasPin } : {}), ...(flags.avatar !== undefined ? { avatar: flags.avatar } : {}) }));
   }

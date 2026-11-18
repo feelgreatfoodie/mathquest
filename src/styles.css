@@ -1032,3 +1032,16 @@ legend { padding: 0 6px; color: var(--muted); }
 .shopmath .choices { gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .shopmath .choice { width: 120px; min-width: 120px; min-height: 120px; height: 150px; }
 .shopmath .choice-num { font-size: 56px; }
+
+/* Pre-readers: the mute and "Hear it" buttons are 120 px or more, on the run, the home and the end screen. */
+.mute-big, .hear-big { min-width: 120px; min-height: 120px; width: 120px; height: 120px; margin-left: 0; }
+.early-top-right { display: flex; align-items: center; gap: 10px; }
+.early-home-mute { position: absolute; top: 16px; right: 16px; }
+.early-sum-mute { position: absolute; top: 16px; right: 16px; }
+@media (max-width: 480px) {
+  /* Home, Hear it and mute take the first row; the path dots drop to a row of their own. */
+  .early-top { flex-wrap: wrap; row-gap: 6px; }
+  .early-top .path-dots { order: 3; flex: 1 0 100%; justify-content: center; }
+  .early-top-right { gap: 6px; }
+}
+.hear-btn { color: var(--gold); border-color: var(--gold); }
