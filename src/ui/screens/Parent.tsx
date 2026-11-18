@@ -3,23 +3,16 @@ import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { levelFor } from '../../engine/game';
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, unlockedFactGroups, type Level } from '../../engine/mastery';
-import { DEFAULT_GAME, PRESETS, learnerOf, modulesOf, paceOf, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type SessionLog } from '../../engine/models';
+import { makeKid } from '../../engine/newKid';
+import { learnerOf, modulesOf, paceOf, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
-import { hashPin, newId, type Repo } from '../../data/repo';
+import { hashPin, type Repo } from '../../data/repo';
 import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { PinPad } from '../PinPad';
 
-/** Settings for a new player: the preset for their type, copied so nothing is shared between kids. */
-export function settingsFor(type: Learner): KidSettings {
-  const p = PRESETS[type];
-  return { ...p, tracks: { ...p.tracks }, ...(p.modules ? { modules: { ...p.modules } } : {}) };
-}
-
-export function makeKid(name: string, type: Learner = 'reader'): Kid {
-  return { id: newId(), name: name.trim(), createdAt: Date.now(), settings: settingsFor(type), game: { ...DEFAULT_GAME } };
-}
+export { makeKid };
 
 /** First run: set the parent PIN, then add the first kid. */
 export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone: (family: Family, kids: Kid[]) => void }) {
@@ -335,7 +328,7 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
         <div className="stat"><span className="stat-value">{kid.game.streakDays}</span><span className="stat-label">day streak</span></div>
         <div className="stat"><span className="stat-value">{week.length}</span><span className="stat-label">runs this week</span></div>
         <div className="stat"><span className="stat-value">{minutes}</span><span className="stat-label">minutes this week</span></div>
-        <div className="stat"><span className="stat-value">{fmtSec(baseline)}</span><span className="stat-label">typical fact time</span></div>
+        {on.facts || learner === 'reader' ? <div className="stat"><span className="stat-value">{fmtSec(baseline)}</span><span className="stat-label">typical fact time</span></div> : null}
       </section>
 
       {on.add10 ? (

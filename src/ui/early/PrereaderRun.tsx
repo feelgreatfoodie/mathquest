@@ -9,6 +9,7 @@ import type { Repo } from '../../data/repo';
 import { loadRunner, saveRun } from '../runShared';
 import { MONSTERS, Sprite, UiIcon } from '../sprites';
 import { ChoiceButtons } from './ChoiceButtons';
+import { displayModeFor, type DisplayMode } from './displayMode';
 import { ObjectGroups } from './ObjectGroups';
 import { chime, softTone, tick, unlockSounds } from './sounds';
 import { TenFrame } from './TenFrame';
@@ -144,11 +145,9 @@ export function PrereaderRun({ repo, kid, onDone, onExit }: Props) {
   const entry = runner?.current() ?? null;
 
   // How the question is shown depends on the card's level when it appeared, so it cannot change mid-question.
-  const mode = useMemo<'groups' | 'frame' | 'numerals'>(() => {
+  const mode = useMemo<DisplayMode>(() => {
     if (!entry || !runnerRef.current) return 'groups';
-    if (entry.kind === 'practice') return 'groups'; // retries always show the pictures
-    const level = cardLevel(runnerRef.current.getCard(entry.cardId), BASELINE, pace);
-    return level <= 1 ? 'groups' : level === 2 ? 'frame' : 'numerals';
+    return displayModeFor(cardLevel(runnerRef.current.getCard(entry.cardId), BASELINE, pace), entry.kind);
   }, [entry, pace]);
 
   // A new question: reset, say it, and start the clock when the voice finishes.
@@ -334,7 +333,7 @@ export function PrereaderRun({ repo, kid, onDone, onExit }: Props) {
         </div>
       </div>
 
-      <ChoiceButtons choices={p.choices!} answer={answer} guide={missed} picked={picked} disabled={solved || advancing.current} onChoose={choose} />
+      <ChoiceButtons choices={p.choices!} answer={answer} guide={missed} picked={picked} disabled={solved} onChoose={choose} />
     </div>
   );
 }

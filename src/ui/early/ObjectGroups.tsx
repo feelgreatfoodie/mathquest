@@ -15,7 +15,7 @@ function Group({ icon, n, size, from, count, crossed }: { icon: IconId; n: numbe
   const rows: number[][] = [];
   for (let i = 0; i < n; i += 5) rows.push(Array.from({ length: Math.min(5, n - i) }, (_, k) => i + k));
   return (
-    <div className="og-group" role="img" aria-label={`${n} ${icon}`} style={{ minWidth: size * 5 + 8 * 4 }}>
+    <div className="og-group" role="img" aria-label={`${n} ${icon}`} style={{ minWidth: size }}>
       {rows.length === 0 ? <span className="og-empty" style={{ width: size, height: size }} aria-label="none" /> : null}
       {rows.map((row, r) => (
         <div className="og-row" key={r}>
@@ -37,7 +37,7 @@ function Group({ icon, n, size, from, count, crossed }: { icon: IconId; n: numbe
 }
 
 /** Group A, a big operator, group B. All icons are the same picture. */
-export function ObjectGroups({ visual, size = 52, count = 0, crossOut = false }: Props) {
+export function ObjectGroups({ visual, size = 60, count = 0, crossOut = false }: Props) {
   const sub = visual.op === '−';
   return (
     <div className="object-groups">

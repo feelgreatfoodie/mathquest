@@ -474,3 +474,9 @@ legend { padding: 0 6px; color: var(--muted); }
   .choice { height: 150px; }
   .choice-num { font-size: 60px; }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .choice.is-guide { animation: none; box-shadow: 0 0 0 8px rgba(251, 191, 36, 0.45); }
+  .choice-arrow, .bob, .blink { animation: none; }
+  .og-item { transition: none; }
+}
