@@ -90,11 +90,9 @@ describe('launch write ordering against the minVersion gate', () => {
     });
   }
 
-  // KNOWN GAP (src/data/versionGate.ts, check()): refresh() stamps lastTry before its read returns, so a second
-  // writer that calls check() while the first read is still in flight sees a fresh lastTry, skips the read and
-  // writes at once. Only the first caller waits. This test states the wanted behaviour and is marked as failing;
-  // it turns red when the gap is fixed, which is the signal to drop `.fails`.
-  it.fails('three writers fired together: none writes before the one check resolves', async () => {
+  // VersionGuard.check() once let a second writer skip the gate while the first read was pending: refresh()
+  // stamped lastTry before its read returned. The in-flight read is now shared and every caller awaits it.
+  it('three writers fired together: none writes before the one check resolves', async () => {
     const r = await launchWrites(['applyGameDelta', 'saveCards', 'addSession']);
     expect(r.before.events.some((e) => e.startsWith('write:'))).toBe(false);
     expect(r.before.server).toEqual({ xp: 100, sessions: 0, cards: 0 });
