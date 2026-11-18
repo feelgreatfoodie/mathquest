@@ -1,4 +1,4 @@
-import { GEM_RUN_MAX, earnedTodayOf, gemsForRun, type GemRunStats, type GemSettings } from './gems';
+import { GEM_RUN_MAX, earnedTodayOf, gemsForRun, throttledGems, type GemRunStats, type GemSettings } from './gems';
 import { EQUIP_SLOTS, itemById, type EquipSlot } from '../game/shop/catalog';
 import type { KidGame, Learner } from './models';
 import type { RunSummary } from './session';
@@ -49,6 +49,11 @@ export interface GameDelta {
    * device cannot skip the throttle). When set it replaces `gems`. Needs `playedAt`.
    */
   gemRun?: { stats: GemRunStats; learner: Learner; settings: GemSettings };
+  /**
+   * A map reward (a chest or a boss) before the throttle: `base` gems go through the same tier as a run's gems, worked
+   * out from the stored count at write time, and count toward today. Replaces `gems`. Needs `playedAt`.
+   */
+  gemGrant?: { base: number; learner: Learner; settings: GemSettings };
   /** A combo from this run. The stored best only moves up. */
   bestCombo?: number;
   /** When a run finished (epoch ms). Moves the day streak. Leave it out for a shop action. */
@@ -78,6 +83,11 @@ export class GameDeltaError extends Error {
  * (a price) is unchanged.
  */
 export function awardedGems(game: KidGame, delta: GameDelta): number {
+  if (delta.gemGrant && !delta.gemRun) {
+    if (delta.playedAt === undefined) throw new GameDeltaError('A map reward needs the time it was earned.');
+    const { base, learner, settings } = delta.gemGrant;
+    return throttledGems(Math.max(0, Math.floor(base)), learner, settings, earnedTodayOf(game, delta.playedAt));
+  }
   if (!delta.gemRun) {
     const g = delta.gems ?? 0;
     // Only a run (it carries playedAt) is clamped. A bare grant, as the tests and the parent tools write, is not.

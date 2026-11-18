@@ -4,7 +4,12 @@ import { GoalJar } from '../GoalJar';
 import { CampRow } from '../CampRow';
 import { HeroFigure } from '../HeroFigure';
 import { cardLabel } from '../../engine/modules';
-import { levelFor, type GameDelta } from '../../engine/game';
+import { dayKey, levelFor, type GameDelta } from '../../engine/game';
+import { displayStreak, weekDays } from '../../engine/habit';
+import { enabledModes, modeFor } from '../../game/modes/registry';
+import { lastModeOf, readLastMode, writeLastMode } from '../../game/modes/lastMode';
+import type { GameModeId } from '../../game/modes/types';
+import type { Repo } from '../../data/repo';
 import { readerMapLine } from '../../engine/summaryView';
 import { avatarOf, learnerOf, shop2On, type CardMap, type Kid } from '../../engine/models';
 import { PrereaderHome } from '../early/PrereaderScreens';
@@ -225,28 +230,74 @@ export function Picker({ kids, onPick, onParent }: { kids: Kid[]; onPick: (k: Ki
   );
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
+function Stat({ label, value, icon }: { label: string; value: string | number; icon?: 'flame' | 'gem' | 'bolt' }) {
   return (
-    <div className="stat">
+    <div className={`stat ${icon ? 'stat-icon' : ''}`}>
+      {icon ? <UiIcon name={icon} size={36} /> : null}
       <span className="stat-value">{value}</span>
       <span className="stat-label">{label}</span>
     </div>
   );
 }
 
-export function KidHome(props: { kid: Kid; onStart: () => void; onGame: OnGame; onBack: () => void; vault?: VaultApi }) {
+/** The week at a glance: a star for each day played, Monday to Sunday. The streak sits beside it, smaller. */
+function WeekStars({ days, streak }: { days: ReturnType<typeof weekDays>; streak: number }) {
+  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const played = days.filter((d) => d.played).length;
+  return (
+    <div className="week" data-testid="week-stars" aria-label={`${played} of 7 days played this week`}>
+      <div className="week-row">
+        {days.map((d, i) => (
+          <span key={d.day} className={`week-day ${d.played ? 'is-played' : ''} ${d.today ? 'is-today' : ''}`} data-played={d.played ? 'true' : 'false'}>
+            <svg width="40" height="40" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21.1l1.4-7L2 9.3l7-.8z" /></svg>
+            <span>{names[i]}</span>
+          </span>
+        ))}
+      </div>
+      <p className="week-streak">{streak > 0 ? `${streak} day${streak === 1 ? '' : 's'} in a row. One rest day a week keeps it going.` : 'Play today to start a new streak.'}</p>
+    </div>
+  );
+}
+
+export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onBack: () => void; vault?: VaultApi }) {
   return learnerOf(props.kid.settings) === 'prereader'
-    ? <PrereaderHome kid={props.kid} onStart={props.onStart} onBack={props.onBack} onGame={props.onGame} vault={props.vault} />
+    ? <PrereaderHome kid={props.kid} onStart={() => props.onStart()} onBack={props.onBack} onGame={props.onGame} vault={props.vault} />
     : <ReaderHome {...props} />;
 }
 
-function ReaderHome({ kid, onStart, onGame, onBack, vault }: { kid: Kid; onStart: () => void; onGame: OnGame; onBack: () => void; vault?: VaultApi }) {
+function ReaderHome({ kid, repo, onStart, onGame, onBack, vault }: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onBack: () => void; vault?: VaultApi }) {
   const [shop, setShop] = useState(false);
   const [shopVault, setShopVault] = useState(false);
   const hasVault = !!vault && vaultOn(kid.settings);
   const dep = useDeposits(vault, hasVault, kid.game.gems);
   const ready = hasVault && dep.deposits.some((d) => (d.status !== 'active' && owedOf(d) > 0) || looksReady(d, Date.now()));
+  const [played, setPlayed] = useState<string[]>([]);
   const lv = levelFor(kid.game.xp);
+  const modes = enabledModes(kid);
+  const today = dayKey(Date.now());
+  // The days played come from the session logs, so no stored field changes.
+  useEffect(() => {
+    let live = true;
+    void repo.listSessions(kid.id, 80).then((logs) => live && setPlayed([...new Set(logs.map((l) => dayKey(l.endedAt)))])).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [repo, kid.id, kid.game.lastPlayedDay]);
+  const playedAll = kid.game.lastPlayedDay ? [...new Set([...played, kid.game.lastPlayedDay])] : played;
+  // The last pick: world/main when it has one (it follows the kid across devices), else this device's value.
+  const [worldMode, setWorldMode] = useState<GameModeId | null>(null);
+  useEffect(() => {
+    let live = true;
+    void repo.loadWorld(kid.id).then((w) => live && setWorldMode(lastModeOf(w))).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [repo, kid.id]);
+  const start = (mode: GameModeId) => {
+    writeLastMode(kid.id, mode);
+    void repo.setWorldLastMode(kid.id, mode).catch(() => undefined);
+    onStart(mode);
+  };
   return (
     <div className="screen center">
       <div className="panel home">
@@ -256,10 +307,11 @@ function ReaderHome({ kid, onStart, onGame, onBack, vault }: { kid: Kid; onStart
           <span className="pixel small">LV {lv.level}</span>
           <div className="progress"><div className="progress-fill xp" style={{ width: `${(lv.into / lv.span) * 100}%` }} /></div>
         </div>
+        <WeekStars days={weekDays(playedAll, today)} streak={displayStreak(kid.game.streakDays, playedAll, today)} />
         <div className="stats">
-          <Stat label="day streak" value={kid.game.streakDays} />
-          <Stat label="gems" value={kid.game.gems} />
-          <Stat label="best combo" value={kid.game.bestCombo} />
+          <Stat icon="flame" label="day streak" value={displayStreak(kid.game.streakDays, playedAll, today)} />
+          <Stat icon="gem" label="gems" value={kid.game.gems} />
+          <Stat icon="bolt" label="best combo" value={kid.game.bestCombo} />
           {hasVault ? <Stat label="in the vault" value={vaultBalance(dep.deposits)} /> : null}
         </div>
         {ready ? (
@@ -269,7 +321,20 @@ function ReaderHome({ kid, onStart, onGame, onBack, vault }: { kid: Kid; onStart
         ) : null}
         <GoalJar game={kid.game} learner="reader" onClick={() => setShop(true)} />
         <CampRow game={kid.game} />
-        <button type="button" className="btn btn-big btn-start" onClick={onStart}>Start Quest</button>
+        {modes.length >= 2 ? (
+          <div className="mode-cards" role="group" aria-label="Pick how to play">
+            {modes.map((m) => (
+              <button key={m.id} type="button" className={`mode-card ${modeFor(kid, worldMode ?? readLastMode(kid.id)) === m.id ? 'is-last' : ''}`} data-mode={m.id} onClick={() => start(m.id)}>
+                <span className="mode-sprites">
+                  {m.id === 'overworld' ? (<><Sprite name={kid.game.hero} size={64} /><Sprite name="slime" size={48} /></>) : (<><Sprite name={kid.game.hero} size={64} /><Sprite name="skeleton" size={64} /></>)}
+                </span>
+                <span className="pixel mode-name">{m.id === 'overworld' ? 'Adventure' : 'Dungeon Run'}</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <button type="button" className="btn btn-big btn-start" onClick={() => start(modes[0]?.id ?? 'dungeon')}>Start Quest</button>
+        )}
         <div className="row">
           <button type="button" className="btn btn-ghost" onClick={() => { setShopVault(false); setShop(true); }}>{shop2On(kid.settings) ? 'Shop' : 'Hero shop'}</button>
           <button type="button" className="btn btn-ghost" onClick={onBack}>Switch player</button>

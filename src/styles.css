@@ -210,7 +210,7 @@ p { margin: 0 0 10px; line-height: 1.45; }
 
 /* Keypad */
 .keypad-wrap { width: 100%; max-width: 520px; align-self: center; display: flex; flex-direction: column; gap: 10px; }
-.field-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.field-row { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px; }
 .field-btn { font: 700 18px var(--body); min-height: 50px; border-radius: 10px; background: var(--bg-2); color: var(--muted); border: 2px solid var(--line); }
 .field-btn.is-active { color: #1a1300; background: var(--gold); border-color: var(--gold); }
 .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -254,6 +254,13 @@ p { margin: 0 0 10px; line-height: 1.45; }
   .question { grid-column: 1; align-self: start; max-width: none; }
   .run .keypad-wrap { grid-column: 2; grid-row: 2 / 4; align-self: center; }
   .teach { grid-column: 1 / -1; }
+  /* UX-2 item 6: the keypad is centered in its column with keys of 80 px or more; the question fills the left column
+     with numerals of 72 px or more. */
+  .run .question { align-self: stretch; min-height: 280px; }
+  .run .question .math { font-size: 80px; }
+  .run .key { min-height: 84px; font-size: 38px; }
+  .run .key-spacer { min-height: 84px; }
+  .run .field-btn { min-height: 60px; font-size: 20px; }
 }
 
 /* Summary */
@@ -797,6 +804,87 @@ legend { padding: 0 6px; color: var(--muted); }
 @keyframes strike-throw { 40% { transform: translateX(46px) rotate(360deg); } 100% { transform: rotate(720deg); } }
 @keyframes strike-glow { 40% { transform: scale(1.35); filter: drop-shadow(0 0 12px #67e8f9); } 100% { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .hero-fig .fig-part { animation: none !important; } }
+
+
+/* ---- UX-2 (items 4, 5, 7, 11, 12, 13) ---- */
+.entry-box.is-active { animation: box-pulse 1s ease-in-out infinite alternate; }
+@keyframes box-pulse { from { box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.35); } to { box-shadow: 0 0 0 9px rgba(251, 191, 36, 0.15); } }
+
+/* Hit feedback: a hero lunge, a monster hit flash with a star burst and knockback, a big combo badge, a big FAST bolt. */
+.hero-sprite.lunge { animation: lunge 0.45s ease; }
+@keyframes lunge { 30% { transform: translateX(46px) scale(1.12); } 100% { transform: none; } }
+.hero-sprite.hop { animation: hop 0.6s ease; }
+@keyframes hop { 30% { transform: translateY(-34px); } 55% { transform: translateY(0); } 75% { transform: translateY(-14px); } 100% { transform: none; } }
+.monster { position: relative; }
+.monster.hit svg { animation: hit-knock 0.45s ease; }
+@keyframes hit-knock { 20% { filter: brightness(3) saturate(0); transform: translateX(26px) scale(0.9); } 60% { filter: brightness(1.6); transform: translateX(10px); } 100% { transform: none; } }
+.combo-badge { position: absolute; top: -18px; right: -34px; z-index: 2; min-width: 72px; padding: 8px 14px; border-radius: 40px; background: var(--gold); color: #1a1300; font-size: 26px; text-align: center; border: 4px solid var(--gold-dark); animation: pop 0.35s ease; }
+@keyframes pop { 0% { transform: scale(0.4); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
+.star-burst { position: absolute; left: 50%; top: 55%; width: 0; height: 0; pointer-events: none; z-index: 2; }
+.star-burst i { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; background: #fde047; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); animation: burst 0.6s ease-out forwards; transform: rotate(var(--a)) translateY(0); }
+@keyframes burst { to { transform: rotate(var(--a)) translateY(-70px) scale(1.3); opacity: 0; } }
+.feedback.good { font-size: 26px; gap: 22px; }
+.feedback.good .pixel { font-size: 24px; }
+.feedback .fast { font-size: 30px; padding: 4px 14px; border-radius: 30px; background: rgba(250, 204, 21, 0.18); }
+.feedback .xp { font-size: 26px; }
+.mute-btn { color: var(--text); margin-left: auto; }
+.speak-btn { color: var(--text); vertical-align: middle; margin-left: 8px; }
+.teach h2 { display: flex; align-items: center; justify-content: center; }
+
+/* Pre-readers: bigger pictures, the answers closer to the question, a sparkle burst when it is right. */
+.og-item svg { min-width: 56px; min-height: 56px; }
+.early-question { gap: 4px; }
+.choices { margin-top: 8px; }
+.early-numerals { position: relative; }
+.sparkles { position: absolute; inset: 0; pointer-events: none; }
+.sparkles i { position: absolute; left: 50%; top: 50%; animation: spark 0.9s ease-out forwards; transform: rotate(calc(var(--i) * 72deg)) translateY(-10px); }
+@keyframes spark { to { transform: rotate(calc(var(--i) * 72deg)) translateY(-110px) scale(1.4); opacity: 0; } }
+
+/* Reader home: icon stats with big numbers and 16 px labels; the week of stars; the mode cards. */
+.stat-icon { min-width: 120px; gap: 2px; }
+.stat-icon .stat-value { font-size: 36px; }
+.stat-icon .stat-label { font-size: 16px; color: var(--text); }
+.week { width: 100%; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.week-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.week-day { display: flex; flex-direction: column; align-items: center; font-size: 16px; color: var(--muted); border-radius: 12px; padding: 4px 6px; }
+.week-day svg { fill: var(--bg-2); stroke: var(--line); stroke-width: 1.5; }
+.week-day.is-played svg { fill: var(--gold); stroke: var(--gold-dark); }
+.week-day.is-played { color: var(--text); }
+.week-day.is-today { outline: 3px solid var(--info); outline-offset: 2px; }
+.week-streak { margin: 0; font-size: 16px; color: var(--muted); }
+.mode-cards { display: flex; gap: 16px; width: 100%; justify-content: center; flex-wrap: wrap; }
+.mode-card { flex: 1 1 220px; max-width: 320px; min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: var(--panel-2); border: 4px solid var(--line); border-bottom-width: 8px; border-radius: 18px; color: var(--text); cursor: pointer; }
+.mode-card.is-last { border-color: var(--gold); }
+.mode-card:active { transform: translateY(4px); border-bottom-width: 4px; }
+.mode-sprites { display: flex; align-items: flex-end; gap: 8px; }
+.mode-name { font-size: 18px; }
+
+/* Adventure: the map fills the screen; a question floats over it as a modal. */
+.screen.overworld { padding: 0; gap: 0; height: 100%; display: flex; flex-direction: column; position: relative; }
+.ow-hud { display: flex; align-items: center; gap: 14px; padding: 8px 12px; background: var(--panel); border-bottom: 3px solid var(--line); flex-wrap: wrap; }
+.ow-hearts { color: #f87171; font-size: 26px; letter-spacing: 4px; }
+.ow-hearts i { font-style: normal; }
+.ow-stat { display: inline-flex; align-items: center; gap: 6px; font-size: 24px; }
+.ow-remaining { display: inline-flex; align-items: center; gap: 4px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.ow-remaining b { font-size: 20px; }
+.ow-camp-lit { display: inline-flex; align-items: center; gap: 6px; font-size: 20px; color: var(--gold); font-weight: 700; }
+.ow-item { image-rendering: pixelated; }
+.ow-stage { position: relative; flex: 1; min-height: 0; background: #10131f; touch-action: none; }
+.ow-canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; }
+.ow-msg { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); max-width: min(520px, 92%); background: var(--panel); border: 3px solid var(--gold); border-radius: 14px; padding: 10px 44px 10px 14px; font-size: 18px; }
+.ow-msg p { margin: 0 0 6px; }
+.ow-msg .icon-btn { position: absolute; right: 6px; top: 6px; color: var(--text); }
+.ow-dpad { position: absolute; left: 14px; bottom: 14px; width: 204px; height: 204px; display: grid; grid-template-areas: '. up .' 'left . right' '. down .'; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px); gap: 6px; opacity: 0.9; touch-action: none; }
+.ow-dir { width: 64px; height: 64px; border-radius: 16px; border: 3px solid var(--line); background: var(--panel-2); color: var(--text); display: flex; align-items: center; justify-content: center; touch-action: none; }
+.ow-dir:active { background: var(--line); }
+.ow-up { grid-area: up; transform: rotate(180deg); }
+.ow-dir.ow-left { grid-area: left; transform: rotate(90deg); }
+.ow-down { grid-area: down; }
+.ow-dir.ow-right { grid-area: right; transform: rotate(-90deg); }
+.ow-overlay .panel { align-items: center; text-align: center; display: flex; flex-direction: column; gap: 12px; align-self: center; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-sprite.lunge, .hero-sprite.hop, .monster.hit svg, .combo-badge, .star-burst i, .sparkles i, .entry-box.is-active { animation: none; }
+}
 
 /* ---- Gem vault. Pre-reader targets are at least 120 px, reader targets at least 48 px. ---- */
 .pshop-tabs.is-wide { grid-template-columns: repeat(4, 120px); }

@@ -122,3 +122,36 @@ describe('applyDelta: gems earned today and gemRun', () => {
     expect(applyDelta({ ...rich, gems: 202 }, { gemRun, playedAt: T0 }).gems).toBe(211);
   });
 });
+
+describe('applyDelta: map rewards (gemGrant) go through the throttle', () => {
+  const grant = (base: number) => ({ gemGrant: { base, learner: 'reader' as const, settings: {} }, playedAt: T0 });
+  const after25 = () => applyDelta(applyDelta(applyDelta(rich, { gems: 10, playedAt: T0 }), { gems: 10, playedAt: T0 }), { gems: 5, playedAt: T0 });
+
+  it('at the full tier a boss pays 10 and a chest pays 1, and both count toward today', () => {
+    const b = applyDelta(rich, grant(10));
+    expect(b).toMatchObject({ gems: rich.gems + 10, gemsEarnedToday: 10, gemsDay: dayKey(T0) });
+    expect(applyDelta(rich, grant(1))).toMatchObject({ gems: rich.gems + 1, gemsEarnedToday: 1 });
+  });
+  it('after 25 run gems in a day the half tier applies: a boss pays 5 and a chest pays 1 (the minimum)', () => {
+    const g = after25();
+    expect(g.gemsEarnedToday).toBe(25);
+    expect(applyDelta(g, grant(10))).toMatchObject({ gems: g.gems + 5, gemsEarnedToday: 30 });
+    expect(applyDelta(g, grant(1)).gems).toBe(g.gems + 1);
+  });
+  it('after 50 the quarter tier pays a boss 2', () => {
+    let g = after25();
+    g = applyDelta(applyDelta(g, { gems: 10, playedAt: T0 }), { gems: 10, playedAt: T0 });
+    g = applyDelta(g, { gems: 5, playedAt: T0 });
+    expect(g.gemsEarnedToday).toBe(50);
+    expect(applyDelta(g, grant(10)).gems).toBe(g.gems + 2);
+  });
+  it('a chest earned at the full tier moves the count, so a later run starts in the half tier', () => {
+    let g = applyDelta(applyDelta(rich, { gems: 10, playedAt: T0 }), { gems: 10, playedAt: T0 });
+    g = applyDelta(g, { gems: 4, playedAt: T0 });
+    g = applyDelta(g, grant(1)); // 24 + 1 = 25
+    expect(g.gemsEarnedToday).toBe(25);
+  });
+  it('a grant without the time it was earned is refused', () => {
+    expect(() => applyDelta(rich, { gemGrant: { base: 10, learner: 'reader', settings: {} } })).toThrow(GameDeltaError);
+  });
+});

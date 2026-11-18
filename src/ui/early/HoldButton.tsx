@@ -14,6 +14,8 @@ const HINT_SPEECH = 'Hold the house to go home.';
 interface Props {
   onHold: () => void;
   label?: string;
+  /** How long the hold lasts. Defaults to HOLD_MS. */
+  ms?: number;
   children: React.ReactNode;
 }
 
@@ -21,7 +23,7 @@ interface Props {
  * Acts only after a 1.2 s hold, so a small finger cannot leave by accident.
  * A release before that wiggles the button, shows a hand-and-clock bubble and says how to use it.
  */
-export function HoldButton({ onHold, label = 'Hold to leave', children }: Props) {
+export function HoldButton({ onHold, label = 'Hold to leave', ms = HOLD_MS, children }: Props) {
   const [holding, setHolding] = useState(false);
   const [hint, setHint] = useState(false);
   const [wiggle, setWiggle] = useState(false);
@@ -62,7 +64,7 @@ export function HoldButton({ onHold, label = 'Hold to leave', children }: Props)
     timer.current = setTimeout(() => {
       stop();
       onHold();
-    }, HOLD_MS);
+    }, ms);
   };
 
   /** The finger lifted, or a key was released, before the time was up. */

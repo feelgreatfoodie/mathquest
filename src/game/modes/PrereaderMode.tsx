@@ -1,3 +1,4 @@
+import { useMute } from '../../ui/MuteButton';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { HeroFigure } from '../../ui/HeroFigure';
 import { learnerParams } from '../../engine/models';
@@ -26,6 +27,7 @@ function PathDots({ done }: { done: number }) {
 /** The run for kids who cannot read yet: pictures, a voice, big buttons. Questions come from QuestionPanel. */
 export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeProps) {
   const block = learnerParams('prereader').blockSize;
+  useMute(kid); // a parent can turn sound off for this kid; the voice and the chime follow it
   const runnerRef = useRef<SessionRunner | null>(null);
   const startedAt = useRef(Date.now());
   const finishing = useRef(false);
@@ -151,8 +153,9 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
       </div>
 
       <div className="arena early-arena">
-        <HeroFigure game={kid.game} size={96} className="hero-sprite" strike={solved} cheer={false} />
+        <HeroFigure game={kid.game} size={96} className={`hero-sprite ${solved ? 'hop' : ''}`} strike={solved} cheer={false} />
         <div className={`monster ${shake ? 'shake' : ''} ${solved ? 'hit' : ''}`}>
+          {solved ? <span className="star-burst" key={`b${entry.id}`} aria-hidden="true">{[0, 1, 2, 3, 4, 5].map((i) => <i key={i} style={{ ['--a' as string]: `${i * 60}deg` }} />)}</span> : null}
           <div className="hp"><div className="hp-fill" style={{ width: `${hp * 100}%` }} /></div>
           <Sprite name={monster} size={monster === 'boss' ? 120 : 96} />
         </div>

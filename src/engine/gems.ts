@@ -68,7 +68,15 @@ export function baseGems(stats: GemRunStats, learner: Learner): number {
  */
 export function gemsForRun(stats: GemRunStats, learner: Learner, settings: GemSettings | undefined | null, earnedToday: number): number {
   if (stats.correct < 1) return 0;
+  return throttledGems(baseGems(stats, learner), learner, settings, earnedToday);
+}
+
+/**
+ * The one economy function for every gem source (a run, a chest, a boss). base x Gem speed x tier rate, rounded down,
+ * at least 1 and at most GEM_RUN_MAX. A boss base of 10 pays 5 in the half tier and 2 in the quarter tier.
+ */
+export function throttledGems(base: number, learner: Learner, settings: GemSettings | undefined | null, earnedToday: number): number {
   const rate = TIER_RATE[gemTier(earnedToday, learner, settings)];
-  const raw = Math.floor(baseGems(stats, learner) * gemSpeedOf(settings) * rate + 1e-9);
+  const raw = Math.floor(base * gemSpeedOf(settings) * rate + 1e-9);
   return Math.min(GEM_RUN_MAX, Math.max(1, raw));
 }

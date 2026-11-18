@@ -1,6 +1,6 @@
 import { applyRun, type GameDelta } from '../engine/game';
 import { earnedTodayOf, gemsForRun } from '../engine/gems';
-import { learnerOf, type Kid, type KidGame, type SessionLog } from '../engine/models';
+import { learnerOf, type CardMap, type Kid, type KidGame, type SessionLog } from '../engine/models';
 import { SessionRunner, buildPlan, type RunSummary } from '../engine/session';
 import { newId, type Repo } from '../data/repo';
 import { noteDenied, putQuietly, removeQuietly, replayOutbox } from '../data/outbox';
@@ -8,11 +8,11 @@ import { isSaveDenied } from '../version';
 import { reportFailure } from './failures';
 
 /** Loads the kid's cards, plans a run and returns a runner. Both run screens start here. */
-export async function loadRunner(repo: Repo, kid: Kid): Promise<{ runner: SessionRunner; startedAt: number }> {
+export async function loadRunner(repo: Repo, kid: Kid): Promise<{ runner: SessionRunner; startedAt: number; cards: CardMap }> {
   const cards = await repo.loadCards(kid.id);
   const now = Date.now();
   const plan = buildPlan({ cards, settings: kid.settings, now, rng: Math.random });
-  return { runner: new SessionRunner(plan, cards, Math.random, Date.now, kid.settings), startedAt: now };
+  return { runner: new SessionRunner(plan, cards, Math.random, Date.now, kid.settings), startedAt: now, cards };
 }
 
 /**
