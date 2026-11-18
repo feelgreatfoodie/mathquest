@@ -161,8 +161,10 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
 
   return (
     <>
-      <div className={`panel question ${entry.kind === 'practice' ? 'is-practice' : ''}`}>
-        {entry.kind === 'practice' ? <p className="pixel tag">Try again!</p> : null}
+      <div className={`panel question ${entry.kind === 'practice' && !entry.fill ? 'is-practice' : ''}`} data-preview={entry.preview ? 'true' : undefined}>
+        {entry.kind === 'practice' && !entry.fill ? <p className="pixel tag">Try again!</p> : null}
+        {entry.preview ? <p className="pixel tag">A new one to try</p> : null}
+        {entry.preview && !feedback ? <p className="hint preview-hint" data-testid="preview-hint">{entry.problem.hint}</p> : null}
         <MathView tokens={entry.problem.tokens} answer={answerDisplay} />
         {feedback ? <FeedbackView fb={feedback} onContinue={() => resolve(feedback)} /> : null}
       </div>
@@ -218,9 +220,9 @@ function FeedbackView({ fb, onContinue }: { fb: Feedback; onContinue: () => void
     );
   }
   return (
-    <div className={`feedback ${fb.verdict === 'almost' ? 'almost' : 'bad'}`} role="status">
+    <div className={`feedback ${fb.verdict === 'almost' || fb.preview ? 'almost' : 'bad'}`} role="status">
       <p className="feedback-title">
-        {fb.verdict === 'almost' ? 'Right amount! Now make a whole.' : `The answer is ${fb.correctAnswer}`}
+        {fb.verdict === 'almost' ? 'Right amount! Now make a whole.' : fb.preview ? `Now you know: ${fb.correctAnswer}` : `The answer is ${fb.correctAnswer}`}
       </p>
       {fb.verdict === 'almost' ? <p>Best form: <strong>{fb.correctAnswer}</strong></p> : null}
       <p className="hint">{fb.hint}</p>
@@ -353,12 +355,12 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
   const answer = p.answer.kind === 'int' ? p.answer.value : 0;
   const missed = !!feedback && feedback.verdict !== 'correct';
   const solved = feedback?.verdict === 'correct';
-  const showPictures = mode === 'groups' || peeked || missed;
+  const showPictures = mode === 'groups' || peeked || missed || !!entry.preview;
   const [a, op, b] = p.tokens;
 
   return (
     <>
-      <div className={`early-question ${entry.kind === 'practice' ? 'is-practice' : ''}`} data-mode={showPictures ? (mode === 'frame' && !peeked && !missed ? 'frame' : 'groups') : 'numerals'}>
+      <div data-preview={entry.preview ? 'true' : undefined} className={`early-question ${entry.kind === 'practice' && !entry.fill ? 'is-practice' : ''}`} data-mode={showPictures ? (mode === 'frame' && !peeked && !missed ? 'frame' : 'groups') : 'numerals'}>
         <div className="early-pictures">
           {showPictures && mode === 'frame' && !peeked && !missed ? (
             <div className="frame-row">

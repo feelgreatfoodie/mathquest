@@ -1,4 +1,5 @@
 import { createEmptyCard, fsrs, generatorParameters, State, type Card, type Grade } from 'ts-fsrs';
+import { dayKey } from './game';
 import type { CardState, StoredFsrs } from './models';
 
 /**
@@ -87,10 +88,36 @@ export function isDue(state: CardState, now: number): boolean {
   return state.fsrs.reps > 0 && state.fsrs.due <= now;
 }
 
-/** Probability (0–1) the kid still recalls the card right now. */
+const DAY_MS = 86_400_000;
+
+/**
+ * Probability (0–1) the kid still recalls the card right now. Elapsed time is fractional days.
+ * ts-fsrs rounds it down to whole days, which made every card answered today read exactly 1 and tie.
+ */
 export function retrievability(state: CardState, now: number): number {
-  if (state.fsrs.reps === 0) return 0;
-  return scheduler.get_retrievability(fromStored(state.fsrs), new Date(now), false);
+  if (state.fsrs.reps === 0 || state.fsrs.last_review == null) return 0;
+  const days = Math.max(0, (now - state.fsrs.last_review) / DAY_MS);
+  return scheduler.forgetting_curve(days, state.fsrs.stability);
+}
+
+/** Graded answers a card may get in one local day. After that it can only come back as an in-run retry. */
+export const DAILY_GRADED_CAP = 3;
+
+/** How many graded answers the card has had today. */
+export function gradedToday(state: CardState | undefined, now: number): number {
+  return state && state.day === dayKey(now) ? (state.dayGraded ?? 0) : 0;
+}
+
+/** Notes one graded answer on the card: today's count, the last two outcomes, the day of a miss. */
+export function noteGraded(state: CardState, correct: boolean, now: number): CardState {
+  const today = dayKey(now);
+  return {
+    ...state,
+    day: today,
+    dayGraded: (state.day === today ? (state.dayGraded ?? 0) : 0) + 1,
+    lastResults: [...(state.lastResults ?? []), correct].slice(-2),
+    ...(correct ? {} : { missDay: today }),
+  };
 }
 
 export function median(xs: number[]): number {

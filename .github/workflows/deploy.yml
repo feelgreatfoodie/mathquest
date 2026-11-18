@@ -10,10 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      # A PR may not add a real kid doc id, the family id or a real first name. Compares SHA-256 hashes of the
+      # added lines, file paths and commit messages with scripts/private-id-hashes.txt. No secret is needed.
+      - name: No private ids in the PR
+        if: github.event_name == 'pull_request'
+        run: |
+          base="origin/${{ github.base_ref }}"
+          { git diff --unified=0 "$base...HEAD"; git log --format=%B "$base..HEAD" | sed 's/^/+/'; } | node scripts/check-private-ids.mjs
       - run: npm ci
       # functions/test/clientip.test.ts imports functions/src/core.ts, which needs the functions deps.
       - run: npm ci --prefix functions
