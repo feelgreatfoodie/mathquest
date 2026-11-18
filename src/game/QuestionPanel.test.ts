@@ -89,3 +89,27 @@ describe('QuestionPanel timing', () => {
     expect(host.querySelector('[role="dialog"] .keypad')).not.toBeNull();
   });
 });
+
+describe('QuestionPanel miss (UX review item 3)', () => {
+  it('puts the correct answer large in the equation with a check, the kid answer small and struck through, and a read-aloud hint', () => {
+    const runner = new SessionRunner([{ cardId: 'mul:7x8', isNew: false }], {}, mulberry32(1), () => 0, kid.settings);
+    mount(runner, runner.current()!, 'inline');
+    typeAndGo(54);
+    const eq = host.querySelector('.panel.question .math-answer-slot, .panel.question')!;
+    expect(eq.querySelector('.answer-fixed')?.textContent).toContain('56');
+    expect(eq.querySelector('.answer-fixed .answer-check')).not.toBeNull();
+    const was = eq.querySelector('.answer-was');
+    expect(was?.textContent).toBe('54');
+    expect(was?.tagName).toBe('S');
+    expect(host.querySelector('.int-entry')).toBeNull(); // the wrong number is no longer the big one
+    expect(host.querySelector('button[aria-label="Read it to me"]')).not.toBeNull();
+  });
+
+  it('leaves the answer box alone on a hit', () => {
+    const runner = new SessionRunner([{ cardId: 'mul:7x8', isNew: false }], {}, mulberry32(1), () => 0, kid.settings);
+    mount(runner, runner.current()!, 'inline');
+    typeAndGo(56);
+    expect(host.querySelector('.answer-fixed')).toBeNull();
+    expect(host.querySelector('.int-entry')?.textContent).toBe('56');
+  });
+});

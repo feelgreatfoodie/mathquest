@@ -1,6 +1,6 @@
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
 import { PAY_CHUNK, bonusFor, depositProblem, maturesAtOf, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultTerm } from '../game/vault';
-import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import { newId, type Repo } from './repo';
 
 const PREFIX = 'mathquest:v1';
@@ -56,8 +56,8 @@ export class LocalRepo implements Repo {
     this.patchKid(kidId, (k) => ({ ...k, settings }));
   }
 
-  async setKidFlags(kidId: string, flags: { hasPin?: boolean }): Promise<void> {
-    this.patchKid(kidId, (k) => ({ ...k, ...(flags.hasPin !== undefined ? { hasPin: flags.hasPin } : {}) }));
+  async setKidFlags(kidId: string, flags: { hasPin?: boolean; avatar?: KidAvatar }): Promise<void> {
+    this.patchKid(kidId, (k) => ({ ...k, ...(flags.hasPin !== undefined ? { hasPin: flags.hasPin } : {}), ...(flags.avatar !== undefined ? { avatar: flags.avatar } : {}) }));
   }
 
   async applyGameDelta(kidId: string, delta: GameDelta, opts?: { session?: SessionLog }): Promise<KidGame> {

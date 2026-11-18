@@ -89,7 +89,7 @@ p { margin: 0 0 10px; line-height: 1.45; }
 .title-panel { text-align: center; display: flex; flex-direction: column; gap: 14px; align-items: center; }
 .title-sprites { display: flex; align-items: flex-end; gap: 24px; }
 
-.kid-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; width: 100%; max-width: 900px; margin: 0 auto; }
+.kid-grid { display: flex; flex-wrap: wrap; justify-content: center; align-content: center; gap: 24px; width: 100%; max-width: 960px; margin: 0 auto; flex: 1; }
 .kid-card {
   background: var(--panel);
   border: 3px solid var(--line);
@@ -102,7 +102,14 @@ p { margin: 0 0 10px; line-height: 1.45; }
   box-shadow: 0 6px 0 #0d1020;
 }
 .kid-card:active { transform: translateY(3px); box-shadow: 0 3px 0 #0d1020; }
-.kid-name { font-size: 24px; font-weight: 700; }
+.kid-card { --kid-color: var(--line); border-color: var(--kid-color); flex: 0 1 280px; min-height: 280px; justify-content: center; gap: 14px; }
+.kid-face { display: inline-flex; padding: 14px; border-radius: 50%; background: color-mix(in srgb, var(--kid-color) 35%, var(--panel)); }
+.kid-name { font-size: 30px; font-weight: 700; }
+.avatar-picker { border: 2px solid var(--line); border-radius: 10px; padding: 8px 14px; margin: 8px 0; }
+.avatar-heroes, .avatar-colors { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0; }
+.avatar-opt { background: var(--panel); border: 3px solid var(--line); border-radius: 12px; padding: 4px; cursor: pointer; }
+.avatar-swatch { width: 44px; height: 44px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; }
+.avatar-opt.is-on, .avatar-swatch.is-on { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold); }
 .parent-link { align-self: center; margin-top: auto; }
 
 .home { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; max-width: 520px; }
@@ -189,6 +196,12 @@ p { margin: 0 0 10px; line-height: 1.45; }
 .feedback.almost { background: rgba(96, 165, 250, 0.12); border: 2px solid var(--info); }
 .feedback-title { font-size: 24px; font-weight: 700; }
 .hint { color: var(--muted); font-size: 18px; }
+.hint.hint-big { display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 22px; line-height: 1.35; color: var(--text); }
+.hint-speaker { flex: none; min-width: 52px; min-height: 52px; }
+/* After a miss: the right answer is the big number in the equation, the kid's own is small and struck through. */
+.answer-fixed { display: inline-flex; align-items: center; gap: 10px; color: var(--good); }
+.answer-fixed .answer-check { display: inline-flex; color: var(--good); }
+.answer-fixed .answer-was { font-size: 0.4em; color: var(--muted); text-decoration: line-through; text-decoration-thickness: 3px; align-self: flex-start; }
 
 .teach { align-self: center; display: flex; flex-direction: column; gap: 12px; text-align: center; }
 .strategy { font-size: 20px; }

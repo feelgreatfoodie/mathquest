@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { AVATAR_SWATCH } from '../AvatarPicker';
 import { GoalJar } from '../GoalJar';
 import { CampRow } from '../CampRow';
 import { HeroFigure } from '../HeroFigure';
 import { cardLabel } from '../../engine/modules';
 import { levelFor, type GameDelta } from '../../engine/game';
 import { readerMapLine } from '../../engine/summaryView';
-import { learnerOf, shop2On, type CardMap, type Kid } from '../../engine/models';
+import { avatarOf, learnerOf, shop2On, type CardMap, type Kid } from '../../engine/models';
 import { PrereaderHome } from '../early/PrereaderScreens';
 import { PrereaderSummary } from '../early/PrereaderSummary';
 import type { RunInfo } from '../runShared';
@@ -145,17 +146,31 @@ export function Landing({
   );
 }
 
+function PickerCard({ kid: k, onPick }: { kid: Kid; onPick: (k: Kid) => void }) {
+  const a = avatarOf(k);
+  return (
+    <button
+      type="button"
+      className={`kid-card ${learnerOf(k.settings) === 'prereader' ? 'is-prereader' : ''}`}
+      data-hero={a.hero}
+      data-color={a.color}
+      style={{ ['--kid-color' as string]: AVATAR_SWATCH[a.color] }}
+      onClick={() => onPick(k)}
+    >
+      <span className="kid-face"><Sprite name={a.hero} size={learnerOf(k.settings) === 'prereader' ? 160 : 128} /></span>
+      <span className="kid-name">{k.name}</span>
+      <span className="muted pixel small">LV {levelFor(k.game.xp).level}</span>
+    </button>
+  );
+}
+
 export function Picker({ kids, onPick, onParent }: { kids: Kid[]; onPick: (k: Kid) => void; onParent: () => void }) {
   return (
     <div className="screen">
       <h1 className="pixel title center-text">Who is playing?</h1>
       <div className="kid-grid">
         {kids.map((k) => (
-          <button key={k.id} type="button" className={`kid-card ${learnerOf(k.settings) === 'prereader' ? 'is-prereader' : ''}`} onClick={() => onPick(k)}>
-            <Sprite name={k.game.hero} size={learnerOf(k.settings) === 'prereader' ? 128 : 96} />
-            <span className="kid-name">{k.name}</span>
-            <span className="muted pixel small">LV {levelFor(k.game.xp).level}</span>
-          </button>
+          <PickerCard key={k.id} kid={k} onPick={onPick} />
         ))}
       </div>
       <button type="button" className="btn btn-ghost parent-link" onClick={onParent}>Parent area</button>

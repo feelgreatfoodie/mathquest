@@ -292,6 +292,21 @@ export class SessionRunner {
     return this.index >= this.queue.length;
   }
 
+  /**
+   * How far through the run, 0 to 1: graded entries answered over graded entries planned. A retry, a teach card and
+   * the answer in progress never count, and retries are spliced in after the current entry, so the entries before
+   * the position never change: the value never goes down. A plan with no graded entry (all fill practice) counts the
+   * fill entries instead.
+   */
+  progress(): number {
+    const base = (e: Entry) => e.kind === 'graded';
+    const anyGraded = this.queue.some(base);
+    const counts = (e: Entry) => (anyGraded ? base(e) : !!e.fill);
+    const total = this.queue.filter(counts).length;
+    if (total === 0) return this.done() ? 1 : 0;
+    return this.queue.slice(0, this.index).filter(counts).length / total;
+  }
+
   acknowledge(): void {
     if (this.current()?.kind === 'teach') this.index++;
   }

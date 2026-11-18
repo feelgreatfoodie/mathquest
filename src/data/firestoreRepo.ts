@@ -18,7 +18,7 @@ import {
 } from 'firebase/firestore';
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultTerm } from '../game/vault';
-import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import { newId, type Repo } from './repo';
 
 const BATCH_MAX = 450;
@@ -96,9 +96,10 @@ export class FirestoreRepo implements Repo {
     await updateDoc(doc(this.kids(), kidId), { settings });
   }
 
-  async setKidFlags(kidId: string, flags: { hasPin?: boolean }): Promise<void> {
+  async setKidFlags(kidId: string, flags: { hasPin?: boolean; avatar?: KidAvatar }): Promise<void> {
     const update: Record<string, unknown> = {};
     if (flags.hasPin !== undefined) update.hasPin = flags.hasPin;
+    if (flags.avatar !== undefined) update.avatar = flags.avatar;
     if (Object.keys(update).length) await updateDoc(doc(this.kids(), kidId), update);
   }
 
