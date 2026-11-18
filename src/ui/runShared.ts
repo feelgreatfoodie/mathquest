@@ -54,14 +54,14 @@ export async function saveRun(
   const trip = extra?.trip;
   // An Adventure trip closes with its cumulative totals: what earlier opens of the trip already checkpointed plus this open's runner.
   const t = trip ? addRun(trip.base, run) : null;
-  const raw: RunSummary = t ? { ...run, answered: t.answered, graded: t.graded, correct: t.correct, fast: t.fast, newLearned: t.newLearned, xp: t.xp, bestCombo: t.bestCombo, medianMs: t.medianMs, missed: t.missed } : run;
+  const raw: RunSummary = t ? { ...run, answered: t.answered, graded: t.graded, correct: t.correct, fast: t.fast, newLearned: t.newLearned, xp: t.xp, bestCombo: t.bestCombo, medianMs: t.medianMs, missed: t.missed, ...(t.practiceCorrect ? { practiceCorrect: t.practiceCorrect } : {}) } : run;
   if (raw.answered === 0) return null;
   const now = Date.now();
   // The gems come from the parent settings and today's count. The server transaction works them out again from the
   // stored count (gemRun below), so a second device cannot skip the throttle; this number is what the screen shows.
   const learner = learnerOf(kid.settings);
   const gemSettings = { gemSpeed: kid.settings.gemSpeed, gemFullRate: kid.settings.gemFullRate };
-  const stats = { correct: raw.correct, graded: raw.graded, bestCombo: raw.bestCombo, newLearned: raw.newLearned };
+  const stats = { correct: raw.correct, ...(raw.practiceCorrect ? { practiceCorrect: raw.practiceCorrect } : {}), graded: raw.graded, bestCombo: raw.bestCombo, newLearned: raw.newLearned };
   const summary = { ...raw, gems: gemsForRun(stats, learner, gemSettings, earnedTodayOf(kid.game, now)) };
   const mode: SessionMode = extra?.mode ?? (learner === 'prereader' ? 'prereader' : 'dungeon');
   const log: SessionLog = trip && t ? { ...tripLog({ tripId: trip.id, startedAt: trip.startedAt }, t, now, trip.region, 'camp'), gems: summary.gems } : {
@@ -78,6 +78,7 @@ export async function saveRun(
     gems: summary.gems,
     bestCombo: summary.bestCombo,
     missed: summary.missed,
+    ...(summary.practiceCorrect ? { practiceCorrect: summary.practiceCorrect } : {}),
     mode,
   };
   const runId = trip ? `${trip.id}:${trip.seq}` : log.id;

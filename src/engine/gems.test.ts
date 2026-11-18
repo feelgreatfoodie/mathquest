@@ -142,3 +142,41 @@ describe('throttledGems: one function for every gem source', () => {
     expect(gemsForRun(s, 'reader', {}, 30)).toBe(throttledGems(9, 'reader', {}, 30));
   });
 });
+
+describe('gemsForRun: right answers on fill practice count', () => {
+  const fill = (right: number, over: Partial<GemRunStats> = {}): GemRunStats => ({ correct: 0, practiceCorrect: right, graded: 0, bestCombo: 0, newLearned: 0, ...over });
+
+  it('an all-fill run of 52 answers with 49 right earns at least 1 gem at every tier', () => {
+    expect(gemsForRun(fill(49), 'reader', {}, 0)).toBe(10); // 16 capped at 10
+    expect(gemsForRun(fill(49), 'reader', {}, 25)).toBeGreaterThanOrEqual(1); // half
+    expect(gemsForRun(fill(49), 'reader', {}, 50)).toBeGreaterThanOrEqual(1); // quarter
+    expect(gemsForRun(fill(49), 'prereader', {}, 999)).toBeGreaterThanOrEqual(1);
+    expect(gemsForRun(fill(2), 'reader', {}, 999)).toBe(1); // floor(2/3) = 0, the 1-gem minimum
+  });
+  it('0 right earns 0, even with answers given', () => {
+    expect(gemsForRun(fill(0), 'reader', {}, 0)).toBe(0);
+    expect(gemsForRun(fill(0), 'prereader', {}, 0)).toBe(0);
+  });
+  it('a mixed run counts both, and perfect stays graded only', () => {
+    // 27 graded right + 21 fill right = 48 right: 16 base, capped at 10
+    expect(gemsForRun(fill(21, { correct: 27, graded: 30 }), 'reader', {}, 0)).toBe(10);
+    // 6 graded right of 6 plus 3 fill right: floor(9/3) + 2 perfect = 5; fill right does not break or make perfect
+    expect(gemsForRun(fill(3, { correct: 6, graded: 6 }), 'reader', {}, 0)).toBe(5);
+    expect(gemsForRun(fill(3, { correct: 5, graded: 6 }), 'reader', {}, 0)).toBe(2); // floor(8/3), not perfect
+    expect(gemsForRun(fill(3, { correct: 0, graded: 6 }), 'reader', {}, 0)).toBe(1);
+  });
+  it('the tier boundaries are unchanged: full to 25 (reader) and 15 (pre-reader), half to twice that, a quarter after', () => {
+    const s = fill(30);
+    expect(gemsForRun(s, 'reader', {}, 24)).toBe(10);
+    expect(gemsForRun(s, 'reader', {}, 25)).toBe(5);
+    expect(gemsForRun(s, 'reader', {}, 49)).toBe(5);
+    expect(gemsForRun(s, 'reader', {}, 50)).toBe(2);
+    expect(gemsForRun(s, 'prereader', {}, 14)).toBe(10);
+    expect(gemsForRun(s, 'prereader', {}, 15)).toBe(7); // 15 base x 0.5
+    expect(gemsForRun(s, 'prereader', {}, 30)).toBe(3); // 15 base x 0.25
+  });
+  it('an old payload with no practiceCorrect reads as 0', () => {
+    expect(gemsForRun({ correct: 0, graded: 0, bestCombo: 0, newLearned: 0 }, 'reader', {}, 0)).toBe(0);
+    expect(gemsForRun({ correct: 27, graded: 30, bestCombo: 8, newLearned: 0 }, 'reader', {}, 0)).toBe(9);
+  });
+});
