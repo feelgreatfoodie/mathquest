@@ -948,3 +948,55 @@ legend { padding: 0 6px; color: var(--muted); }
 .face-btn:active { transform: translateY(3px); }
 .picture-flag { display: inline-flex; margin-left: 4px; }
 .picture-set { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+
+/* ---- Parent Learning progress panel (InsightsPanel). Read only. ---- */
+.insights h3 { font-size: 17px; margin: 0 0 6px; }
+.insights h4 { font-size: 14px; margin: 8px 0 4px; color: var(--muted); }
+.ins-alerts { list-style: none; margin: 8px 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ins-alerts li { background: var(--bg-2); border-left: 4px solid #fb923c; border-radius: 6px; padding: 8px 10px; overflow-wrap: anywhere; }
+.ins-module { border-top: 2px solid var(--line); padding: 8px 0; min-width: 0; }
+.ins-module > summary { cursor: pointer; font-weight: 700; padding: 8px 0; min-height: 44px; overflow-wrap: anywhere; }
+.ins-body { display: flex; flex-direction: column; gap: 16px; padding-top: 8px; min-width: 0; }
+.ins-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+@media (min-width: 700px) { .ins-split { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; } }
+.ins-matrix-wrap { min-width: 0; }
+.ins-matrix { display: grid; gap: 2px; width: 100%; }
+.ins-head { display: flex; align-items: center; justify-content: center; height: 20px; font-size: 10px; font-weight: 700; color: var(--muted); }
+.ins-cell { position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; height: 22px; padding: 0; margin: 0; border: 0; border-radius: 3px; font: 700 9px/1 var(--body, inherit); cursor: pointer; }
+.ins-cell:focus-visible { outline: 3px solid #fff; outline-offset: 1px; z-index: 1; }
+.ins-gap { height: 22px; border-radius: 3px; }
+.ins-grey { background: #3a3d4d; opacity: 0.55; }
+.ins-dot { position: absolute; top: 1px; right: 1px; width: 5px; height: 5px; border-radius: 50%; background: #fbbf24; box-shadow: 0 0 0 1px #0d1020; }
+.ins-preview-swatch { position: relative; display: inline-block; }
+.ins-preview-swatch .ins-dot { top: 1px; right: 1px; }
+.ins-ladder { min-width: 0; }
+.ins-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.ins-row { background: var(--bg-2); border-radius: 8px; padding: 10px; min-width: 0; }
+.ins-row-head, .ins-row-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.ins-row-foot { font-size: 14px; margin-top: 4px; }
+.ins-bar { position: relative; height: 12px; background: var(--panel); border: 2px solid var(--line); border-radius: 6px; margin-top: 6px; overflow: hidden; }
+.ins-bar-fill { height: 100%; background: #3aa8e0; }
+.ins-bar-marker { position: absolute; top: -2px; bottom: -2px; width: 3px; background: #fbbf24; }
+.ins-second { margin-top: 6px; font-size: 13px; }
+.ins-second .ins-bar { height: 8px; }
+.ins-state.locked { color: #fb923c; }
+.ins-state.open { color: #a7f3d0; }
+.ins-note { font-size: 13px; margin: 8px 0 0; }
+.ins-block { min-width: 0; }
+.ins-chart { display: flex; align-items: flex-end; gap: 2px; height: 56px; background: var(--bg-2); border-radius: 6px; padding: 4px; }
+.ins-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: flex-end; }
+.ins-col-bar { width: 100%; min-height: 1px; background: #3aa8e0; border-radius: 2px 2px 0 0; }
+.ins-col-bar.acc { background: #a7f3d0; }
+.ins-col-bar.time { background: #3f6fd1; }
+.ins-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.ins-sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; max-height: 70vh; overflow-y: auto;
+  padding: 14px max(16px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: var(--panel-2); border-top: 3px solid var(--line); box-sizing: border-box;
+}
+.ins-sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.ins-dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0; }
+.ins-dl dt { color: var(--muted); }
+.ins-dl dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .ins-matrix { gap: 1px; } .ins-head { height: 18px; font-size: 9px; } }
+@media (min-width: 700px) { .ins-cell, .ins-gap { height: 28px; } .ins-cell { font-size: 11px; } .ins-head { font-size: 11px; height: 24px; } }

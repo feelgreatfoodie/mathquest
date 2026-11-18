@@ -20,6 +20,7 @@ import { PicturePad, PictureIcon } from '../early/PicturePad';
 import { reportFailure } from '../failures';
 import { buildLabel, entryText, recentChanges } from '../../whatsnew';
 import { AvatarPicker } from '../AvatarPicker';
+import { InsightsPanel, clearInsightsCache } from '../InsightsPanel';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
 
@@ -178,6 +179,8 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
   const [selected, setSelected] = useState<string | 'add'>(kids[0]?.id ?? 'add');
   const [changingPin, setChangingPin] = useState(false);
   const kid = kids.find((k) => k.id === selected);
+  // The learning-progress reads are kept while the parent area is open and dropped when it closes.
+  useEffect(() => clearInsightsCache, []);
 
   if (changingPin)
     return (
@@ -649,6 +652,8 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPictu
       <section className="panel">
         <AvatarPicker value={avatarOf(kid)} onChange={(a) => void onAvatar(a)} />
       </section>
+
+      <InsightsPanel repo={repo} kid={kid} cards={cards} />
 
       <ul className="coverage" aria-label="Coverage">
         {MODULES.filter((m) => on[m.id] && m.groups).map((m) => {

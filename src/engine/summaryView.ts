@@ -1,10 +1,7 @@
 import { levelFor } from './game';
-import { cardLevel, groupFloor, unlockedGroups } from './mastery';
+import { GROUP_UNLOCK_SHARE, cardLevel, groupFloor, unlockedGroups } from './mastery';
 import { DEFAULT_PACE, modulesOf, type CardMap, type KidSettings } from './models';
 import { MODULES, type ModuleDef } from './modules';
-
-/** Share of a group that opens the next one (the coverage-1 rule in mastery.ts). */
-const UNLOCK_SHARE = 0.8;
 
 export interface LevelStep {
   levelBefore: number;
@@ -36,7 +33,7 @@ export function levelStep(xpBefore: number, xpAfter: number): LevelStep {
 export function unlockGap(mod: ModuleDef, index: number, cards: CardMap, settings: KidSettings): number {
   const prev = mod.groups?.[index - 1];
   if (!prev || index < groupFloor(mod, settings)) return 0;
-  const need = Math.ceil(prev.cardIds.length * UNLOCK_SHARE - 1e-9);
+  const need = Math.ceil(prev.cardIds.length * GROUP_UNLOCK_SHARE - 1e-9);
   const steady = prev.cardIds.filter((id) => {
     const r = cards[id]?.lastResults;
     return !!r && r.length >= 2 && r.every(Boolean);

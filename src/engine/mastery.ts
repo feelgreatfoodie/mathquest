@@ -19,7 +19,8 @@ export const LEVEL_LABELS: Record<Level, string> = {
 /** FSRS stability (days until recall drops to 90%) needed for each level. */
 const REVIEWING_STABILITY_DAYS = 2;
 const SOLID_STABILITY_DAYS = 7;
-const GROUP_UNLOCK_SHARE = 0.8;
+/** Share of a group that opens the next one. The planner, the unlock gap and the parent insights panel all read this one constant. */
+export const GROUP_UNLOCK_SHARE = 0.8;
 
 export function cardLevel(state: CardState | undefined, factBaselineMs: number, pace: number): Level {
   if (!state || state.fsrs.reps === 0) return 0;
