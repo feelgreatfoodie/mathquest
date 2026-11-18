@@ -3,6 +3,7 @@ import { Rating } from 'ts-fsrs';
 import { ALL_CARDS, FACT_CARDS, FACT_GROUPS, SKILL_CARDS, factId, factStrategy, getCardDef } from './content';
 import { add, equalValue, sub, toImproper, toMixed, type Mixed } from './fraction';
 import { factBaseline, factThresholds, gradeAnswer, thresholdsFor } from './grading';
+import { FACTS } from './modules/facts';
 import { availableCards, cardLevel, groupProgress, unlockedFactGroups } from './mastery';
 import { DEFAULT_SETTINGS, paceOf, type CardMap, type KidSettings } from './models';
 import { checkAnswer, generateProblem, mulberry32, type Problem, type Token } from './problems';
@@ -232,7 +233,7 @@ describe('mastery and unlocking', () => {
     expect(unlockedFactGroups({}, DEFAULT_SETTINGS)).toBe(1);
     const g1 = FACT_CARDS.filter((c) => c.groupIndex === 0).map((c) => c.id);
     const cards = reviewAll(g1, Rating.Easy);
-    expect(groupProgress(0, cards)).toBe(1);
+    expect(groupProgress(FACTS, 0, cards)).toBe(1);
     expect(unlockedFactGroups(cards, DEFAULT_SETTINGS)).toBe(2);
   });
 

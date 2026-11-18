@@ -52,7 +52,7 @@ function progressed(): CardMap {
     if (def.kind === 'fact' && def.groupIndex === 0) cards[id] = seen(id, 4, 1400, Rating.Easy as 4);
     else if (def.kind === 'fact' && def.groupIndex === 1 && Number(id.charCodeAt(4)) % 2 === 0) cards[id] = seen(id, 3, 2600);
   }
-  const lapsed = ids.find((i) => getCardDef(i)!.kind === 'fact' && getCardDef(i)!.groupIndex === 0)!;
+  const lapsed = ids.find((i) => getCardDef(i)!.kind === 'fact' && (getCardDef(i) as { groupIndex: number }).groupIndex === 0)!;
   cards[lapsed] = review(cards[lapsed]!, Rating.Again, 9000, false, T0 - 5 * DAY);
   cards['fr:add'] = seen('fr:add', 4, 5000);
   cards['fr:sub'] = seen('fr:sub', 2, 9000);
