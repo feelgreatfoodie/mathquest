@@ -52,6 +52,17 @@ describe('the gems guard in firestore.rules', () => {
   });
 });
 
+describe('the hero price map in firestore.rules', () => {
+  it('lists every hero at its catalog price and nothing else', () => {
+    const rules = readFileSync(new URL('../../firestore.rules', import.meta.url), 'utf8');
+    const body = /function heroPrices\(\) \{\s*return \{([^}]*)\};/.exec(rules);
+    expect(body).not.toBeNull();
+    const map: Record<string, number> = {};
+    for (const m of body![1]!.matchAll(/'([a-z]+)':\s*(\d+)/g)) map[m[1]!] = Number(m[2]);
+    expect(map).toEqual(Object.fromEntries(HEROES.map((h) => [h.id, h.cost])));
+  });
+});
+
 describe('who writes game', () => {
   const walk = (dir: string): string[] =>
     readdirSync(dir).flatMap((f) => {

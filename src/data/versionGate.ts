@@ -23,6 +23,8 @@ export interface GuardOptions {
 export class VersionGuard {
   private min: number | null = null;
   private lastTry = -Infinity;
+  /** The read in progress, shared by every caller so none of them passes the gate while it is pending. */
+  private inflight: Promise<void> | null = null;
   private listeners = new Set<() => void>();
   private build: number;
   private maxAgeMs: number;
@@ -53,8 +55,17 @@ export class VersionGuard {
     };
   }
 
-  /** Reads minVersion now. Never throws. */
-  async refresh(): Promise<void> {
+  /** Reads minVersion now. Never throws. A call while a read is in progress waits for that read. */
+  refresh(): Promise<void> {
+    if (!this.inflight) {
+      this.inflight = this.doRefresh().finally(() => {
+        this.inflight = null;
+      });
+    }
+    return this.inflight;
+  }
+
+  private async doRefresh(): Promise<void> {
     this.lastTry = Date.now();
     const before = this.stale;
     try {
@@ -72,7 +83,9 @@ export class VersionGuard {
 
   /** Throws StaleBuildError when this bundle is behind. Reads minVersion first when the last check is old. */
   async check(): Promise<void> {
-    if (!this.stale && Date.now() - this.lastTry >= this.maxAgeMs) await this.refresh();
+    // A read in progress is awaited by every caller: the first writer at launch must not be the only one to wait.
+    if (this.inflight) await this.inflight;
+    else if (!this.stale && Date.now() - this.lastTry >= this.maxAgeMs) await this.refresh();
     if (this.stale) throw new StaleBuildError();
   }
 }

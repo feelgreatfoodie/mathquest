@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
-import { levelFor } from '../../engine/game';
+import { HEROES, levelFor } from '../../engine/game';
+import { gemHistory } from '../../engine/gemHistory';
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
-import { learnerOf, modulesOf, paceOf, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type SessionLog } from '../../engine/models';
+import { learnerOf, modulesOf, paceOf, withModule, type CardMap, type Family, type Kid, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
@@ -12,6 +13,7 @@ import { hashPin, type Repo } from '../../data/repo';
 import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { reportFailure } from '../failures';
 import { PinPad } from '../PinPad';
+import { Sprite } from '../sprites';
 
 export { makeKid };
 
@@ -329,27 +331,78 @@ function fmtSec(ms: number): string {
   return Number.isFinite(ms) && ms > 0 ? `${(ms / 1000).toFixed(1)}s` : '–';
 }
 
-function KidDetail({ repo, kid, onSettings, onPinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onPinSet: () => Promise<void>; onDelete: () => Promise<void> }) {
+/**
+ * The stored kid while the parent area shows them: a live subscription that starts on mount and stops on
+ * unmount (tab switch or leaving the area), so the numbers follow a run finished on another device.
+ */
+function useLiveKid(repo: Repo, kid: Kid): Kid {
+  const [live, setLive] = useState<Kid>(kid);
+  useEffect(() => {
+    setLive(kid);
+    return repo.watchKid(kid.id, (k) => { if (k) setLive(k); }, { onError: (e) => reportFailure('Could not load the latest player data.', e) });
+    // Subscribe once per kid. `kid` is only the first paint.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repo, kid.id]);
+  return live;
+}
+
+function signed(n: number): string {
+  return `${n > 0 ? '+' : '−'}${Math.abs(n)}`;
+}
+
+function GemHistory({ changes }: { changes: ReturnType<typeof gemHistory> }) {
+  return (
+    <section className="panel">
+      <h2>Gem history</h2>
+      {changes.length ? (
+        <ul className="gem-history">
+          {changes.map((c, i) => (
+            <li key={`${c.kind}-${c.at}-${i}`} className={c.gems > 0 ? 'gain' : 'spend'}>
+              <span className="gem-delta">{signed(c.gems)}</span>
+              <span>{c.kind === 'run' ? 'Quest finished' : `Bought ${HEROES.find((h) => h.id === c.heroId)?.name ?? c.heroId}`}</span>
+              <span className="muted">{new Date(c.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted">No gem changes yet.</p>
+      )}
+    </section>
+  );
+}
+
+function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onPinSet: () => Promise<void>; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
+  const [purchases, setPurchases] = useState<PurchaseLog[]>([]);
+  const kid = useLiveKid(repo, kidProp);
   const [settings, setSettings] = useState<KidSettings>(kid.settings);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    void Promise.all([repo.loadCards(kid.id), repo.listSessions(kid.id, 20)]).then(([c, s]) => {
+    // Reads exact subcollection paths only (cards, sessions, purchases under this kid), never a collection group.
+    const purchasesRead = repo.listPurchases(kid.id, 20).catch((e) => {
+      reportFailure('Could not load the gem history.', e);
+      return [] as PurchaseLog[];
+    });
+    void Promise.all([repo.loadCards(kid.id), repo.listSessions(kid.id, 20), purchasesRead]).then(([c, s, p]) => {
       if (!alive) return;
       setCards(c);
       setSessions(s);
+      setPurchases(p);
     });
     return () => {
       alive = false;
     };
-  }, [repo, kid.id]);
+    // A finished run or a purchase changes xp, gems or the hero list, so the logs are read again.
+  }, [repo, kid.id, kid.game.xp, kid.game.gems, kid.game.heroes.length]);
 
   if (!cards) return <p className="pixel blink">Loading…</p>;
 
+  const lv = levelFor(kid.game.xp);
+  const heroName = HEROES.find((h) => h.id === kid.game.hero)?.name ?? kid.game.hero;
   const baseline = factBaseline(cards);
   const pace = paceOf(kid.settings);
   const fastBar = factThresholds(baseline, pace).fastMs;
@@ -370,12 +423,24 @@ function KidDetail({ repo, kid, onSettings, onPinSet, onDelete }: { repo: Repo; 
   return (
     <div className="detail">
       <section className="panel summary-row">
-        <div className="stat"><span className="stat-value">{levelFor(kid.game.xp).level}</span><span className="stat-label">level</span></div>
+        <div className="stat stat-xp">
+          <span className="stat-value">{kid.game.xp}</span>
+          <span className="stat-label">xp</span>
+          <div className="progress" role="img" aria-label={`${lv.into} of ${lv.span} xp to the next level`}><div className="progress-fill xp" style={{ width: `${(lv.into / lv.span) * 100}%` }} /></div>
+        </div>
+        <div className="stat stat-gems"><span className="stat-value">{kid.game.gems}</span><span className="stat-label">gems</span></div>
+        <div className="stat stat-hero">
+          <Sprite name={kid.game.hero} size={48} />
+          <span className="stat-label">hero · {heroName} · {kid.game.heroes.length} of {HEROES.length}</span>
+        </div>
+        <div className="stat"><span className="stat-value">{lv.level}</span><span className="stat-label">level</span></div>
         <div className="stat"><span className="stat-value">{kid.game.streakDays}</span><span className="stat-label">day streak</span></div>
         <div className="stat"><span className="stat-value">{week.length}</span><span className="stat-label">runs this week</span></div>
         <div className="stat"><span className="stat-value">{minutes}</span><span className="stat-label">minutes this week</span></div>
         {on.facts || learner === 'reader' ? <div className="stat"><span className="stat-value">{fmtSec(baseline)}</span><span className="stat-label">typical fact time</span></div> : null}
       </section>
+
+      <GemHistory changes={gemHistory(sessions, purchases, 20)} />
 
       {on.add10 ? (
         <section className="panel">

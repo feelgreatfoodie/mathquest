@@ -48,6 +48,42 @@ service cloud.firestore {
       return 100;
     }
 
+    // The hero catalog (HEROES in src/engine/game.ts; a unit test keeps the two equal). A hero id that is not
+    // here has no price and cannot be bought.
+    function heroPrices() {
+      return {'knight': 0, 'wizard': 15, 'ranger': 35, 'robot': 60, 'dragon': 100};
+    }
+
+    // A kid token that adds a hero adds exactly one (the last in the list, as a purchase appends it), the hero
+    // is in the catalog, and gems drop by exactly its price. The free starter hero (price 0) may be added with
+    // any gem change, because a doc with game {} gets its knight and a run's gems in one write. Without a hero
+    // change it passes, so runs and equips are unaffected. Only the kid branch of the kid-doc update uses this: parents and the Admin SDK
+    // are unchanged.
+    function kidHeroGrowthOk() {
+      let before = resource.data.get('game', {});
+      let after = request.resource.data.get('game', {});
+      let beforeHeroes = before.get('heroes', []);
+      let afterHeroes = after.get('heroes', []);
+      return afterHeroes.size() == beforeHeroes.size()
+        || (afterHeroes.size() == beforeHeroes.size() + 1
+          && afterHeroes[afterHeroes.size() - 1] in heroPrices()
+          && !beforeHeroes.hasAny([afterHeroes[afterHeroes.size() - 1]])
+          && (heroPrices()[afterHeroes[afterHeroes.size() - 1]] == 0
+            || before.get('gems', 0) - after.get('gems', 0) == heroPrices()[afterHeroes[afterHeroes.size() - 1]]));
+    }
+
+    // The game economy is client-trusted by design: grading runs on the device, so a kid token can write any
+    // run it claims. This caps the damage of one tampered write. Measured on 58 stored sessions (3 kids, 1 family):
+    // at most 504 xp and 9 gems per session. A kid write may raise gems by at most 50 and xp by at most 2000
+    // (about 5x and 4x the measured maxima, room for longer sessions). A drop is not limited here (gemsDropOk
+    // and kidHeroGrowthOk handle it). Only the kid branch uses this; parents and the Admin SDK are unchanged.
+    function kidRaiseOk() {
+      let before = resource.data.get('game', {});
+      let after = request.resource.data.get('game', {});
+      return after.get('gems', 0) - before.get('gems', 0) <= 50
+        && after.get('xp', 0) - before.get('xp', 0) <= 2000;
+    }
+
     // A write may not take away more gems than the dearest hero costs, unless the hero list grows in the
     // same write (a purchase). A stale copy written back over a kid's totals fails this when it wipes a
     // big balance. A missing game, gems or heroes reads as empty, so wiping game is a drop too.
@@ -67,6 +103,27 @@ service cloud.firestore {
       return after.get('xp', 0) >= before.get('xp', 0)
         && after.get('bestCombo', 0) >= before.get('bestCombo', 0)
         && after.get('heroes', []).hasAll(before.get('heroes', []));
+    }
+
+    // A purchases-log entry is valid only in the transaction that buys the hero: the kid doc after the write
+    // holds one more hero (the logged one, not owned before) and exactly `cost` fewer gems. get() reads the doc
+    // before the write, getAfter() reads it after, so a lone entry, a wrong cost or a wrong hero is refused.
+    function purchaseEntryOk(uid, kidId, purchaseId) {
+      let kidPath = /databases/$(database)/documents/families/$(uid)/kids/$(kidId);
+      let before = get(kidPath).data.get('game', {});
+      let after = getAfter(kidPath).data.get('game', {});
+      let e = request.resource.data;
+      return e.keys().hasOnly(['id', 'heroId', 'cost', 'at'])
+        && e.keys().hasAll(['id', 'heroId', 'cost', 'at'])
+        && e.id == purchaseId
+        && e.heroId is string
+        && e.heroId in heroPrices()
+        && e.cost is int && e.cost > 0 && e.cost == heroPrices()[e.heroId]
+        && e.at is number
+        && after.get('heroes', []).hasAll([e.heroId])
+        && !before.get('heroes', []).hasAny([e.heroId])
+        && after.get('heroes', []).size() == before.get('heroes', []).size() + 1
+        && before.get('gems', 0) - after.get('gems', 0) == e.cost;
     }
 
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
@@ -105,13 +162,21 @@ service cloud.firestore {
         allow delete: if isParent(uid);
         allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId;
         allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropOk() && gameMonotonicOk())
-          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame() && gemsDropOk() && gameMonotonicOk());
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame() && gemsDropOk() && gameMonotonicOk() && kidHeroGrowthOk() && kidRaiseOk());
 
         match /cards/{cardId} {
           allow read: if isParent(uid) || isKid(uid, kidId);
           allow delete: if isParent(uid);
           allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc()
             && request.resource.data.id == cardId;
+        }
+
+        // Purchases log: the parent reads it, nobody edits or deletes it. A kid token (or the parent device
+        // playing as a kid) creates an entry only for this kidId and only with its game change.
+        match /purchases/{purchaseId} {
+          allow read: if isParent(uid);
+          allow create: if (isParent(uid) || isKid(uid, kidId)) && purchaseEntryOk(uid, kidId, purchaseId);
+          allow update, delete: if false;
         }
 
         match /sessions/{sessionId} {
