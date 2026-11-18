@@ -11,15 +11,17 @@ import { FracView, MathView } from '../ui/MathView';
 import { ChoiceButtons } from '../ui/early/ChoiceButtons';
 import { displayModeFor, type DisplayMode } from '../ui/early/displayMode';
 import { ObjectGroups } from '../ui/early/ObjectGroups';
-import { chime, softTone, tick, unlockSounds } from '../ui/early/sounds';
+import { chime, hit, softTone, tick, unlockSounds } from '../ui/early/sounds';
 import { TenFrame } from '../ui/early/TenFrame';
-import { speak, stopSpeaking, unlockSpeech } from '../ui/early/useSpeech';
+import { speak, stopSpeaking } from '../ui/early/useSpeech';
+import { SpeakButton } from '../ui/SpeakButton';
+import { goAction, wholeAllowed } from '../engine/fractionInput';
 import { UiIcon } from '../ui/sprites';
 import { reportFailure } from '../ui/failures';
 
 /**
  * The one place a question is shown and answered. It renders the problem, takes the input (keypad,
- * fraction fields or picture choices), times the answer, grades through `runner.answer()`, saves the card,
+ * fraction fields or picture choices), times the answer, grades through `runner.answerEntry()` (the same grading as `answer()`), saves the card,
  * and shows the feedback. A mode decides when it opens and what happens around it.
  *
  * The clock starts when the panel mounts (the question is visible), never earlier: a mode that lets the
@@ -69,7 +71,9 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
   const isFraction = entry.problem.answer.kind === 'mixed';
   const [intVal, setIntVal] = useState('');
   const [mixed, setMixed] = useState<Mixed>(EMPTY_MIXED);
-  const [field, setField] = useState<Field>(entry.problem.tokens.some((t) => t.t === 'frac' && t.w) ? 'w' : 'n');
+  // The Whole box shows only for a family whose answer can be a whole or mixed number.
+  const showWhole = isFraction && wholeAllowed(entry.cardId);
+  const [field, setField] = useState<Field>(showWhole && entry.problem.tokens.some((t) => t.t === 'frac' && t.w) ? 'w' : 'n');
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
   useImperativeHandle(handleRef, () => ({ stop() {} }), []);
@@ -96,8 +100,12 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
     const input: AnswerInput = isFraction
       ? { kind: 'mixed', value: { w: toNum(mixed.w), n: toNum(mixed.n), d: toNum(mixed.d) } }
       : { kind: 'int', value: toNum(intVal) };
-    const fb = runner.answer(input, ms);
+    // Graded by entry id: a mode that lets the kid pick the order (the Overworld) has no "current" entry. In a run that
+    // walks the queue in order, the entry is the current one, so this is the same grading as runner.answer().
+    const fb = runner.answerEntry(entry.id, input, ms);
     setFeedback(fb);
+    if (fb.verdict === 'correct') hit();
+    else softTone();
     const card = runner.getCard(entry.cardId);
     if (card) void repo.saveCards(kid.id, [card]).catch((e) => reportFailure('An answer was not saved.', e, () => repo.saveCards(kid.id, [card])));
     onAnswered?.(fb);
@@ -107,11 +115,20 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
   const onDigit = useCallback(
     (d: number) => {
       if (feedback) return;
+      unlockSounds();
       if (!isFraction) setIntVal((v) => (v.length >= 4 ? v : v === '0' ? String(d) : v + d));
       else setMixed((m) => ({ ...m, [field]: m[field].length >= 2 ? m[field] : m[field] + d }));
     },
     [feedback, isFraction, field],
   );
+
+  // GO on a fraction jumps to the next empty box first, and submits once Top and Bottom are filled.
+  const onGo = useCallback(() => {
+    if (!isFraction) return submit();
+    const step = goAction(mixed);
+    if (step.kind === 'field') setField(step.field);
+    else if (step.kind === 'submit') submit();
+  }, [isFraction, mixed, submit]);
 
   const onBack = useCallback(() => {
     if (feedback) return;
@@ -124,7 +141,10 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
     return (
       <div className="panel teach">
         <p className="pixel tag">New skill!</p>
-        <h2>{cardLabel(entry.cardId)}</h2>
+        <h2>
+          {cardLabel(entry.cardId)}
+          <SpeakButton text={`${cardLabel(entry.cardId)}. ${def.kind === 'skill' ? def.strategy : ''} Example: ${entry.problem.hint}`} />
+        </h2>
         {def.kind === 'skill' ? <p className="strategy">{def.strategy}</p> : null}
         <div className="example">
           <p className="muted">Example</p>
@@ -145,7 +165,7 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
     );
   }
 
-  const canSubmit = isFraction ? mixed.w !== '' || (mixed.n !== '' && mixed.d !== '') : intVal !== '';
+  const canSubmit = isFraction ? mixed.w !== '' || mixed.n !== '' || mixed.d !== '' : intVal !== '';
   const missed = !!feedback && feedback.verdict !== 'correct';
   // The kid's own answer, as typed, shown small and struck through next to the right one.
   const wasText = isFraction ? [mixed.w, mixed.n !== '' && mixed.d !== '' ? `${mixed.n}/${mixed.d}` : ''].filter(Boolean).join(' ') : intVal;
@@ -158,7 +178,7 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
     </span>
   ) : isFraction ? (
     <span className="mixed-entry">
-      <EntryBox value={mixed.w} active={field === 'w'} onClick={() => setField('w')} label="whole" big />
+      {showWhole ? <EntryBox value={mixed.w} active={field === 'w'} onClick={() => setField('w')} label="whole" big /> : null}
       <span className="frac">
         <EntryBox value={mixed.n} active={field === 'n'} onClick={() => setField('n')} label="top" />
         <span className="frac-line" />
@@ -181,9 +201,10 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
       <Keypad
         onDigit={onDigit}
         onBack={onBack}
-        onSubmit={submit}
+        onSubmit={onGo}
         canSubmit={canSubmit && !feedback}
         field={isFraction ? field : undefined}
+        fields={showWhole ? ['w', 'n', 'd'] : ['n', 'd']}
         onField={isFraction ? setField : undefined}
         disabled={!!feedback}
       />
@@ -213,7 +234,7 @@ function AnswerView({ problem }: { problem: Problem }) {
 
 function Bolt() {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="#fde047" stroke="#a16207" strokeWidth="1.5" aria-hidden="true">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="#fde047" stroke="#a16207" strokeWidth="1.5" aria-hidden="true">
       <path d="M13 2L4 14h7l-1 8 9-12h-7z" />
     </svg>
   );
@@ -237,17 +258,7 @@ function FeedbackView({ fb, onContinue }: { fb: Feedback; onContinue: () => void
       {fb.verdict === 'almost' ? <p>Best form: <strong>{fb.correctAnswer}</strong></p> : null}
       <p className="hint hint-big">
         <span>{fb.hint}</span>
-        <button
-          type="button"
-          className="icon-btn hint-speaker"
-          aria-label="Read it to me"
-          onClick={() => {
-            unlockSpeech();
-            void speak(fb.hint);
-          }}
-        >
-          <UiIcon name="speaker" size={36} />
-        </button>
+        <SpeakButton text={fb.hint} className="hint-speaker" />
       </p>
       <button type="button" className="btn btn-big" onClick={onContinue} autoFocus>
         Got it
@@ -351,7 +362,7 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
         return;
       }
       const ms = performance.now() - shownAt.current;
-      const fb = runner.answer({ kind: 'int', value }, ms, { peeked });
+      const fb = runner.answerEntry(entry.id, { kind: 'int', value }, ms, { peeked });
       setFeedback(fb);
       setPicked(value);
       const card = runner.getCard(entry.cardId);
@@ -405,7 +416,8 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
           <span>{numeral(b!)}</span>
           <span className="math-op">=</span>
           <span className="math-answer">{solved ? answer : '?'}</span>
-          {solved ? <span className="early-check"><UiIcon name="check" size={56} /></span> : null}
+          {solved ? <span className="early-check"><UiIcon name="check" size={72} /></span> : null}
+          {solved ? <span className="sparkles" aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <i key={i} style={{ ['--i' as string]: i }}><UiIcon name="sparkle" size={36} /></i>)}</span> : null}
         </div>
       </div>
 

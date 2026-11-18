@@ -8,7 +8,7 @@ import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
 import { RATE_MAX, VAULT_TERMS, maturesAtOf, owedOf, payoutOf, rateOf, vaultBalance, vaultOn, type VaultDeposit, type VaultTerm } from '../../game/vault';
-import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modulesOf, paceOf, shop2On, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
+import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modesOnOf, modulesOf, paceOf, shop2On, soundOf, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
@@ -753,6 +753,22 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onDelet
           <input type="checkbox" checked={shop2On(settings)} onChange={(e) => setSettings({ ...settings, shop2: e.target.checked })} />
           Item shop (weapons, gear, pets, adventure items, camp)
           <span className="hint">Fixed prices, no random rewards. Turn it on after every device has updated.</span>
+        </label>
+        {learnerOf(settings) === 'reader' ? (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={modesOnOf(settings).overworld}
+              onChange={(e) => setSettings({ ...settings, modes: { ...settings.modes, overworld: e.target.checked } })}
+            />
+            Game modes: Adventure (walk a map, meet monsters and chests, fight a boss)
+            <span className="hint">The Dungeon run stays. Adventure adds a second choice on Home. Questions come from the same review schedule.</span>
+          </label>
+        ) : null}
+        <label className="check">
+          <input type="checkbox" checked={soundOf(settings)} onChange={(e) => setSettings({ ...settings, sound: e.target.checked })} />
+          Sound effects
+          <span className="hint">On by default. The player can also mute from the top bar of a round.</span>
         </label>
         <label className="check">
           <input type="checkbox" checked={vaultOn(settings)} data-testid="setting-vault" onChange={(e) => setSettings({ ...settings, vault: { ...settings.vault, on: e.target.checked } })} />

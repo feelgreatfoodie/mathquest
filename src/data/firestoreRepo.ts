@@ -19,6 +19,8 @@ import {
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import type { WorldState } from '../game/overworld/worldState';
+import type { GameModeId } from '../game/modes/types';
 import { newId, type Repo } from './repo';
 
 const BATCH_MAX = 450;
@@ -30,6 +32,7 @@ const BATCH_MAX = 450;
  *   families/{uid}/kids/{kidId}/cards/{cardId}
  *   families/{uid}/kids/{kidId}/sessions/{sessionId}
  *   families/{uid}/kids/{kidId}/purchases/{purchaseId}   (parent reads; written only with a game change)
+ *   families/{uid}/kids/{kidId}/world/main              (the Overworld save; the kid and the parent read and write it)
  *   families/{uid}/kids/{kidId}/vault/{depositId}        (a deposit; created only with the gems it takes, paid only with the gems it gives)
  * Firestore's persistent cache makes every write work offline and sync later.
  */
@@ -235,6 +238,23 @@ export class FirestoreRepo implements Repo {
   async listSessions(kidId: string, max: number): Promise<SessionLog[]> {
     const snap = await getDocs(query(this.sessions(kidId), orderBy('startedAt', 'desc'), limit(max)));
     return snap.docs.map((d) => d.data() as SessionLog);
+  }
+
+  async loadWorld(kidId: string): Promise<WorldState | null> {
+    const snap = await getDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'main'));
+    return snap.exists() ? (snap.data() as WorldState) : null;
+  }
+
+  async saveWorld(kidId: string, world: WorldState): Promise<void> {
+    await setDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'main'), world);
+  }
+
+  async setWorldLastMode(kidId: string, mode: GameModeId): Promise<void> {
+    try {
+      await updateDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'main'), { lastMode: mode });
+    } catch {
+      // No world doc yet (not-found): the pick stays on the device. Any other failure is a convenience that never blocks play.
+    }
   }
 }
 

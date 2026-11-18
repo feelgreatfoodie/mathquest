@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GEM_RUN_MAX, earnedTodayOf, gemFullRateOf, gemSpeedOf, gemTier, gemsForRun, type GemRunStats } from './gems';
+import { GEM_RUN_MAX, earnedTodayOf, gemFullRateOf, gemSpeedOf, gemTier, gemsForRun, throttledGems, type GemRunStats } from './gems';
 import { DEFAULT_GAME } from './models';
 
 // Every number here is made up. The throttle rule: full rate below the threshold, half from the threshold to
@@ -129,5 +129,16 @@ describe('earnedTodayOf', () => {
     expect(earnedTodayOf({ ...DEFAULT_GAME, gemsEarnedToday: 17, gemsDay: key }, T)).toBe(17);
     expect(earnedTodayOf({ ...DEFAULT_GAME, gemsEarnedToday: 17, gemsDay: '2026-11-16' }, T)).toBe(0);
     expect(earnedTodayOf(DEFAULT_GAME, T)).toBe(0);
+  });
+});
+
+describe('throttledGems: one function for every gem source', () => {
+  it('a boss of 10 pays 10, 5, 2 across the tiers; a chest of 1 always pays at least 1', () => {
+    expect([0, 25, 50].map((e) => throttledGems(10, 'reader', {}, e))).toEqual([10, 5, 2]);
+    expect([0, 25, 50].map((e) => throttledGems(1, 'reader', {}, e))).toEqual([1, 1, 1]);
+  });
+  it('a run goes through it: same answer as gemsForRun', () => {
+    const s = { correct: 27, graded: 30, bestCombo: 8, newLearned: 0 };
+    expect(gemsForRun(s, 'reader', {}, 30)).toBe(throttledGems(9, 'reader', {}, 30));
   });
 });

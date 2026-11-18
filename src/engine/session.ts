@@ -247,6 +247,16 @@ export class SessionRunner {
     this.retryGap = learnerParams(learnerOf(settings)).retryGap;
     this.cards = { ...cards };
     this.baseline = factBaseline(cards);
+    this.append(plan, rng);
+  }
+
+  /**
+   * Adds entries after the existing ones, from plan items, with fresh ids. The constructor builds the plan this way,
+   * and a mode that adds a question mid-run (the Overworld boss fight) does the same. Teach and graded entries are built
+   * exactly as for a plan.
+   */
+  append(plan: PlanItem[], rng: Rng = this.rng): Entry[] {
+    const before = this.queue.length;
     for (const item of plan) {
       const def = getCardDef(item.cardId);
       if (!def) continue;
@@ -260,6 +270,7 @@ export class SessionRunner {
         this.queue.push({ id: this.mintId(), cardId: item.cardId, kind: 'graded', isNew: item.isNew, ...(item.preview ? { preview: true } : {}), problem });
       }
     }
+    return this.queue.slice(before);
   }
 
   private mintId(): string {

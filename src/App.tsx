@@ -19,6 +19,7 @@ import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
 import { ParentArea, Setup } from './ui/screens/Parent';
 import { Run } from './ui/screens/Run';
+import type { GameModeId } from './game/modes/types';
 
 type Screen =
   | { name: 'boot' }
@@ -28,7 +29,7 @@ type Screen =
   | { name: 'setup' }
   | { name: 'picker' }
   | { name: 'home'; kidId: string }
-  | { name: 'run'; kidId: string; key: number }
+  | { name: 'run'; kidId: string; key: number; mode?: GameModeId }
   | { name: 'summary'; kidId: string; summary: RunSummary; info: RunInfo }
   | { name: 'pin' }
   | { name: 'parent' };
@@ -164,12 +165,12 @@ export function App() {
   }, [repo]);
 
   const startRun = useCallback(
-    async (kidId: string) => {
+    async (kidId: string, mode?: GameModeId) => {
       if (guard) {
         await guard.refresh();
         if (guard.stale) return; // the update screen is already showing
       }
-      setScreen({ name: 'run', kidId, key: Date.now() });
+      setScreen({ name: 'run', kidId, key: Date.now(), ...(mode ? { mode } : {}) });
     },
     [guard],
   );
@@ -329,7 +330,8 @@ export function App() {
           kid={kid}
           vault={vaultFor(kid.id)}
           onGame={(d) => applyGame(kid.id, d)}
-          onStart={() => void startRun(kid.id)}
+          repo={repo}
+          onStart={(mode) => void startRun(kid.id, mode)}
           onBack={() => (kidSession ? void signOutParent() : setScreen({ name: 'picker' }))}
         />
       ) : null;
@@ -337,6 +339,7 @@ export function App() {
       return kid ? (
         <Run
           key={screen.key}
+          {...(screen.mode ? { mode: screen.mode } : {})}
           repo={repo}
           kid={kid}
           onExit={() => setScreen({ name: 'home', kidId: kid.id })}

@@ -12,6 +12,8 @@ interface KeypadProps {
   /** Fraction mode shows the Whole / Top / Bottom selector. */
   field?: Field;
   onField?: (f: Field) => void;
+  /** The boxes to offer, in order. Defaults to all three; a family that never gives a whole number drops 'w'. */
+  fields?: Field[];
   disabled?: boolean;
 }
 
@@ -30,7 +32,7 @@ function closeKeyboard() {
   if (a instanceof HTMLInputElement || a instanceof HTMLTextAreaElement) a.blur();
 }
 
-export function Keypad({ onDigit, onBack, onSubmit, canSubmit = false, showGo = true, field, onField, disabled }: KeypadProps) {
+export function Keypad({ onDigit, onBack, onSubmit, canSubmit = false, showGo = true, field, onField, fields = ['w', 'n', 'd'], disabled }: KeypadProps) {
   const tapDigit = (d: number) => {
     closeKeyboard();
     onDigit(d);
@@ -44,19 +46,18 @@ export function Keypad({ onDigit, onBack, onSubmit, canSubmit = false, showGo = 
       else if (e.key === 'Enter' && showGo && canSubmit) onSubmit?.();
       else if (field && onField && (e.key === 'Tab' || e.key === '/' || e.key === ' ')) {
         e.preventDefault();
-        const order: Field[] = ['w', 'n', 'd'];
-        onField(order[(order.indexOf(field) + 1) % 3]!);
+        onField(fields[(fields.indexOf(field) + 1) % fields.length]!);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onDigit, onBack, onSubmit, canSubmit, showGo, field, onField, disabled]);
+  }, [onDigit, onBack, onSubmit, canSubmit, showGo, field, onField, fields, disabled]);
 
   return (
     <div className="keypad-wrap">
       {field && onField ? (
         <div className="field-row" role="group" aria-label="Which part are you typing?">
-          {(['w', 'n', 'd'] as Field[]).map((f) => (
+          {fields.map((f) => (
             <button
               key={f}
               type="button"

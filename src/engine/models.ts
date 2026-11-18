@@ -73,6 +73,14 @@ export interface KidSettings {
    * Read it through `modulesOf`. `tracks` is still written for old clients.
    */
   modules?: Partial<Record<ModuleId, boolean>>;
+  /**
+   * Which game modes the kid can pick. Only a parent writes it. Optional on stored docs: a missing value gives a reader
+   * the Dungeon run and a pre-reader the picture run, and the Overworld stays off until it is set to true. Read it
+   * through `modesOnOf`. The kid's last pick lives on the device (`lastMode.ts`), because a kid token cannot write settings.
+   */
+  modes?: Partial<Record<'dungeon' | 'prereader' | 'overworld', boolean>>;
+  /** Sound effects: on unless this is false. A missing value reads as on. Read it through `soundOf`. */
+  sound?: boolean;
 }
 
 export type Learner = 'prereader' | 'reader';
@@ -212,6 +220,22 @@ export const PRESETS: Record<Learner, KidSettings> = {
 
 export function shop2On(settings: { shop2?: boolean } | undefined | null): boolean {
   return settings?.shop2 === true;
+}
+
+/** Sound effects are on unless a parent turned them off for this kid. */
+export function soundOf(settings: { sound?: boolean } | undefined | null): boolean {
+  return settings?.sound !== false;
+}
+
+/**
+ * Which game modes are on. A pre-reader has the picture run only. A reader has the Dungeon unless `modes.dungeon` is
+ * false and the Overworld is on; the Overworld is on only when `modes.overworld` is exactly true. Old docs read as before.
+ */
+export function modesOnOf(settings: Pick<KidSettings, 'modes' | 'learner'> | undefined | null): Record<'dungeon' | 'prereader' | 'overworld', boolean> {
+  if (settings?.learner === 'prereader') return { dungeon: false, prereader: true, overworld: false };
+  const overworld = settings?.modes?.overworld === true;
+  const dungeon = settings?.modes?.dungeon !== false || !overworld;
+  return { dungeon, prereader: false, overworld };
 }
 
 export function learnerOf(settings: { learner?: Learner } | undefined | null): Learner {

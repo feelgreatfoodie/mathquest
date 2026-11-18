@@ -5,6 +5,8 @@ import type { Feedback, SessionRunner } from '../../engine/session';
 import { finishRun } from '../../ui/finishRun';
 import { loadRunner } from '../../ui/runShared';
 import { HoldButton } from '../../ui/early/HoldButton';
+import { defeat } from '../../ui/early/sounds';
+import { MuteButton, useMute } from '../../ui/MuteButton';
 import { MONSTERS, Sprite, UiIcon } from '../../ui/sprites';
 import { QuestionPanel } from '../QuestionPanel';
 import type { GameModeProps } from './types';
@@ -22,6 +24,7 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [hits, setHits] = useState(0);
   const [shake, setShake] = useState(false);
+  const mute = useMute(kid);
 
   const rerender = () => setTick((t) => t + 1);
 
@@ -62,7 +65,10 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
     const before = Math.floor(r.position / BLOCK);
     r.advance();
     setFeedback(null);
-    if (Math.floor(r.position / BLOCK) !== before) setHits(0);
+    if (Math.floor(r.position / BLOCK) !== before) {
+      setHits(0);
+      defeat(); // the monster of the block is down
+    }
     if (r.done()) void finish();
     else rerender();
   }, [finish]);
@@ -111,6 +117,7 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
     runner.position >= runner.length - BLOCK ? 'boss' : MONSTERS[Math.floor(runner.position / BLOCK) % MONSTERS.length]!;
   const progress = runner.progress();
   const hp = Math.max(0, 1 - hits / BLOCK);
+  const combo = feedback?.combo ?? 0;
   const panel = (
     <QuestionPanel
       key={entry.id}
@@ -128,7 +135,7 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
   if (entry.kind === 'teach') {
     return (
       <div className="screen run">
-        <RunTop progress={progress} combo={0} onQuit={finish} />
+        <RunTop progress={progress} mute={mute} onQuit={finish} />
         {panel}
       </div>
     );
@@ -136,10 +143,12 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
 
   return (
     <div className="screen run">
-      <RunTop progress={progress} combo={feedback?.combo ?? 0} onQuit={finish} />
+      <RunTop progress={progress} mute={mute} onQuit={finish} />
       <div className="arena">
-        <HeroFigure game={kid.game} size={110} className="hero-sprite" strike={feedback?.verdict === 'correct'} cheer={feedback?.verdict === 'correct' && (feedback?.combo ?? 0) >= 5} />
+        <HeroFigure game={kid.game} size={110} className={`hero-sprite ${feedback?.verdict === 'correct' ? 'lunge' : ''}`} strike={feedback?.verdict === 'correct'} cheer={feedback?.verdict === 'correct' && (feedback?.combo ?? 0) >= 5} />
         <div className={`monster ${shake ? 'shake' : ''} ${feedback?.verdict === 'correct' ? 'hit' : ''}`}>
+          {combo >= 3 ? <span className="combo-badge pixel" key={combo} aria-label={`Combo ${combo}`}>×{combo}</span> : null}
+          {feedback?.verdict === 'correct' ? <span className="star-burst" key={`b${entry.id}`} aria-hidden="true">{[0, 1, 2, 3, 4, 5].map((i) => <i key={i} style={{ ['--a' as string]: `${i * 60}deg` }} />)}</span> : null}
           <div className="hp"><div className="hp-fill" style={{ width: `${hp * 100}%` }} /></div>
           <Sprite name={monster} size={monster === 'boss' ? 150 : 120} />
         </div>
@@ -149,14 +158,14 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
   );
 }
 
-function RunTop({ progress, combo, onQuit }: { progress: number; combo: number; onQuit: () => void }) {
+function RunTop({ progress, mute, onQuit }: { progress: number; mute: ReturnType<typeof useMute>; onQuit: () => void }) {
   return (
     <div className="run-top">
       <HoldButton onHold={onQuit}><UiIcon name="house" size={44} /></HoldButton>
       <div className="progress" aria-label={`${Math.round(progress * 100)}% through the dungeon`}>
         <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
       </div>
-      <span className={`combo pixel ${combo >= 3 ? 'is-hot' : ''}`}>{combo >= 3 ? `Combo ×${combo}` : ''}</span>
+      <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} />
     </div>
   );
 }
