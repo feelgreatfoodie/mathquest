@@ -7,7 +7,7 @@ import {
 import { chime } from './early/sounds';
 import { speak } from './early/useSpeech';
 import { UiIcon } from './sprites';
-import type { VaultApi } from './vaultApi';
+import { useResume, type VaultApi } from './vaultApi';
 
 interface Props {
   kid: Kid;
@@ -55,6 +55,7 @@ export function ReaderVault({ kid, vault, deposits, refresh }: Props) {
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const { shower, fire } = useShower();
+  useResume(vault, deposits, refresh);
   const gems = kid.game.gems;
   const active = activeCount(deposits);
   const rate = rateOf(kid.settings, term);
@@ -88,7 +89,7 @@ export function ReaderVault({ kid, vault, deposits, refresh }: Props) {
       setBreaking(null);
       const r = await vault.pay(d.id, mode);
       if (r === 'done') {
-        if (mode === 'collect' || d.status === 'collected') {
+        if (mode === 'collect') {
           fire();
           chime();
           setNote(`Your ${d.amount} gems grew to ${d.amount + d.bonus}!`);
@@ -121,7 +122,7 @@ export function ReaderVault({ kid, vault, deposits, refresh }: Props) {
                   <button type="button" className="btn btn-small btn-ghost shop-btn-48" onClick={() => setBreaking(null)}>Keep saving</button>
                 </span>
               ) : closed ? (
-                <button type="button" className="btn btn-small shop-btn-48" disabled={busy} onClick={() => void doPay(d, d.status === 'broken' ? 'break' : 'collect')}>Finish</button>
+                <button type="button" className="btn btn-small shop-btn-48" disabled={busy} onClick={() => void doPay(d, d.status === 'breaking' ? 'break' : 'collect')}>Finish</button>
               ) : (
                 <span className="row">
                   <button type="button" className="btn btn-small shop-btn-48 vault-collect" disabled={busy} onClick={() => void doPay(d, 'collect')}>Collect {d.amount + d.bonus}</button>
@@ -178,6 +179,7 @@ export function PrereaderVault({ kid, vault, deposits, refresh }: Props) {
   const [step, setStep] = useState<PreStep | null>(null);
   const [busy, setBusy] = useState(false);
   const { shower, fire } = useShower();
+  useResume(vault, deposits, refresh);
   const rate = rateOf(kid.settings, PREREADER_TERM);
   const bonus = bonusFor(PREREADER_AMOUNT, rate);
   const gems = kid.game.gems;
@@ -198,7 +200,7 @@ export function PrereaderVault({ kid, vault, deposits, refresh }: Props) {
 
   const collect = (d: VaultDeposit) =>
     run(async () => {
-      const r = await vault.pay(d.id, d.status === 'broken' ? 'break' : 'collect');
+      const r = await vault.pay(d.id, d.status === 'breaking' ? 'break' : 'collect');
       if (r === 'done') {
         fire();
         chime();

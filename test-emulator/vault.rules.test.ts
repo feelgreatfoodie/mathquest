@@ -6,7 +6,7 @@ import { DAY, FAM, GAME, KID, SETTINGS, deposit, kidDb, kidRef, newEnv, parentDb
 
 // The vault rules. A deposit is the one write that lowers gems without a purchase: gems drop by `amount`, the kid's
 // vault map gains one active entry named lastId, and the deposit doc is created in the same write. A payout rises gems
-// by `chunk` (at most 10, the kid-write raise bound) while the deposit's `paid` rises by the same `chunk`. Time checks
+// by `chunk` (at most 10, the kid-write raise bound) while the deposit's `paidOut` rises by the same `chunk`. Time checks
 // read request.time and the server's createdAt. Every name, id and number is made up.
 let env: RulesTestEnvironment;
 beforeAll(async () => {
@@ -21,7 +21,7 @@ describe('a deposit', () => {
   it('kid: 50 gems for 7 days, bonus 15, creates the doc and lowers gems by 50', async () => {
     await assertSucceeds(deposit(kidDb(env), { id: 'd1', amount: 50, termDays: 7 }));
     const d = await storedDeposit(env, 'd1');
-    expect(d).toMatchObject({ amount: 50, termDays: 7, ratePer10: 3, bonus: 15, status: 'active', paid: 0 });
+    expect(d).toMatchObject({ amount: 50, termDays: 7, ratePer10: 3, bonus: 15, status: 'active', paidOut: 0 });
     expect((await stored(env)).game.gems).toBe(150);
     expect((await stored(env)).vault).toEqual({ active: 1, lastId: 'd1' });
   });
@@ -81,14 +81,14 @@ describe('a deposit', () => {
   it('a deposit that also buys or adds a hero is denied', async () => {
     await assertFails(deposit(kidDb(env), { id: 'd1', amount: 50, termDays: 7 }, { game: { heroes: ['knight', 'wizard'] } }));
   });
-  it('a deposit written with a status other than active, or with paid above 0, is denied', async () => {
+  it('a deposit written with a status other than active, or with paidOut above 0, is denied', async () => {
     await assertFails(deposit(kidDb(env), { id: 'd1', amount: 50, termDays: 7 }, { doc: { status: 'collected' } }));
-    await assertFails(deposit(kidDb(env), { id: 'd1', amount: 50, termDays: 7 }, { doc: { paid: 10 } }));
+    await assertFails(deposit(kidDb(env), { id: 'd1', amount: 50, termDays: 7 }, { doc: { paidOut: 10 } }));
   });
   it('another kid, or a stranger, cannot create into this kid vault', async () => {
     const other = env.authenticatedContext('kid_other', { role: 'kid', familyUid: FAM, kidId: 'other' }).firestore();
     const b = writeBatch(other);
-    b.set(vaultRef(other, 'd1'), { id: 'd1', amount: 50, termDays: 7, ratePer10: 3, bonus: 15, status: 'active', paid: 0 });
+    b.set(vaultRef(other, 'd1'), { id: 'd1', amount: 50, termDays: 7, ratePer10: 3, bonus: 15, status: 'active', paidOut: 0 });
     await assertFails(b.commit());
   });
   it('nobody deletes a deposit, and the parent can read the history', async () => {
@@ -107,39 +107,39 @@ describe('collecting a matured deposit (paid out 10 gems a write)', () => {
   });
   it('after the term the first chunk closes the deposit and pays 10; the 65 arrive in 7 writes and no more', async () => {
     const db = kidDb(env);
-    await assertSucceeds(payChunk(db, 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }));
-    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'collected', paid: 10 });
+    await assertSucceeds(payChunk(db, 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }));
+    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'collecting', paidOut: 10 });
     expect((await stored(env)).vault).toEqual({ active: 0, lastId: 'd1', closedId: 'd1' });
     let gems = 110;
     let paid = 10;
     for (const chunk of [10, 10, 10, 10, 10, 5]) {
-      await assertSucceeds(payChunk(db, 'd1', { gemsBefore: gems, chunk, paidBefore: paid }));
+      await assertSucceeds(payChunk(db, 'd1', { gemsBefore: gems, chunk, paidBefore: paid, ...(paid + chunk === 65 ? { final: 'collected' as const } : {}) }));
       gems += chunk;
       paid += chunk;
     }
     expect(gems).toBe(165);
     expect((await stored(env)).game.gems).toBe(165);
-    expect(await storedDeposit(env, 'd1')).toMatchObject({ paid: 65, status: 'collected' });
+    expect(await storedDeposit(env, 'd1')).toMatchObject({ paidOut: 65, status: 'collected' });
     // Paid in full: a 66th gem is refused.
-    await assertFails(payChunk(db, 'd1', { gemsBefore: 165, chunk: 1, paidBefore: 65 }));
+    await assertFails(payChunk(db, 'd1', { gemsBefore: 165, chunk: 1, paidBefore: 65, final: 'collected' }));
   });
   it('a chunk above 10 gems is denied (the kid-write raise bound), even for a matured deposit', async () => {
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 11, close: 'collected', activeBefore: 1 }));
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 65, close: 'collected', activeBefore: 1 }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 11, close: 'collecting', activeBefore: 1 }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 65, close: 'collecting', activeBefore: 1 }));
   });
   it('gems that rise by more or less than `paid` rises are denied', async () => {
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }, { game: { gems: 112 } }));
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }, { game: { gems: 105 } }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }, { game: { gems: 112 } }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }, { game: { gems: 105 } }));
   });
   it('paid rising with no gem rise (a free marker) is denied; a gem rise of 10 with no vault doc change is the old unbacked rise and stays within the cap', async () => {
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }, { game: { gems: 100 } }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }, { game: { gems: 100 } }));
   });
   it('a payout above amount + bonus is denied', async () => {
-    await assertSucceeds(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }));
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 110, chunk: 10, paidBefore: 10 }, { doc: { paid: 80 } }));
+    await assertSucceeds(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 110, chunk: 10, paidBefore: 10 }, { doc: { paidOut: 80 } }));
   });
   it('a collected deposit cannot be edited into broken, back to active, or change its amount or bonus', async () => {
-    await assertSucceeds(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }));
+    await assertSucceeds(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }));
     await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 110, chunk: 10, paidBefore: 10 }, { doc: { status: 'active' } }));
     await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 110, chunk: 10, paidBefore: 10 }, { doc: { status: 'broken' } }));
     await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 110, chunk: 10, paidBefore: 10 }, { doc: { bonus: 99 } }));
@@ -147,11 +147,11 @@ describe('collecting a matured deposit (paid out 10 gems a write)', () => {
     await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 110, chunk: 10, paidBefore: 10 }, { doc: { createdAt: new Date(0) } }));
   });
   it('closing without moving the kid vault pointer (active stays 1), or closing the wrong id, is denied', async () => {
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected' }, { vault: { active: 1, lastId: 'd1', closedId: 'd1' } }));
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected' }, { vault: { active: 0, lastId: 'd1', closedId: 'zz' } }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting' }, { vault: { active: 1, lastId: 'd1', closedId: 'd1' } }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting' }, { vault: { active: 0, lastId: 'd1', closedId: 'zz' } }));
   });
   it('collectedAt that is not the server time is denied', async () => {
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }, { doc: { collectedAt: new Date(0) } }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }, { doc: { collectedAt: new Date(0) } }));
   });
 });
 
@@ -165,15 +165,15 @@ describe('collecting early, with the client clock set forward', () => {
     const repo = new FirestoreRepo(kidDb(env), FAM);
     await expect(repo.vaultPay(KID, 'd1', 'collect')).rejects.toBeTruthy();
     vi.useRealTimers();
-    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'active', paid: 0 });
+    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'active', paidOut: 0 });
     expect((await stored(env)).game.gems).toBe(100);
     expect((await stored(env)).vault).toEqual({ active: 1, lastId: 'd1' });
   });
   it('a raw early collect write stamped with a forward client time is refused', async () => {
     await seed(env, { deposits: [{ ...D, ageDays: 2 }], game: { ...GAME, gems: 100 } });
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 30 * DAY });
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }, { doc: { collectedAt: new Date(Date.now()) } }));
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }, { doc: { collectedAt: new Date(Date.now()) } }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }));
   });
   it('a deposit written while the clock is forward still matures from the server stamp: collect right after is refused', async () => {
     vi.useFakeTimers({ toFake: ['Date'], now: Date.now() + 30 * DAY });
@@ -182,14 +182,14 @@ describe('collecting early, with the client clock set forward', () => {
     const id = (await stored(env)).vault!.lastId as string;
     await expect(repo.vaultPay(KID, id, 'collect')).rejects.toBeTruthy();
     vi.useRealTimers();
-    expect(await storedDeposit(env, id)).toMatchObject({ status: 'active', paid: 0 });
+    expect(await storedDeposit(env, id)).toMatchObject({ status: 'active', paidOut: 0 });
     expect((await stored(env)).game.gems).toBe(150);
   });
   it('one day before the end of the term is still early; a server-stamped 7 days ago is on time', async () => {
     await seed(env, { deposits: [{ ...D, ageDays: 6.9 }], game: { ...GAME, gems: 100 } });
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }));
     await seed(env, { deposits: [{ ...D, ageDays: 7.01 }], game: { ...GAME, gems: 100 } });
-    await assertSucceeds(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }));
+    await assertSucceeds(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }));
   });
 });
 
@@ -200,33 +200,36 @@ describe('breaking early returns the amount and drops the bonus', () => {
   });
   it('is allowed before maturity: 50 comes back in 5 writes of 10, never 51', async () => {
     const db = kidDb(env);
-    await assertSucceeds(payChunk(db, 'd1', { gemsBefore: 100, chunk: 10, close: 'broken', activeBefore: 1 }));
+    await assertSucceeds(payChunk(db, 'd1', { gemsBefore: 100, chunk: 10, close: 'breaking', activeBefore: 1 }));
     let gems = 110;
     for (let paid = 10; paid < 50; paid += 10) {
-      await assertSucceeds(payChunk(db, 'd1', { gemsBefore: gems, chunk: 10, paidBefore: paid }));
+      await assertSucceeds(payChunk(db, 'd1', { gemsBefore: gems, chunk: 10, paidBefore: paid, ...(paid === 40 ? { final: 'broken' as const } : {}) }));
       gems += 10;
     }
     expect(gems).toBe(150);
-    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'broken', paid: 50 });
-    await assertFails(payChunk(db, 'd1', { gemsBefore: 150, chunk: 1, paidBefore: 50 }));
+    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'broken', paidOut: 50 });
+    await assertFails(payChunk(db, 'd1', { gemsBefore: 150, chunk: 1, paidBefore: 50, final: 'broken' }));
   });
-  it('a broken deposit cannot be paid the bonus afterwards (paid above the amount is denied)', async () => {
+  it('a breaking deposit cannot be paid past the amount, and cannot turn into a collect', async () => {
+    await seed(env, { deposits: [{ ...D, status: 'breaking', paidOut: 40, ageDays: 8 }], game: { ...GAME, gems: 100 }, vault: { active: 0, lastId: 'd1', closedId: 'd1' } });
     const db = kidDb(env);
-    await assertSucceeds(payChunk(db, 'd1', { gemsBefore: 100, chunk: 10, close: 'broken', activeBefore: 1 }));
-    await assertFails(payChunk(db, 'd1', { gemsBefore: 110, chunk: 10, paidBefore: 50 }, { doc: { paid: 60 } }));
+    await assertFails(payChunk(db, 'd1', { gemsBefore: 100, chunk: 10, paidBefore: 40 })); // 50 reached but status not broken
+    await assertFails(payChunk(db, 'd1', { gemsBefore: 100, chunk: 10, paidBefore: 40, final: 'collected' }));
+    await assertFails(payChunk(db, 'd1', { gemsBefore: 100, chunk: 10, paidBefore: 40 }, { doc: { status: 'collecting' } }));
+    await assertSucceeds(payChunk(db, 'd1', { gemsBefore: 100, chunk: 10, paidBefore: 40, final: 'broken' }));
   });
   it('a break that pays more than the amount in its first write (chunk above 10) is denied', async () => {
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 50, close: 'broken', activeBefore: 1 }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 50, close: 'breaking', activeBefore: 1 }));
   });
   it('a break written as `collected` before maturity (to take the bonus) is denied', async () => {
-    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collected', activeBefore: 1 }));
+    await assertFails(payChunk(kidDb(env), 'd1', { gemsBefore: 100, chunk: 10, close: 'collecting', activeBefore: 1 }));
   });
   it('the repo breaks an unmatured deposit and the 50 gems come back in full', async () => {
     const repo = new FirestoreRepo(kidDb(env), FAM);
     let r = await repo.vaultPay(KID, 'd1', 'break');
     while (!r.done) r = await repo.vaultPay(KID, 'd1', 'break');
     expect((await stored(env)).game.gems).toBe(150);
-    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'broken', paid: 50 });
+    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'broken', paidOut: 50 });
   });
   it('after maturity the repo collects 65', async () => {
     await seed(env, { deposits: [{ ...D, ageDays: 8 }], game: { ...GAME, gems: 100 } });
@@ -234,7 +237,7 @@ describe('breaking early returns the amount and drops the bonus', () => {
     let r = await repo.vaultPay(KID, 'd1', 'collect');
     while (!r.done) r = await repo.vaultPay(KID, 'd1', 'collect');
     expect((await stored(env)).game.gems).toBe(165);
-    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'collected', paid: 65 });
+    expect(await storedDeposit(env, 'd1')).toMatchObject({ status: 'collected', paidOut: 65 });
   });
 });
 
@@ -248,7 +251,7 @@ describe('no unbacked gem movement through the vault', () => {
     const db = kidDb(env);
     const b = writeBatch(db);
     b.update(kidRef(db), { game: { ...GAME, gems: 150 }, vault: { active: 1, lastId: 'd1' }, inventory: { items: ['w-bow'] } });
-    b.set(vaultRef(db, 'd1'), { id: 'd1', amount: 50, termDays: 7, ratePer10: 3, bonus: 15, status: 'active', paid: 0 });
+    b.set(vaultRef(db, 'd1'), { id: 'd1', amount: 50, termDays: 7, ratePer10: 3, bonus: 15, status: 'active', paidOut: 0 });
     await assertFails(b.commit());
   });
   it('a kid cannot write the vault map alone (no deposit, no close)', async () => {

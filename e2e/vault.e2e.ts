@@ -18,7 +18,7 @@ if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const DAY = 86_400_000;
 
-interface Dep { id: string; amount: number; termDays: 3 | 7 | 14; ratePer10: number; bonus: number; ageDays: number }
+interface Dep { id: string; amount: number; termDays: 3 | 7 | 14; ratePer10: number; bonus: number; ageDays: number; status?: 'collecting' | 'breaking'; paidOut?: number }
 
 async function seed(page: Page, opts: { learner?: 'prereader' | 'reader'; vault?: boolean; gems?: number; deposits?: Dep[] } = {}) {
   const learner = opts.learner ?? 'reader';
@@ -27,8 +27,8 @@ async function seed(page: Page, opts: { learner?: 'prereader' | 'reader'; vault?
     learner === 'prereader'
       ? { shop2: true, vault: { on: vault }, learner: 'prereader', modules: { add10: true }, tracks: { facts: false, multidigit: false, fractions: false }, sessionSize: 10, maxNew: 4, factGroupsUnlocked: 1, paceMultiplier: 3 }
       : { shop2: true, vault: { on: vault }, tracks: { facts: true, multidigit: true, fractions: true }, sessionSize: 30, maxNew: 8, factGroupsUnlocked: 1, paceMultiplier: 3 };
-  const deposits = (opts.deposits ?? []).map(({ ageDays, ...d }) => ({ ...d, status: 'active', paid: 0, createdAt: Date.now() - ageDays * DAY }));
-  const active = deposits.length;
+  const deposits = (opts.deposits ?? []).map(({ ageDays, ...d }) => ({ ...d, status: d.status ?? 'active', paidOut: d.paidOut ?? 0, createdAt: Date.now() - ageDays * DAY }));
+  const active = deposits.filter((d) => d.status === 'active').length;
   await page.addInitScript(
     ({ kidId, name, settings, pinHash, gems, deposits, active }) => {
       const w = window as unknown as Record<string, unknown>;
@@ -135,7 +135,7 @@ test('reader: deposit 50 for 7 days, see the 65 it returns, break early and get 
   await shot(page, 'reader-vault-break-confirm');
   await page.getByRole('button', { name: 'Break it' }).click();
   await expect.poll(async () => (await storedKid(page)).game.gems).toBe(100);
-  expect(await storedVault(page)).toMatchObject([{ status: 'broken', paid: 50 }]);
+  expect(await storedVault(page)).toMatchObject([{ status: 'broken', paidOut: 50 }]);
   expect((await storedKid(page)).vault).toMatchObject({ active: 0 });
 });
 
@@ -154,7 +154,7 @@ test('reader: a matured deposit glows on Home, collects 65 with the coin shower,
   await expect(page.getByTestId('coin-shower')).toBeVisible();
   await shot(page, 'reader-vault-coin-shower');
   await expect.poll(async () => (await storedKid(page)).game.gems).toBe(105);
-  expect(await storedVault(page)).toMatchObject([{ id: 'dep-ready', status: 'collected', paid: 65 }, { id: 'dep-grow', status: 'active' }]);
+  expect(await storedVault(page)).toMatchObject([{ id: 'dep-ready', status: 'collected', paidOut: 65 }, { id: 'dep-grow', status: 'active' }]);
   await expect(page.getByTestId('vault-note')).toContainText('Your 50 gems grew to 65!');
   await expect.poll(async () => (await spoken(page)).includes('Your 50 gems grew to 65!')).toBe(true);
 });
@@ -246,4 +246,22 @@ test('parent: turn the vault on, edit a rate, see the history and the vault bala
   await expect(page.getByTestId('parent-vault-balance')).toContainText('50');
   await expect(page.getByTestId('vault-history')).toContainText('50 gems for 7 days at 3 per 10');
   await shot(page, 'parent-vault-history');
+});
+
+test('reader: a collect interrupted after 30 of 65 resumes when the vault opens and pays the other 35 once', async ({ page }) => {
+  await seed(page, { gems: 130, deposits: [{ ...READY, status: 'collecting', paidOut: 30 }] });
+  await page.goto('/');
+  await page.locator('.kid-card', { hasText: KID_NAME }).click();
+  await expect(page.getByTestId('home-vault-ready')).toBeVisible();
+  await page.getByTestId('home-vault-ready').click();
+  await expect(page.getByTestId('vault')).toBeVisible();
+  await expect.poll(async () => (await storedKid(page)).game.gems).toBe(165);
+  expect(await storedVault(page)).toMatchObject([{ id: 'dep-ready', status: 'collected', paidOut: 65 }]);
+  // Open it again: nothing more is paid.
+  await page.reload();
+  await page.locator('.kid-card', { hasText: KID_NAME }).click();
+  await page.getByRole('button', { name: 'Shop', exact: true }).click();
+  await page.locator('[data-tab="vault"]').click();
+  await expect(page.getByTestId('vault')).toBeVisible();
+  expect((await storedKid(page)).game.gems).toBe(165);
 });

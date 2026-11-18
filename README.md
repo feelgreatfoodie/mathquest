@@ -58,6 +58,12 @@ You need the Firebase CLI: `npm i -g firebase-tools && firebase login`.
    calls the deployed `kidSignIn` with the right PIN (expects a kid token) and a wrong PIN (expects the
    generic error), then deletes everything. Exit 0 = pass. The emulator needs no IAM, so only this catches
    a missing runtime role (11-17: `firebaseauth.viewer`).
+   The probe also fetches the served page and its scripts (`--url https://your-live-site`, default
+   `https://YOUR_PROJECT.web.app`) and fails unless a script contains the project id, so a bundle built
+   with no Firebase config cannot pass.
+   `npm run build` refuses to run when `VITE_FIREBASE_PROJECT_ID` or `VITE_FIREBASE_API_KEY` is empty
+   (set them in `.env.local` or the shell; a fresh worktree has no `.env.local`). Set
+   `VITE_DATA_MODE=local` for a local-mode build on purpose.
 7. **On the iPad:** open `https://YOUR_PROJECT.web.app` in Safari, sign in with Google, set a parent
    PIN, add each kid. Then Share → **Add to Home Screen** so it opens full screen like an app.
 

@@ -29,8 +29,8 @@ export interface SeedDeposit {
   termDays: 3 | 7 | 14;
   ratePer10: number;
   bonus: number;
-  status?: 'active' | 'collected' | 'broken';
-  paid?: number;
+  status?: 'active' | 'collecting' | 'breaking' | 'collected' | 'broken';
+  paidOut?: number;
   /** How many days ago the server stamped it. */
   ageDays: number;
 }
@@ -56,7 +56,7 @@ export async function seed(
     });
     for (const d of deposits) {
       const { ageDays, ...rest } = d;
-      await setDoc(vaultRef(db, d.id), { ...rest, status: d.status ?? 'active', paid: d.paid ?? 0, createdAt: Timestamp.fromMillis(Date.now() - ageDays * DAY) });
+      await setDoc(vaultRef(db, d.id), { ...rest, status: d.status ?? 'active', paidOut: d.paidOut ?? 0, createdAt: Timestamp.fromMillis(Date.now() - ageDays * DAY) });
     }
   });
 }
@@ -86,27 +86,28 @@ export function deposit(db: Db, d: NewDeposit, over: { game?: Record<string, unk
   });
   b.set(vaultRef(db, d.id), {
     id: d.id, amount: d.amount, termDays: d.termDays, ratePer10: rate, bonus: d.bonus ?? Math.floor(d.amount / 10) * rate,
-    status: 'active', paid: 0, createdAt: serverTimestamp(), ...(over.doc ?? {}),
+    status: 'active', paidOut: 0, createdAt: serverTimestamp(), ...(over.doc ?? {}),
   });
   return b.commit();
 }
 
 /**
- * One payout chunk as the client writes it: gems rise by `chunk`, the vault doc's `paid` rises by `chunk`. The first chunk
- * also closes the deposit (status, collectedAt, the kid's vault pointer).
+ * One payout chunk as the client writes it: gems rise by `chunk`, the vault doc's `paidOut` rises by `chunk`. The first chunk
+ * leaves `active` (`close`: collecting or breaking, or collected or broken when that one chunk is the whole payout) and also
+ * moves the kid's vault pointer. The last chunk of a payout sets `final` (collected or broken). Chunks between change `paidOut` only.
  */
 export function payChunk(
   db: Db,
   id: string,
-  p: { gemsBefore: number; chunk: number; paidBefore?: number; close?: 'collected' | 'broken'; activeBefore?: number; lastId?: string },
+  p: { gemsBefore: number; chunk: number; paidBefore?: number; close?: 'collecting' | 'breaking' | 'collected' | 'broken'; final?: 'collected' | 'broken'; activeBefore?: number; lastId?: string },
   over: { game?: Record<string, unknown>; vault?: Record<string, unknown>; doc?: Record<string, unknown> } = {},
 ) {
   const b = writeBatch(db);
-  const paid = (p.paidBefore ?? 0) + p.chunk;
+  const paidOut = (p.paidBefore ?? 0) + p.chunk;
   b.update(kidRef(db), {
     game: { ...GAME, gems: p.gemsBefore + p.chunk, ...(over.game ?? {}) },
     ...(p.close ? { vault: over.vault ?? { active: (p.activeBefore ?? 1) - 1, lastId: p.lastId ?? id, closedId: id } } : over.vault ? { vault: over.vault } : {}),
   });
-  b.update(vaultRef(db, id), { paid, ...(p.close ? { status: p.close, collectedAt: serverTimestamp() } : {}), ...(over.doc ?? {}) });
+  b.update(vaultRef(db, id), { paidOut, ...(p.close ? { status: p.close, collectedAt: serverTimestamp() } : p.final ? { status: p.final } : {}), ...(over.doc ?? {}) });
   return b.commit();
 }
