@@ -5,6 +5,8 @@ import { HeroFigure } from '../HeroFigure';
 import type { Kid } from '../../engine/models';
 import { HeroShop, type OnGame } from '../HeroShop';
 import { UiIcon } from '../sprites';
+import { looksReady, owedOf, vaultOn } from '../../game/vault';
+import { useDeposits, type VaultApi } from '../vaultApi';
 import { HoldButton } from './HoldButton';
 import { unlockSounds } from './sounds';
 import { speak, unlockSpeech } from './useSpeech';
@@ -12,9 +14,13 @@ import { speak, unlockSpeech } from './useSpeech';
 const MAX_FLAMES = 7;
 
 /** Home for a pre-reader: the hero, a huge Play triangle, and streak flames. No reading needed. */
-export function PrereaderHome({ kid, onStart, onBack, onGame }: { kid: Kid; onStart: () => void; onBack: () => void; onGame: OnGame }) {
+export function PrereaderHome({ kid, onStart, onBack, onGame, vault }: { kid: Kid; onStart: () => void; onBack: () => void; onGame: OnGame; vault?: VaultApi }) {
   const [shop, setShop] = useState(false);
-  if (shop) return <HeroShop kid={kid} learner="prereader" onGame={onGame} onClose={() => setShop(false)} />;
+  const [shopVault, setShopVault] = useState(false);
+  const hasVault = !!vault && vaultOn(kid.settings);
+  const dep = useDeposits(vault, hasVault, kid.game.gems);
+  const ready = hasVault && dep.deposits.some((d) => (d.status !== 'active' && owedOf(d) > 0) || looksReady(d, Date.now()));
+  if (shop) return <HeroShop kid={kid} learner="prereader" onGame={onGame} vault={vault} openVault={shopVault} onClose={() => { setShop(false); setShopVault(false); }} />;
   const flames = Math.min(MAX_FLAMES, kid.game.streakDays);
   return (
     <div className="screen center early-home" aria-label={`${kid.name}'s home`}>
@@ -38,6 +44,24 @@ export function PrereaderHome({ kid, onStart, onBack, onGame }: { kid: Kid; onSt
         >
           <UiIcon name="play" size={150} />
         </button>
+        {ready ? (
+          <button
+            type="button"
+            className="shop-btn vault-glow"
+            aria-label="Vault ready"
+            data-testid="home-vault-ready"
+            onClick={() => {
+              unlockSounds();
+              unlockSpeech();
+              void speak('Your vault is ready!');
+              setShopVault(true);
+              setShop(true);
+            }}
+          >
+            <UiIcon name="chest" size={96} />
+            <span className="pv-glow" aria-hidden="true"><UiIcon name="sparkle" size={44} /><UiIcon name="sparkle" size={32} /></span>
+          </button>
+        ) : null}
         <button
           type="button"
           className="shop-btn"
@@ -45,6 +69,7 @@ export function PrereaderHome({ kid, onStart, onBack, onGame }: { kid: Kid; onSt
           onClick={() => {
             unlockSounds();
             unlockSpeech();
+            setShopVault(false);
             setShop(true);
           }}
         >

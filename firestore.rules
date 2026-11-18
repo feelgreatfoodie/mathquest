@@ -51,6 +51,14 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['game', 'inventory']);
     }
 
+    // A kid write may also change `vault` (the pointer map: active count, lastId, closedId), next to `game`, and only that: a
+    // vault deposit or a payout chunk (see vaultPointerOk, gemsDropBacked and vaultPayOk). The deposits themselves live in
+    // the vault/ subcollection. A write that leaves `vault` alone passes through kidOnlyChangedGame as before, so an old
+    // bundle's save stays valid for a kid who has a vault.
+    function kidVaultKeysOk() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['game', 'vault']);
+    }
+
     // The hero catalog (HEROES in src/engine/game.ts; a unit test keeps the two equal). A hero id that is not
     // here has no price and cannot be bought.
     function heroPrices() {
@@ -150,7 +158,121 @@ service cloud.firestore {
           && existsAfter(purchasePath(uid, kidId, id))
           && getAfter(purchasePath(uid, kidId, id)).data.cost == drop
           && ((heroGrew && getAfter(purchasePath(uid, kidId, id)).data.get('heroId', '') == afterHeroes[afterHeroes.size() - 1])
-            || (itemGrew && getAfter(purchasePath(uid, kidId, id)).data.get('itemId', '') == afterItems[afterItems.size() - 1])));
+            || (itemGrew && getAfter(purchasePath(uid, kidId, id)).data.get('itemId', '') == afterItems[afterItems.size() - 1])))
+        || vaultDepositBacked(uid, kidId, drop, beforeHeroes, afterHeroes, beforeItems, afterItems);
+    }
+
+    // The second legal drop: a vault deposit. The kid doc names the new deposit (vault.lastId, a new id), the deposit doc
+    // is created in the same write and its amount equals the drop. No hero or item changes, so a deposit never doubles as
+    // a purchase. The pointer's own change (active + 1, at most 3) is held by vaultPointerOk, and the deposit doc's
+    // fields (rate, bonus, createdAt = request.time) by vaultCreateOk.
+    function vaultDepositBacked(uid, kidId, drop, beforeHeroes, afterHeroes, beforeItems, afterItems) {
+      let vid = request.resource.data.get('vault', {}).get('lastId', '');
+      return vid is string && vid.matches('^[A-Za-z0-9_-]{1,40}$')
+        && vid != resource.data.get('vault', {}).get('lastId', '')
+        && afterHeroes.size() == beforeHeroes.size()
+        && afterItems.size() == beforeItems.size()
+        && !exists(vaultPath(uid, kidId, vid))
+        && existsAfter(vaultPath(uid, kidId, vid))
+        && getAfter(vaultPath(uid, kidId, vid)).data.amount == drop;
+    }
+
+    // The path of one vault deposit. Called only after the id passed the format check.
+    function vaultPath(uid, kidId, id) {
+      return /databases/$(database)/documents/families/$(uid)/kids/$(kidId)/vault/$(id);
+    }
+
+    // The kid doc's `vault` pointer map changes only in two ways. A deposit: active goes up by one (at most 3), lastId is a
+    // new id whose deposit doc is created in this write. A close (the first payout chunk): active goes down by one, lastId
+    // stays, closedId names a deposit that was active before the write and is not after. The map is never written without
+    // one of the two. No time is read here: the close is timed by vaultPayOk.
+    function vaultPointerOk(uid, kidId) {
+      let b = resource.data.get('vault', {});
+      let a = request.resource.data.get('vault', {});
+      return a == b
+        || (a is map
+          && a.keys().hasOnly(['active', 'lastId', 'closedId'])
+          && a.get('active', 0) is int
+          && a.get('active', 0) >= 0
+          && a.get('active', 0) <= 3
+          && ((a.get('active', 0) == b.get('active', 0) + 1
+              && a.get('lastId', '') is string
+              && a.get('lastId', '').matches('^[A-Za-z0-9_-]{1,40}$')
+              && a.get('lastId', '') != b.get('lastId', '')
+              && a.get('closedId', '') == b.get('closedId', '')
+              && !exists(vaultPath(uid, kidId, a.get('lastId', '')))
+              && existsAfter(vaultPath(uid, kidId, a.get('lastId', ''))))
+            || (a.get('active', 0) == b.get('active', 0) - 1
+              && a.get('lastId', '') == b.get('lastId', '')
+              && a.get('closedId', '') is string
+              && a.get('closedId', '').matches('^[A-Za-z0-9_-]{1,40}$')
+              && exists(vaultPath(uid, kidId, a.get('closedId', '')))
+              && get(vaultPath(uid, kidId, a.get('closedId', ''))).data.status == 'active'
+              && getAfter(vaultPath(uid, kidId, a.get('closedId', ''))).data.status != 'active')));
+    }
+
+    // A deposit doc is valid only in the write that takes its gems: the amount (an int, at least 10) equals the drop in
+    // game.gems, the kid's vault map gains one active entry named for this deposit (lastId, active + 1, at most 3), the
+    // parent has the vault on, the term is 3, 7 or 14, ratePer10 is the parent's rate for that term (the default 1, 3 or 7
+    // when none is set), bonus is floor(amount / 10) * ratePer10, status is active, nothing is paid, and createdAt is
+    // request.time (the server's clock; the doc has no client time). maturesAt is not stored: the payout rule reads
+    // createdAt plus the term.
+    function vaultCreateOk(uid, kidId, depositId) {
+      let kidP = /databases/$(database)/documents/families/$(uid)/kids/$(kidId);
+      let before = get(kidP).data;
+      let after = getAfter(kidP).data;
+      let vb = before.get('vault', {});
+      let va = after.get('vault', {});
+      let rates = before.get('settings', {}).get('vault', {});
+      let d = request.resource.data;
+      return d.keys().hasOnly(['id', 'amount', 'termDays', 'ratePer10', 'bonus', 'status', 'paid', 'createdAt'])
+        && d.keys().hasAll(['id', 'amount', 'termDays', 'ratePer10', 'bonus', 'status', 'paid', 'createdAt'])
+        && d.id == depositId
+        && d.amount is int && d.amount >= 10
+        && d.termDays in [3, 7, 14]
+        && rates.get('on', false) == true
+        && d.ratePer10 == (d.termDays == 3 ? rates.get('d3', 1) : (d.termDays == 7 ? rates.get('d7', 3) : rates.get('d14', 7)))
+        && d.bonus == math.floor(d.amount / 10) * d.ratePer10
+        && d.status == 'active'
+        && d.paid == 0
+        && d.createdAt == request.time
+        && before.get('game', {}).get('gems', 0) - after.get('game', {}).get('gems', 0) == d.amount
+        && va.get('lastId', '') == depositId
+        && va.get('active', 0) == vb.get('active', 0) + 1
+        && va.get('active', 0) <= 3;
+    }
+
+    // A payout is one chunk: game.gems rises by `chunk` (1 to 10, the kid-write raise bound) and the deposit's `paid` rises
+    // by the same chunk, in one write, so gems leave the vault only as fast as paid records it. Paid never passes the
+    // payout: amount + bonus when collected, amount when broken. The FIRST chunk closes the deposit: status goes from
+    // active to collected (only when request.time >= createdAt + termDays, server times both) or to broken (any time, the
+    // bonus is lost), collectedAt is request.time, and the kid's vault map drops its active count in the same write
+    // (closedId names the deposit). A later chunk changes `paid` and nothing else, and the vault map stays. A closed
+    // deposit never reopens and never changes its amount, bonus or term.
+    function vaultPayOk(uid, kidId, depositId) {
+      let kidP = /databases/$(database)/documents/families/$(uid)/kids/$(kidId);
+      let gb = get(kidP).data.get('game', {});
+      let ga = getAfter(kidP).data.get('game', {});
+      let vb = get(kidP).data.get('vault', {});
+      let va = getAfter(kidP).data.get('vault', {});
+      let b = resource.data;
+      let a = request.resource.data;
+      let changed = a.diff(b).affectedKeys();
+      let chunk = a.paid - b.paid;
+      return a.paid is int
+        && chunk >= 1 && chunk <= 10
+        && ga.get('gems', 0) - gb.get('gems', 0) == chunk
+        && a.paid <= (a.status == 'broken' ? a.amount : a.amount + a.bonus)
+        && ((b.status != 'active'
+            && changed.hasOnly(['paid'])
+            && va == vb)
+          || (b.status == 'active'
+            && changed.hasOnly(['status', 'paid', 'collectedAt'])
+            && a.collectedAt == request.time
+            && (a.status == 'broken'
+              || (a.status == 'collected' && request.time >= b.createdAt + duration.value(b.termDays, 'd')))
+            && va.get('closedId', '') == depositId
+            && va.get('active', 0) == vb.get('active', 0) - 1));
     }
 
     // game.hero may change only to a hero the kid owns after the write (a buy equips the new hero in the same
@@ -283,8 +405,8 @@ service cloud.firestore {
         allow read: if isParent(uid) || isKid(uid, kidId);
         allow delete: if isParent(uid);
         allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId;
-        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk())
-          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && kidHeroGrowthOk() && kidRaiseOk());
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId))
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk() || kidVaultKeysOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && kidHeroGrowthOk() && kidRaiseOk());
 
         match /cards/{cardId} {
           allow read: if isParent(uid) || isKid(uid, kidId);
@@ -299,6 +421,16 @@ service cloud.firestore {
           allow read: if isParent(uid);
           allow create: if (isParent(uid) || isKid(uid, kidId)) && purchaseEntryOk(uid, kidId, purchaseId);
           allow update, delete: if false;
+        }
+
+        // The gem vault: one doc per deposit. Parent and kid read. A deposit is created only with the gems it takes, a payout
+        // chunk updates it only with the gems it gives (vaultCreateOk, vaultPayOk). The parent device playing as the kid is
+        // held to the same checks. Nobody deletes a deposit: the parent's history stays whole.
+        match /vault/{depositId} {
+          allow read: if isParent(uid) || isKid(uid, kidId);
+          allow create: if (isParent(uid) || isKid(uid, kidId)) && depositId.matches('^[A-Za-z0-9_-]{1,40}$') && vaultCreateOk(uid, kidId, depositId);
+          allow update: if (isParent(uid) || isKid(uid, kidId)) && vaultPayOk(uid, kidId, depositId);
+          allow delete: if false;
         }
 
         match /sessions/{sessionId} {
