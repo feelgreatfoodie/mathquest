@@ -105,6 +105,3 @@ export function buyHero(game: KidGame, heroId: string): KidGame | null {
     throw e;
   }
 }
-
-/** Most gems any hero costs. firestore.rules holds the same number as MAX_HERO_PRICE; a test keeps them equal. */
-export const MAX_HERO_PRICE = Math.max(...HEROES.map((h) => h.cost));
