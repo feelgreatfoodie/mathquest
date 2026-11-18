@@ -7,6 +7,7 @@ import { GEM_SPEEDS, earnedTodayOf, gemFullRateOf, gemSpeedOf, gemTier } from '.
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
+import { RATE_MAX, VAULT_TERMS, maturesAtOf, owedOf, payoutOf, rateOf, vaultBalance, vaultOn, type VaultDeposit, type VaultTerm } from '../../game/vault';
 import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modulesOf, paceOf, shop2On, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
@@ -468,10 +469,31 @@ function GemHistory({ changes }: { changes: ReturnType<typeof gemHistory> }) {
   );
 }
 
+const fmtDay = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'short', day: 'numeric' });
+
+/** Every deposit, newest first: amount, term, the bonus it earns, and where it stands. Dates come from the server's createdAt. */
+function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
+  return (
+    <section className="panel vault-history" aria-label="Vault history" data-testid="vault-history">
+      <h2>Vault</h2>
+      <ul>
+        {deposits.map((d) => (
+          <li key={d.id} data-status={d.status}>
+            {fmtDay(d.createdAt)}: {d.amount} gems for {d.termDays as VaultTerm} days at {d.ratePer10} per 10 ·{' '}
+            {d.status === 'active' ? `pays ${payoutOf({ ...d, status: 'collected' })} on ${fmtDay(maturesAtOf(d))}` : d.status === 'collected' ? `collected ${payoutOf(d)}` : `broken early, ${d.amount} returned`}
+            {d.status !== 'active' && owedOf(d) > 0 ? ` (${owedOf(d)} still to pay)` : ''}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onPinSet: () => Promise<void>; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   const [purchases, setPurchases] = useState<PurchaseLog[]>([]);
+  const [deposits, setDeposits] = useState<VaultDeposit[]>([]);
   const kid = useLiveKid(repo, kidProp);
   const [settings, setSettings] = useState<KidSettings>(kid.settings);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
@@ -484,11 +506,16 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onDelet
       reportFailure('Could not load the gem history.', e);
       return [] as PurchaseLog[];
     });
-    void Promise.all([repo.loadCards(kid.id), repo.listSessions(kid.id, 20), purchasesRead]).then(([c, s, p]) => {
+    const vaultRead = repo.listVault(kid.id, 30).catch((e) => {
+      reportFailure('Could not load the vault history.', e);
+      return [] as VaultDeposit[];
+    });
+    void Promise.all([repo.loadCards(kid.id), repo.listSessions(kid.id, 20), purchasesRead, vaultRead]).then(([c, s, p, v]) => {
       if (!alive) return;
       setCards(c);
       setSessions(s);
       setPurchases(p);
+      setDeposits(v);
     });
     return () => {
       alive = false;
@@ -537,6 +564,7 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onDelet
           <div className="progress" role="img" aria-label={`${lv.into} of ${lv.span} xp to the next level`}><div className="progress-fill xp" style={{ width: `${(lv.into / lv.span) * 100}%` }} /></div>
         </div>
         <div className="stat stat-gems"><span className="stat-value">{kid.game.gems}</span><span className="stat-label">gems</span></div>
+        {vaultOn(kid.settings) || deposits.length ? <div className="stat stat-vault" data-testid="parent-vault-balance"><span className="stat-value">{vaultBalance(deposits)}</span><span className="stat-label">in the vault</span></div> : null}
         <div className="stat stat-earned">
           <span className="stat-value">{earnedToday}</span>
           <span className="stat-label">earned today · {TIER_LABELS[tier]}</span>
@@ -569,6 +597,7 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onDelet
       </ul>
 
       <GemHistory changes={gemHistory(sessions, purchases, 20)} />
+      {deposits.length ? <VaultHistory deposits={deposits} /> : null}
 
       {on.add10 ? (
         <section className="panel">
@@ -725,6 +754,23 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onDelet
           Item shop (weapons, gear, pets, adventure items, camp)
           <span className="hint">Fixed prices, no random rewards. Turn it on after every device has updated.</span>
         </label>
+        <label className="check">
+          <input type="checkbox" checked={vaultOn(settings)} data-testid="setting-vault" onChange={(e) => setSettings({ ...settings, vault: { ...settings.vault, on: e.target.checked } })} />
+          Gem vault (save gems for 3, 7 or 14 days for a bonus)
+          <span className="hint">Fixed bonus, no random rewards. Breaking early returns every gem put in and loses the bonus. Deposits already made keep their rate and pay out even if you turn it off.</span>
+        </label>
+        {vaultOn(settings) ? (
+          <div className="vault-rates" data-testid="vault-rates">
+            {VAULT_TERMS.map((t) => (
+              <label key={t}>
+                {t} days: extra gems per 10 saved
+                <select value={rateOf(settings, t)} data-testid={`vault-rate-${t}`} onChange={(e) => setSettings({ ...settings, vault: { ...settings.vault, [`d${t}`]: Number(e.target.value) } })}>
+                  {Array.from({ length: RATE_MAX + 1 }, (_, n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+        ) : null}
         <label>
           Gem speed
           <select value={gemSpeedOf(settings)} onChange={(e) => setSettings({ ...settings, gemSpeed: Number(e.target.value) })}>

@@ -797,3 +797,47 @@ legend { padding: 0 6px; color: var(--muted); }
 @keyframes strike-throw { 40% { transform: translateX(46px) rotate(360deg); } 100% { transform: rotate(720deg); } }
 @keyframes strike-glow { 40% { transform: scale(1.35); filter: drop-shadow(0 0 12px #67e8f9); } 100% { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .hero-fig .fig-part { animation: none !important; } }
+
+/* ---- Gem vault. Pre-reader targets are at least 120 px, reader targets at least 48 px. ---- */
+.pshop-tabs.is-wide { grid-template-columns: repeat(4, 120px); }
+.vault { display: flex; flex-direction: column; gap: 10px; width: 100%; position: relative; }
+.vault-balance { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.vault-note { margin: 0; padding: 8px 12px; background: var(--panel-2); border: 2px solid var(--gold); border-radius: 12px; }
+.vault-list { display: flex; flex-direction: column; gap: 8px; }
+.vault-card { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 10px 14px; background: var(--bg-2); border: 2px solid var(--line); border-radius: 14px; }
+.vault-card.is-ready { border-color: #4ade80; box-shadow: 0 0 14px rgba(74, 222, 128, 0.45); }
+.vault-warn { flex-basis: 100%; }
+.vault-new { display: flex; flex-direction: column; gap: 8px; align-items: center; padding: 12px; border: 2px dashed var(--line); border-radius: 14px; }
+.vault-new h3 { margin: 0; }
+.vault-terms { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.vault-terms .btn { display: inline-flex; flex-direction: column; align-items: center; min-width: 96px; }
+.vault-terms .btn small { font-size: 12px; opacity: 0.85; }
+.vault-terms .btn.is-on { border-color: var(--gold); background: var(--panel-2); }
+.vault-amount { display: inline-flex; align-items: center; gap: 14px; }
+.vault-amount-n { font-size: 32px; min-width: 64px; text-align: center; font-weight: 700; }
+.vault-example { margin: 0; text-align: center; }
+.vault-ready { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; border-color: #4ade80; box-shadow: 0 0 16px rgba(74, 222, 128, 0.6); animation: vault-pulse 1.6s ease-in-out infinite; }
+@keyframes vault-pulse { 50% { box-shadow: 0 0 26px rgba(250, 204, 21, 0.8); } }
+.coin-shower { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 5; }
+.coin-shower .coin { position: absolute; top: -40px; animation: coin-fall 1.5s ease-in forwards; }
+@keyframes coin-fall { to { transform: translateY(520px) rotate(300deg); opacity: 0; } }
+.pvault { display: flex; flex-direction: column; align-items: center; gap: 20px; position: relative; min-height: 360px; width: 100%; }
+.pvault-confirm { justify-content: center; gap: 24px; }
+.pv-new { display: inline-flex; align-items: center; justify-content: center; gap: 16px; min-width: 120px; min-height: 160px; padding: 14px 24px; color: var(--text); background: var(--bg-2); border: 3px solid var(--line); border-bottom-width: 6px; border-radius: 28px; cursor: pointer; }
+.pv-new:disabled { opacity: 0.4; }
+.pv-new:active { transform: translateY(5px); border-bottom-width: 3px; }
+.pv-dots { display: inline-grid; grid-template-columns: repeat(5, 30px); gap: 4px; }
+.pv-dots.is-new { filter: drop-shadow(0 0 6px rgba(250, 204, 21, 0.9)); }
+.pv-lost { position: relative; display: inline-flex; }
+.pv-lost .pv-x { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #f87171; }
+.pv-chests { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
+.pv-chest { position: relative; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; width: 150px; min-height: 150px; padding: 8px; background: var(--bg-2); border: 3px solid var(--line); border-bottom-width: 6px; border-radius: 28px; cursor: pointer; }
+.pv-chest:active { transform: translateY(5px); border-bottom-width: 3px; }
+.pv-chest.is-ready { border-color: #4ade80; box-shadow: 0 0 22px rgba(74, 222, 128, 0.7); animation: vault-pulse 1.6s ease-in-out infinite; }
+.pv-glow { position: absolute; inset: 0; display: flex; align-items: flex-start; justify-content: space-around; pointer-events: none; animation: vault-pulse 1.2s ease-in-out infinite; }
+.pv-days { display: inline-flex; gap: 6px; }
+.pv-days i { display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--gold); }
+.shop-btn.vault-glow { position: relative; border-color: #4ade80; box-shadow: 0 0 22px rgba(74, 222, 128, 0.7); }
+.vault-rates { display: grid; gap: 8px; }
+.vault-history ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+@media (max-width: 700px) { .pshop-tabs.is-wide { grid-template-columns: repeat(3, 120px); } }

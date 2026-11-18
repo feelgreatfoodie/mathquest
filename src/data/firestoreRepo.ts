@@ -9,12 +9,15 @@ import {
   orderBy,
   query,
   runTransaction,
+  serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   writeBatch,
   type Firestore,
 } from 'firebase/firestore';
-import { applyDelta, purchaseTarget, type GameDelta } from '../engine/game';
+import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
+import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultTerm } from '../game/vault';
 import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import { newId, type Repo } from './repo';
 
@@ -27,6 +30,7 @@ const BATCH_MAX = 450;
  *   families/{uid}/kids/{kidId}/cards/{cardId}
  *   families/{uid}/kids/{kidId}/sessions/{sessionId}
  *   families/{uid}/kids/{kidId}/purchases/{purchaseId}   (parent reads; written only with a game change)
+ *   families/{uid}/kids/{kidId}/vault/{depositId}        (a deposit; created only with the gems it takes, paid only with the gems it gives)
  * Firestore's persistent cache makes every write work offline and sync later.
  */
 export class FirestoreRepo implements Repo {
@@ -51,6 +55,10 @@ export class FirestoreRepo implements Repo {
 
   private sessions(kidId: string) {
     return collection(this.db, 'families', this.uid, 'kids', kidId, 'sessions');
+  }
+
+  private vault(kidId: string) {
+    return collection(this.db, 'families', this.uid, 'kids', kidId, 'vault');
   }
 
   private purchases(kidId: string) {
@@ -124,6 +132,54 @@ export class FirestoreRepo implements Repo {
     });
   }
 
+  async vaultDeposit(kidId: string, amount: number, termDays: VaultTerm): Promise<KidGame> {
+    const ref = doc(this.kids(), kidId);
+    return runTransaction(this.db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error('That player was removed.');
+      const kid = normalizeKid(snap.data() as Kid);
+      const pointer: VaultPointer = (snap.data() as Kid).vault ?? { active: 0 };
+      if (!vaultOn(kid.settings)) throw new GameDeltaError('The vault is off.');
+      const problem = depositProblem(amount, kid.game.gems, pointer.active);
+      if (problem) throw new GameDeltaError(problem);
+      const id = newId();
+      const ratePer10 = rateOf(kid.settings, termDays);
+      // createdAt is the server's time. No time from this device goes into the deposit.
+      tx.set(doc(this.vault(kidId), id), { id, amount, termDays, ratePer10, bonus: bonusFor(amount, ratePer10), status: 'active', paid: 0, createdAt: serverTimestamp() });
+      const next: KidGame = { ...kid.game, gems: kid.game.gems - amount };
+      tx.update(ref, { game: splitGame(next).game, vault: { ...pointer, active: pointer.active + 1, lastId: id } });
+      return next;
+    });
+  }
+
+  async vaultPay(kidId: string, depositId: string, mode: 'collect' | 'break'): Promise<{ paid: number; done: boolean }> {
+    const ref = doc(this.kids(), kidId);
+    const depRef = doc(this.vault(kidId), depositId);
+    return runTransaction(this.db, async (tx) => {
+      const [snap, depSnap] = await Promise.all([tx.get(ref), tx.get(depRef)]);
+      if (!snap.exists()) throw new Error('That player was removed.');
+      if (!depSnap.exists()) throw new GameDeltaError('That deposit is not in the vault.');
+      const dep = fromStored(depSnap.data());
+      const closing = dep.status === 'active';
+      const status = closing ? (mode === 'break' ? 'broken' : 'collected') : dep.status;
+      const owed = owedOf({ ...dep, status });
+      if (owed <= 0) return { paid: 0, done: true };
+      const chunk = Math.min(PAY_CHUNK, owed);
+      const kid = normalizeKid(snap.data() as Kid);
+      const pointer: VaultPointer = (snap.data() as Kid).vault ?? { active: 0 };
+      // The first chunk closes the deposit. The rules check the term against their own clock and createdAt: this code never does.
+      tx.update(depRef, { paid: dep.paid + chunk, ...(closing ? { status, collectedAt: serverTimestamp() } : {}) });
+      const game = splitGame({ ...kid.game, gems: kid.game.gems + chunk }).game;
+      tx.update(ref, closing ? { game, vault: { ...pointer, active: pointer.active - 1, closedId: depositId } } : { game });
+      return { paid: chunk, done: chunk === owed };
+    });
+  }
+
+  async listVault(kidId: string, max: number): Promise<VaultDeposit[]> {
+    const snap = await getDocs(query(this.vault(kidId), orderBy('createdAt', 'desc'), limit(max)));
+    return snap.docs.map((d) => fromStored(d.data()));
+  }
+
   async listPurchases(kidId: string, max: number): Promise<PurchaseLog[]> {
     const snap = await getDocs(query(this.purchases(kidId), orderBy('at', 'desc'), limit(max)));
     return snap.docs.map((d) => d.data() as PurchaseLog);
@@ -175,4 +231,21 @@ export class FirestoreRepo implements Repo {
     const snap = await getDocs(query(this.sessions(kidId), orderBy('startedAt', 'desc'), limit(max)));
     return snap.docs.map((d) => d.data() as SessionLog);
   }
+}
+
+/** A stored deposit as the app reads it: server timestamps become epoch ms. */
+function fromStored(raw: Record<string, unknown>): VaultDeposit {
+  const ms = (v: unknown) => (v instanceof Timestamp ? v.toMillis() : typeof v === 'number' ? v : 0);
+  return {
+    id: String(raw.id),
+    amount: Number(raw.amount),
+    termDays: Number(raw.termDays) as VaultTerm,
+    ratePer10: Number(raw.ratePer10),
+    bonus: Number(raw.bonus),
+    status: raw.status === 'collected' || raw.status === 'broken' ? raw.status : 'active',
+    paid: Number(raw.paid ?? 0),
+    // A deposit just written has no server stamp yet in a cached read; it reads as now until the server fills it.
+    createdAt: ms(raw.createdAt) || Date.now(),
+    ...(raw.collectedAt ? { collectedAt: ms(raw.collectedAt) } : {}),
+  };
 }
