@@ -163,7 +163,7 @@ describe('gems drop guard in the rules', () => {
     await setGems(250);
     await assertSucceeds(updateDoc(kidRef(kidDb()), { game: withGame({ gems: 150 }) })); // a drop of exactly 100
     await setGems(250);
-    await assertSucceeds(updateDoc(kidRef(kidDb()), { game: withGame({ gems: 100, heroes: ['knight', 'wizard', 'dragon'] }) }));
+    await assertSucceeds(updateDoc(kidRef(kidDb()), { game: withGame({ gems: 150, heroes: ['knight', 'wizard', 'dragon'] }) })); // the kid pays the catalog price, 100
     await setGems(250);
     await assertSucceeds(updateDoc(kidRef(parentDb()), { game: withGame({ gems: 150, heroes: ['knight', 'wizard', 'ranger'] }) }));
   });
@@ -204,7 +204,7 @@ describe('monotonic game guards in the rules', () => {
       await assertSucceeds(updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 90 }) }));
       await assertSucceeds(updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 90 }) })); // no change
       await assertSucceeds(
-        updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 75, heroes: ['knight', 'wizard', 'ranger'] }) }),
+        updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 55, heroes: ['knight', 'wizard', 'ranger'] }) }),
       );
     });
   }

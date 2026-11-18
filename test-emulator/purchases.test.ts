@@ -119,6 +119,97 @@ describe('purchases rules', () => {
   });
 });
 
+describe('purchase cost is bound to the hero catalog price', () => {
+  const rich = async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(kidRef(ctx.firestore()), { 'game.gems': 200 });
+    });
+  };
+  const buyFor = (heroId: string, cost: number) =>
+    buyBatch(kidDb(), KID, { game: { gems: 200 - cost, heroes: ['knight', heroId], hero: heroId }, entry: { heroId, cost } });
+
+  it('a below-price buy is refused: dragon (100) for 1 gem', async () => {
+    await rich();
+    await assertFails(buyFor('dragon', 1));
+  });
+
+  it('a below-price buy is refused for every hero, one gem short', async () => {
+    await rich();
+    for (const [id, price] of [['wizard', 15], ['ranger', 35], ['robot', 60], ['dragon', 100]] as const) await assertFails(buyFor(id, price - 1));
+  });
+
+  it('an above-price buy is refused too: wizard for 20 gems', async () => {
+    await rich();
+    await assertFails(buyFor('wizard', 20));
+  });
+
+  it('an unknown heroId is refused, even at a plausible cost', async () => {
+    await rich();
+    await assertFails(buyFor('ghost', 15));
+  });
+
+  it('a buy at the catalog price still passes, for every purchasable hero', async () => {
+    await rich();
+    await assertSucceeds(buyFor('dragon', 100));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(kidRef(ctx.firestore()), { 'game.gems': 200, 'game.heroes': ['knight'], 'game.hero': 'knight' });
+    });
+    for (const [id, price] of [['wizard', 15], ['ranger', 35], ['robot', 60]] as const) {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await updateDoc(kidRef(ctx.firestore()), { 'game.gems': 200, 'game.heroes': ['knight'], 'game.hero': 'knight' });
+      });
+      const db = kidDb();
+      const b = writeBatch(db);
+      b.update(kidRef(db), { game: { ...storedKid(KID).game, gems: 200 - price, heroes: ['knight', id], hero: id } });
+      b.set(doc(purchases(db), `p-${id}`), { id: `p-${id}`, heroId: id, cost: price, at: 1 });
+      await assertSucceeds(b.commit());
+    }
+  });
+});
+
+describe('a kid token cannot add a hero on the kid doc except at the catalog price', () => {
+  const grow = (db: Db, over: Record<string, unknown>) => updateDoc(kidRef(db), { game: { ...storedKid(KID).game, ...over } });
+
+  it('a free dragon (gems unchanged) is refused', async () => {
+    await assertFails(grow(kidDb(), { heroes: ['knight', 'dragon'], hero: 'dragon' }));
+  });
+
+  it('a dragon for 1 gem is refused', async () => {
+    await assertFails(grow(kidDb(), { gems: 85, heroes: ['knight', 'dragon'], hero: 'dragon' }));
+  });
+
+  it('two heroes at once are refused, even when the gems drop by both prices', async () => {
+    await assertFails(grow(kidDb(), { gems: 86 - 15 - 35, heroes: ['knight', 'wizard', 'ranger'], hero: 'ranger' }));
+  });
+
+  it('an unknown hero is refused, even at a plausible price', async () => {
+    await assertFails(grow(kidDb(), { gems: 71, heroes: ['knight', 'ghost'], hero: 'ghost' }));
+  });
+
+  it('a hero added while gems also rise is refused', async () => {
+    await assertFails(grow(kidDb(), { gems: 90, heroes: ['knight', 'wizard'], hero: 'wizard' }));
+  });
+
+  it('a buy at the catalog price passes on the kid doc, for each hero', async () => {
+    await assertSucceeds(grow(kidDb(), { gems: 71, heroes: ['knight', 'wizard'], hero: 'wizard' }));
+    for (const [id, price] of [['ranger', 35], ['robot', 60]] as const) {
+      await env.withSecurityRulesDisabled(async (ctx) => {
+        await updateDoc(kidRef(ctx.firestore()), { 'game.gems': 200, 'game.heroes': ['knight'], 'game.hero': 'knight' });
+      });
+      await assertSucceeds(grow(kidDb(), { gems: 200 - price, heroes: ['knight', id], hero: id }));
+    }
+  });
+
+  it('a run (xp and gems up) and an equip still pass for a kid', async () => {
+    await assertSucceeds(grow(kidDb(), { xp: 500, gems: 95 }));
+    await assertSucceeds(grow(kidDb(), { xp: 500, gems: 95, hero: 'knight' }));
+  });
+
+  it('the parent path is unchanged: a parent can still write a hero change without a price check', async () => {
+    await assertSucceeds(grow(parentDb(), { gems: 86, heroes: ['knight', 'dragon'], hero: 'dragon' }));
+  });
+});
+
 describe('purchases through the repo', () => {
   it('a kid purchase writes the game and one log entry in one transaction', async () => {
     const repo = new FirestoreRepo(kidDb(), FAM);
