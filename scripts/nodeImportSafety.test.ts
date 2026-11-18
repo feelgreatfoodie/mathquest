@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 // Node, so each one is imported in a child process with no bundler. A broken import chain
 // (ERR_MODULE_NOT_FOUND, ERR_UNKNOWN_FILE_EXTENSION, a syntax error in type-stripped code) exits non-zero.
 const root = fileURLToPath(new URL('..', import.meta.url));
-const SCRIPTS = ['scripts/deploy-probe.mjs', 'scripts/backfill-parents.mjs'];
+const SCRIPTS = ['scripts/deploy-probe.mjs', 'scripts/backfill-parents.mjs', 'scripts/set-min-version.mjs'];
 
 describe.each(SCRIPTS)('%s under plain Node', (script) => {
   it('imports without a module resolution error', () => {

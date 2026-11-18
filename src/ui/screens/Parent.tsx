@@ -36,7 +36,13 @@ export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone
             return;
           }
           const f: Family = { pinHash: await hashPin(salt, p), createdAt: Date.now() };
-          await repo.saveFamily(f);
+          try {
+            await repo.saveFamily(f);
+          } catch (e) {
+            reportFailure('The PIN was not saved.', e);
+            setStep('pin');
+            return;
+          }
           setFamily(f);
           setStep('kid');
         }}
@@ -129,7 +135,12 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
         onCancel={() => setChangingPin(false)}
         onComplete={async (p) => {
           const f: Family = { pinHash: await hashPin(salt, p), createdAt: Date.now() };
-          await repo.saveFamily(f);
+          try {
+            await repo.saveFamily(f);
+          } catch (e) {
+            reportFailure('The new PIN was not saved.', e);
+            return;
+          }
           onFamily(f);
           setChangingPin(false);
         }}
@@ -178,12 +189,26 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
           repo={repo}
           kid={kid}
           onSettings={async (settings) => {
-            await repo.saveKidSettings(kid.id, settings);
-            onKids(kids.map((x) => (x.id === kid.id ? { ...x, settings } : x)));
+            const save = async () => {
+              await repo.saveKidSettings(kid.id, settings);
+              onKids(kids.map((x) => (x.id === kid.id ? { ...x, settings } : x)));
+            };
+            try {
+              await save();
+            } catch (e) {
+              reportFailure('The settings were not saved.', e, save);
+            }
           }}
           onPinSet={async () => {
-            await repo.setKidFlags(kid.id, { hasPin: true });
-            onKids(kids.map((x) => (x.id === kid.id ? { ...x, hasPin: true } : x)));
+            const save = async () => {
+              await repo.setKidFlags(kid.id, { hasPin: true });
+              onKids(kids.map((x) => (x.id === kid.id ? { ...x, hasPin: true } : x)));
+            };
+            try {
+              await save();
+            } catch (e) {
+              reportFailure('The PIN setting was not saved.', e, save);
+            }
           }}
           onDelete={async () => {
             try {

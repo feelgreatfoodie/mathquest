@@ -13,12 +13,9 @@ function read<T>(key: string, fallback: T): T {
   }
 }
 
+/** Throws when storage is full or blocked, so the screen shows the failed save instead of losing it silently. */
 function write(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(`${PREFIX}:${key}`, JSON.stringify(value));
-  } catch {
-    // Storage full or blocked (private mode). Progress for this run is kept in memory only.
-  }
+  localStorage.setItem(`${PREFIX}:${key}`, JSON.stringify(value));
 }
 
 /** Single-device storage. Used when Firebase isn't configured or VITE_DATA_MODE=local. */

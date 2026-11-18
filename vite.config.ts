@@ -1,10 +1,26 @@
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type Plugin } from 'vitest/config';
+
+// The build number: seconds since the epoch when this bundle was built (APP_BUILD overrides it for the release
+// script's tests). The bundle compares it with config/app.minVersion; dist/version.json carries the same number
+// for scripts/set-min-version.mjs, which sets minVersion after the deploy.
+const BUILD = Number(process.env.APP_BUILD) || Math.floor(Date.now() / 1000);
+
+function versionJson(): Plugin {
+  return {
+    name: 'mathquest-version-json',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: `${JSON.stringify({ build: BUILD })}\n` });
+    },
+  };
+}
 
 export default defineConfig({
+  define: { __APP_BUILD__: JSON.stringify(BUILD) },
   plugins: [
     react(),
+    versionJson(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['icons/apple-touch-icon.png'],

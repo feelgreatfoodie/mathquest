@@ -91,6 +91,29 @@ blocks gmail project owners. These one-time settings exist in `rezzed-mathquest`
   `roles/cloudbuild.builds.builder`. The org turns off automatic role grants, and without that role
   every functions build fails.
 
+### Stale bundles and the release gate (minVersion)
+
+A tablet can keep an old bundle for days. An old bundle's writes can be refused by newer rules, and before this gate
+the player saw nothing. Now:
+
+- Every build has a number (seconds since the epoch at build time), baked into the bundle and written to `dist/version.json`.
+- `config/app` in Firestore holds `{ minVersion }`. Rules: any signed-in account reads it, no client writes it.
+- The app reads it after sign-in, when it comes back to the front, and before every run and every game, card or
+  session write. A bundle behind `minVersion` shows the update screen (one big picture button and a voice for a
+  pre-reader, two lines of text for everyone else), starts no run and writes nothing. A missing doc, a bad value or
+  no network lets the app run: the rules still guard the data.
+- A write that the server refuses (`permission-denied`) or the gate blocks shows "Couldn't save. Tap to update or try
+  again." with an Update button. The Update button asks the service worker for the new release and reloads. A second
+  tap drops the worker and every cache, then reloads.
+- **The release sets minVersion.** `npm run deploy` builds, deploys, then runs `scripts/set-min-version.mjs`. The script
+  waits until the live site serves this build in `/version.json`, refuses to lower an existing minVersion (`--force`
+  overrides), writes `config/app` through the Admin SDK (application default credentials), and reads it back. It never
+  runs before the new bundle is live, so no client is told to update to a bundle that does not exist yet.
+  `node scripts/set-min-version.mjs --project <id> --dry-run` shows what it would write.
+- To open the gate again by hand, delete `config/app` or set `minVersion` to 0 with the Admin SDK.
+- A bundle built before this release has no gate. Those are covered only by the rules and the service worker's auto
+  update; the first tap of Update on any newer bundle fixes the rest.
+
 ### CI/CD (GitHub Actions)
 
 `.github/workflows/deploy.yml` runs typecheck and tests on every push and PR. Its deploy job is off
