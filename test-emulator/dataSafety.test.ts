@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FirestoreRepo } from '../src/data/firestoreRepo';
 import { normalizeKid, type Kid, type KidSettings } from '../src/engine/models';
@@ -29,6 +29,14 @@ const storedKid = (over: Record<string, unknown> = {}) => ({
   game: { lastPlayedDay: '2026-11-17', xp: 467, gems: 86, heroes: ['knight', 'wizard'], bestCombo: 16, hero: 'wizard', streakDays: 1 },
   ...over,
 });
+
+// A drop is legal only in the write that creates its one purchases doc (see test-emulator/gemDrops.test.ts).
+const buyBatch = (db: ReturnType<typeof kidDb>, game: Record<string, unknown>, id: string, heroId: string, cost: number) => {
+  const b = writeBatch(db);
+  b.update(kidRef(db), { game: { ...storedKid().game, ...game, lastPurchaseId: id } });
+  b.set(doc(db, `families/${FAM}/kids/${KID}/purchases/${id}`), { id, heroId, cost, at: 1000 });
+  return b.commit();
+};
 
 beforeAll(async () => {
   env = await initializeTestEnvironment({ projectId: 'demo-mathquest', firestore: { rules: RULES } });
@@ -159,13 +167,18 @@ describe('gems drop guard in the rules', () => {
     await assertFails(updateDoc(kidRef(kidDb()), { game: {} }));
   });
 
-  it('allows a drop up to the dearest hero, and any drop that grows the hero list', async () => {
+  it('denies a drop of exactly 100, and a drop that grows the hero list, without a purchases doc', async () => {
     await setGems(250);
-    await assertSucceeds(updateDoc(kidRef(kidDb()), { game: withGame({ gems: 150 }) })); // a drop of exactly 100
+    await assertFails(updateDoc(kidRef(kidDb()), { game: withGame({ gems: 150 }) }));
+    await assertFails(updateDoc(kidRef(kidDb()), { game: withGame({ gems: 150, heroes: ['knight', 'wizard', 'dragon'] }) }));
+    await assertFails(updateDoc(kidRef(parentDb()), { game: withGame({ gems: 150, heroes: ['knight', 'wizard', 'ranger'] }) }));
+  });
+
+  it('allows a drop that grows the hero list with its purchases doc, for the kid and the parent', async () => {
     await setGems(250);
-    await assertSucceeds(updateDoc(kidRef(kidDb()), { game: withGame({ gems: 100, heroes: ['knight', 'wizard', 'dragon'] }) }));
+    await assertSucceeds(buyBatch(kidDb(), { gems: 150, heroes: ['knight', 'wizard', 'dragon'], hero: 'dragon' }, 'pd', 'dragon', 100));
     await setGems(250);
-    await assertSucceeds(updateDoc(kidRef(parentDb()), { game: withGame({ gems: 150, heroes: ['knight', 'wizard', 'ranger'] }) }));
+    await assertSucceeds(buyBatch(parentDb(), { gems: 215, heroes: ['knight', 'wizard', 'ranger'], hero: 'ranger' }, 'pr', 'ranger', 35));
   });
 
   it('allows earning gems and writing settings with game unchanged', async () => {
@@ -204,7 +217,7 @@ describe('monotonic game guards in the rules', () => {
       await assertSucceeds(updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 90 }) }));
       await assertSucceeds(updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 90 }) })); // no change
       await assertSucceeds(
-        updateDoc(kidRef(db()), { game: withGame({ xp: 500, bestCombo: 20, gems: 75, heroes: ['knight', 'wizard', 'ranger'] }) }),
+        buyBatch(db(), { xp: 500, bestCombo: 20, gems: 55, heroes: ['knight', 'wizard', 'ranger'], hero: 'ranger' }, 'pr', 'ranger', 35),
       );
     });
   }

@@ -46,6 +46,12 @@ export interface KidSettings {
   /** Fact groups a parent marks as already started (1 = only the first group). */
   factGroupsUnlocked: number;
   /**
+   * A parent's floor per module: every group up to this number is open (1 = only the first). Optional on stored
+   * docs: a missing module reads as today's rule (times tables use `factGroupsUnlocked`, the others start at
+   * group 1). Progress can still open more. Read it through `groupFloor` in mastery.ts.
+   */
+  groupsUnlocked?: Partial<Record<ModuleId, number>>;
+  /**
    * Multiplies every fast and slow time bar (3 = most time, 1 = the original bars).
    * Optional on stored docs: a missing value reads as 3. Read it through `paceOf`.
    */
@@ -69,6 +75,17 @@ export interface KidGame {
   bestCombo: number;
   heroes: string[];
   hero: string;
+  /** Set by the write that buys a hero: the id of its purchases doc, so the rules can find that doc. */
+  lastPurchaseId?: string;
+}
+
+/** One hero bought: written with the game change in the same transaction, never edited or deleted. */
+export interface PurchaseLog {
+  id: string;
+  heroId: string;
+  cost: number;
+  /** Epoch ms. */
+  at: number;
 }
 
 export interface Kid {

@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   runTransaction,
@@ -14,8 +15,8 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import { applyDelta, type GameDelta } from '../engine/game';
-import { normalizeGame, normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type SessionLog } from '../engine/models';
-import type { Repo } from './repo';
+import { normalizeGame, normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { newId, type Repo } from './repo';
 import { guardFor, type VersionGuard } from './versionGate';
 
 const BATCH_MAX = 450;
@@ -26,6 +27,7 @@ const BATCH_MAX = 450;
  *   families/{uid}/kids/{kidId}
  *   families/{uid}/kids/{kidId}/cards/{cardId}
  *   families/{uid}/kids/{kidId}/sessions/{sessionId}
+ *   families/{uid}/kids/{kidId}/purchases/{purchaseId}   (parent reads; written only with a game change)
  * Firestore's persistent cache makes every write work offline and sync later.
  */
 export class FirestoreRepo implements Repo {
@@ -55,6 +57,10 @@ export class FirestoreRepo implements Repo {
 
   private sessions(kidId: string) {
     return collection(this.db, 'families', this.uid, 'kids', kidId, 'sessions');
+  }
+
+  private purchases(kidId: string) {
+    return collection(this.db, 'families', this.uid, 'kids', kidId, 'purchases');
   }
 
   async getFamily(): Promise<Family | null> {
@@ -107,10 +113,31 @@ export class FirestoreRepo implements Repo {
         if ((await tx.get(sessionRef)).exists()) return current;
         tx.set(sessionRef, opts.session);
       }
-      const next = applyDelta(current, delta);
+      let next = applyDelta(current, delta);
+      if (delta.purchase !== undefined) {
+        // The log entry rides in the same transaction as the hero and the gems it records. The kid doc names it
+        // (lastPurchaseId) so the rules can find it: a gem drop is legal only with that one entry.
+        const id = newId();
+        const entry: PurchaseLog = { id, heroId: delta.purchase, cost: current.gems - next.gems, at: Date.now() };
+        tx.set(doc(this.purchases(kidId), id), entry);
+        next = { ...next, lastPurchaseId: id };
+      }
       tx.update(ref, { game: next });
       return next;
     });
+  }
+
+  async listPurchases(kidId: string, max: number): Promise<PurchaseLog[]> {
+    const snap = await getDocs(query(this.purchases(kidId), orderBy('at', 'desc'), limit(max)));
+    return snap.docs.map((d) => d.data() as PurchaseLog);
+  }
+
+  watchKid(kidId: string, onKid: (kid: Kid | null) => void, opts?: { onError?: (e: Error) => void }): () => void {
+    return onSnapshot(
+      doc(this.kids(), kidId),
+      (snap) => onKid(snap.exists() ? normalizeKid(snap.data() as Kid) : null),
+      (e) => opts?.onError?.(e),
+    );
   }
 
   async deleteKid(kidId: string): Promise<void> {

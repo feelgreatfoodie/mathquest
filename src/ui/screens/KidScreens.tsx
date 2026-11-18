@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { cardLabel } from '../../engine/modules';
-import { HEROES, levelFor, type GameDelta } from '../../engine/game';
+import { levelFor } from '../../engine/game';
 import { learnerOf, type Kid } from '../../engine/models';
 import { PrereaderHome, PrereaderSummary } from '../early/PrereaderScreens';
+import { HeroShop, type OnGame } from '../HeroShop';
 import type { RunSummary } from '../../engine/session';
 import { TABS, readTab, tabForKey, writeTab, type LandingTab } from '../landingTab';
 import { PinPad } from '../PinPad';
@@ -50,12 +51,15 @@ export function Landing({
 }: {
   initialTab?: LandingTab;
   error: string | null;
-  onKidSubmit: (name: string, pin: string) => void;
+  /** Resolve to false when the name and PIN were refused, so the dots shake and clear. */
+  onKidSubmit: (name: string, pin: string) => void | boolean | Promise<void | boolean>;
   onParentSignIn: () => void;
   onTabChange?: () => void;
 }) {
   const [tab, setTab] = useState<LandingTab>(() => initialTab ?? readTab());
   const [name, setName] = useState('');
+  const nameRef = useRef<HTMLInputElement>(null);
+  const [needName, setNeedName] = useState(false);
   const refocus = useRef(false);
   // The tab list remounts when the panel swaps, so focus moves after the new tab renders.
   useEffect(() => {
@@ -67,6 +71,7 @@ export function Landing({
     if (t === tab) return;
     refocus.current = viaKeyboard;
     setTab(t);
+    setNeedName(false);
     writeTab(t);
     onTabChange?.();
   };
@@ -82,15 +87,16 @@ export function Landing({
             top={tabs}
             title="Who's playing?"
             subtitle="Type your first name, then your 4-digit PIN."
-            error={error}
+            error={needName ? 'Type your first name first.' : error}
             header={
               <>
                 <label htmlFor="kid-signin-name" className="visually-hidden">First name</label>
                 <input
                   id="kid-signin-name"
                   className="kid-name-input"
+                  ref={nameRef}
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => { setName(e.target.value); setNeedName(false); }}
                   placeholder="First name"
                   maxLength={20}
                   autoComplete="off"
@@ -100,7 +106,15 @@ export function Landing({
                 />
               </>
             }
-            onComplete={(pin) => onKidSubmit(name, pin)}
+            onComplete={(pin) => {
+              if (!name.trim()) {
+                setNeedName(true);
+                nameRef.current?.focus();
+                return false;
+              }
+              setNeedName(false);
+              return onKidSubmit(name, pin);
+            }}
           />
         </div>
       </div>
@@ -150,13 +164,13 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function KidHome(props: { kid: Kid; onStart: () => void; onGame: (delta: GameDelta) => Promise<void>; onBack: () => void }) {
+export function KidHome(props: { kid: Kid; onStart: () => void; onGame: OnGame; onBack: () => void }) {
   return learnerOf(props.kid.settings) === 'prereader'
-    ? <PrereaderHome kid={props.kid} onStart={props.onStart} onBack={props.onBack} />
+    ? <PrereaderHome kid={props.kid} onStart={props.onStart} onBack={props.onBack} onGame={props.onGame} />
     : <ReaderHome {...props} />;
 }
 
-function ReaderHome({ kid, onStart, onGame, onBack }: { kid: Kid; onStart: () => void; onGame: (delta: GameDelta) => Promise<void>; onBack: () => void }) {
+function ReaderHome({ kid, onStart, onGame, onBack }: { kid: Kid; onStart: () => void; onGame: OnGame; onBack: () => void }) {
   const [shop, setShop] = useState(false);
   const lv = levelFor(kid.game.xp);
   return (
@@ -179,46 +193,7 @@ function ReaderHome({ kid, onStart, onGame, onBack }: { kid: Kid; onStart: () =>
           <button type="button" className="btn btn-ghost" onClick={onBack}>Switch player</button>
         </div>
       </div>
-      {shop ? <HeroShop kid={kid} onGame={onGame} onClose={() => setShop(false)} /> : null}
-    </div>
-  );
-}
-
-function HeroShop({ kid, onGame, onClose }: { kid: Kid; onGame: (delta: GameDelta) => Promise<void>; onClose: () => void }) {
-  return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label="Hero shop">
-      <div className="panel shop">
-        <h2 className="pixel">Hero Shop</h2>
-        <p className="muted">You have {kid.game.gems} gems. Earn gems by finishing quests.</p>
-        <div className="shop-grid">
-          {HEROES.map((h) => {
-            const owned = kid.game.heroes.includes(h.id);
-            const active = kid.game.hero === h.id;
-            const canBuy = !owned && kid.game.gems >= h.cost;
-            return (
-              <div key={h.id} className={`shop-item ${active ? 'is-active' : ''}`}>
-                <Sprite name={h.id} size={72} />
-                <span>{h.name}</span>
-                {owned ? (
-                  <button type="button" className="btn btn-small" disabled={active} onClick={() => void onGame({ equip: h.id })}>
-                    {active ? 'Equipped' : 'Equip'}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    disabled={!canBuy}
-                    onClick={() => void onGame({ purchase: h.id })}
-                  >
-                    {h.cost} gems
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <button type="button" className="btn" onClick={onClose}>Done</button>
-      </div>
+      {shop ? <HeroShop kid={kid} learner="reader" onGame={onGame} onClose={() => setShop(false)} /> : null}
     </div>
   );
 }
