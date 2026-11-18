@@ -10,6 +10,7 @@ import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
 import { hashPin, type Repo } from '../../data/repo';
 import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
+import { reportFailure } from '../failures';
 import { PinPad } from '../PinPad';
 
 export { makeKid };
@@ -48,7 +49,12 @@ export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone
         <AddKidForm
           onAdd={async (name, type) => {
             const kid = makeKid(name, type);
-            await repo.saveKid(kid);
+            try {
+              await repo.createKid(kid);
+            } catch (e) {
+              reportFailure('The player was not added.', e);
+              return;
+            }
             onDone(family!, [kid]);
           }}
         />
@@ -155,7 +161,12 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
             existing={kids.map((x) => x.name)}
             onAdd={async (name, type) => {
               const k = makeKid(name, type);
-              await repo.saveKid(k);
+              try {
+                await repo.createKid(k);
+              } catch (e) {
+                reportFailure('The player was not added.', e);
+                return;
+              }
               onKids([...kids, k]);
               setSelected(k.id);
             }}
@@ -166,12 +177,21 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
           key={kid.id}
           repo={repo}
           kid={kid}
-          onSave={async (k) => {
-            await repo.saveKid(k);
-            onKids(kids.map((x) => (x.id === k.id ? k : x)));
+          onSettings={async (settings) => {
+            await repo.saveKidSettings(kid.id, settings);
+            onKids(kids.map((x) => (x.id === kid.id ? { ...x, settings } : x)));
+          }}
+          onPinSet={async () => {
+            await repo.setKidFlags(kid.id, { hasPin: true });
+            onKids(kids.map((x) => (x.id === kid.id ? { ...x, hasPin: true } : x)));
           }}
           onDelete={async () => {
-            await repo.deleteKid(kid.id);
+            try {
+              await repo.deleteKid(kid.id);
+            } catch (e) {
+              reportFailure('The player was not removed.', e);
+              return;
+            }
             const rest = kids.filter((x) => x.id !== kid.id);
             onKids(rest);
             setSelected(rest[0]?.id ?? 'add');
@@ -252,6 +272,7 @@ function KidPinPanel({ kid, onSet }: { kid: Kid; onSet: () => Promise<void> }) {
             setPin('');
             setMsg({ ok: true, text: 'PIN saved.' });
           } catch (err) {
+            console.error('Setting the kid PIN failed.', err);
             setMsg({ ok: false, text: (err as Error).message });
           } finally {
             setBusy(false);
@@ -283,11 +304,11 @@ function fmtSec(ms: number): string {
   return Number.isFinite(ms) && ms > 0 ? `${(ms / 1000).toFixed(1)}s` : '–';
 }
 
-function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSave: (k: Kid) => Promise<void>; onDelete: () => Promise<void> }) {
+function KidDetail({ repo, kid, onSettings, onPinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onPinSet: () => Promise<void>; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   const [settings, setSettings] = useState<KidSettings>(kid.settings);
-  const [saved, setSaved] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
@@ -435,7 +456,7 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
         )}
       </section>
 
-      <KidPinPanel kid={kid} onSet={() => onSave({ ...kid, hasPin: true })} />
+      <KidPinPanel kid={kid} onSet={onPinSet} />
 
       <section className="panel settings">
         <h2>Settings for {kid.name}</h2>
@@ -445,6 +466,9 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
             <option value="reader">Reader (7+)</option>
             <option value="prereader">Pre-reader (4–6)</option>
           </select>
+          {learnerOf(settings) !== learnerOf(kid.settings) ? (
+            <span className="muted learner-note">This only changes how the game looks. Progress is kept.</span>
+          ) : null}
         </label>
         <fieldset>
           <legend>Modules</legend>
@@ -488,13 +512,27 @@ function KidDetail({ repo, kid, onSave, onDelete }: { repo: Repo; kid: Kid; onSa
           <button
             type="button"
             className="btn"
+            disabled={saveState === 'saving'}
             onClick={async () => {
-              await onSave({ ...kid, settings });
-              setSaved(true);
-              setTimeout(() => setSaved(false), 1500);
+              const save = async () => {
+                await onSettings(settings);
+              };
+              setSaveState('saving');
+              try {
+                await save();
+                setSaveState('saved');
+                setTimeout(() => setSaveState('idle'), 1500);
+              } catch (e) {
+                setSaveState('failed');
+                reportFailure('Settings were not saved.', e, async () => {
+                  await save();
+                  setSaveState('saved');
+                  setTimeout(() => setSaveState('idle'), 1500);
+                });
+              }
             }}
           >
-            {saved ? 'Saved' : 'Save settings'}
+            {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved' : saveState === 'failed' ? 'Not saved. Try again' : 'Save settings'}
           </button>
           <button
             type="button"

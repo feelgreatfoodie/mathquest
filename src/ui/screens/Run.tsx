@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cardLabel, getCardDef } from '../../engine/modules';
-import { learnerOf, learnerParams, type Kid } from '../../engine/models';
+import { learnerOf, learnerParams, type Kid, type KidGame } from '../../engine/models';
 import type { AnswerInput } from '../../engine/problems';
 import { SessionRunner, type Feedback, type RunSummary } from '../../engine/session';
 import type { Repo } from '../../data/repo';
 import { HoldButton } from '../early/HoldButton';
 import { PrereaderRun } from '../early/PrereaderRun';
+import { reportFailure } from '../failures';
 import { loadRunner, saveRun } from '../runShared';
 import { Keypad, type Field } from '../Keypad';
 import { FracView, MathView } from '../MathView';
@@ -15,6 +16,8 @@ interface RunProps {
   repo: Repo;
   kid: Kid;
   onDone: (summary: RunSummary, kid: Kid) => void;
+  /** The stored game after a Try again succeeds. */
+  onSynced?: (game: KidGame) => void;
   onExit: () => void;
 }
 
@@ -26,7 +29,7 @@ export function Run(props: RunProps) {
   return learnerOf(props.kid.settings) === 'prereader' ? <PrereaderRun {...props} /> : <ReaderRun {...props} />;
 }
 
-function ReaderRun({ repo, kid, onDone, onExit }: RunProps) {
+function ReaderRun({ repo, kid, onDone, onExit, onSynced }: RunProps) {
   const BLOCK = learnerParams('reader').blockSize;
   const runnerRef = useRef<SessionRunner | null>(null);
   const startedAt = useRef(Date.now());
@@ -82,7 +85,7 @@ function ReaderRun({ repo, kid, onDone, onExit }: RunProps) {
     // Whatever the save does, the player leaves the run.
     let left = false;
     try {
-      const done = await saveRun(repo, kid, r, startedAt.current);
+      const done = await saveRun(repo, kid, r, startedAt.current, onSynced);
       if (done) {
         left = true;
         onDone(done.summary, done.updated);
@@ -92,7 +95,7 @@ function ReaderRun({ repo, kid, onDone, onExit }: RunProps) {
     } finally {
       if (!left) onExit();
     }
-  }, [kid, repo, onDone, onExit]);
+  }, [kid, repo, onDone, onExit, onSynced]);
 
   const next = useCallback(() => {
     const r = runnerRef.current;
@@ -117,7 +120,7 @@ function ReaderRun({ repo, kid, onDone, onExit }: RunProps) {
     const fb = r.answer(input, ms);
     setFeedback(fb);
     const card = r.getCard(e.cardId);
-    if (card) void repo.saveCards(kid.id, [card]).catch(() => undefined);
+    if (card) void repo.saveCards(kid.id, [card]).catch((e) => reportFailure('An answer was not saved.', e, () => repo.saveCards(kid.id, [card])));
     if (fb.verdict === 'correct') {
       setHits((h) => h + 1);
       setTimeout(next, fb.fast ? 550 : 800);
