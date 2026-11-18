@@ -4,11 +4,12 @@ import { learnerOf, learnerParams, type Kid } from '../../engine/models';
 import type { AnswerInput } from '../../engine/problems';
 import { SessionRunner, type Feedback, type RunSummary } from '../../engine/session';
 import type { Repo } from '../../data/repo';
+import { HoldButton } from '../early/HoldButton';
 import { PrereaderRun } from '../early/PrereaderRun';
 import { loadRunner, saveRun } from '../runShared';
 import { Keypad, type Field } from '../Keypad';
 import { FracView, MathView } from '../MathView';
-import { MONSTERS, Sprite } from '../sprites';
+import { MONSTERS, Sprite, UiIcon } from '../sprites';
 
 interface RunProps {
   repo: Repo;
@@ -78,12 +79,19 @@ function ReaderRun({ repo, kid, onDone, onExit }: RunProps) {
     const r = runnerRef.current;
     if (!r || finishing.current) return;
     finishing.current = true;
-    const saved = await saveRun(repo, kid, r, startedAt.current);
-    if (!saved) {
-      onExit();
-      return;
+    // Whatever the save does, the player leaves the run.
+    let left = false;
+    try {
+      const done = await saveRun(repo, kid, r, startedAt.current);
+      if (done) {
+        left = true;
+        onDone(done.summary, done.updated);
+      }
+    } catch (e) {
+      console.error('Leaving the run: saving threw.', e);
+    } finally {
+      if (!left) onExit();
     }
-    onDone(saved.summary, saved.updated);
   }, [kid, repo, onDone, onExit]);
 
   const next = useCallback(() => {
@@ -229,7 +237,7 @@ function ReaderRun({ repo, kid, onDone, onExit }: RunProps) {
 function RunTop({ progress, combo, onQuit }: { progress: number; combo: number; onQuit: () => void }) {
   return (
     <div className="run-top">
-      <button type="button" className="btn btn-ghost btn-small" onClick={onQuit}>Save &amp; quit</button>
+      <HoldButton onHold={onQuit}><UiIcon name="house" size={44} /></HoldButton>
       <div className="progress" aria-label={`${Math.round(progress * 100)}% through the dungeon`}>
         <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
       </div>

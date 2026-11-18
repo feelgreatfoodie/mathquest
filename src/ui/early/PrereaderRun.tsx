@@ -9,6 +9,7 @@ import type { Repo } from '../../data/repo';
 import { loadRunner, saveRun } from '../runShared';
 import { MONSTERS, Sprite, UiIcon } from '../sprites';
 import { ChoiceButtons } from './ChoiceButtons';
+import { HoldButton } from './HoldButton';
 import { displayModeFor, type DisplayMode } from './displayMode';
 import { ObjectGroups } from './ObjectGroups';
 import { chime, softTone, tick, unlockSounds } from './sounds';
@@ -23,47 +24,9 @@ interface Props {
 }
 
 const PATH_DOTS = 10;
-const HOLD_MS = 2000;
 const CORRECT_PAUSE_MS = 1200;
 /** Used only for card levels: pre-reader bars do not depend on the facts baseline. */
 const BASELINE = 3500;
-
-/** A button that acts only after a 2 s hold, so a small finger cannot leave by accident. */
-export function HoldButton({ onHold, label = 'Hold to leave', children }: { onHold: () => void; label?: string; children: React.ReactNode }) {
-  const [holding, setHolding] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stop = () => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    setHolding(false);
-  };
-  const start = () => {
-    stop();
-    setHolding(true);
-    timer.current = setTimeout(() => {
-      stop();
-      onHold();
-    }, HOLD_MS);
-  };
-  useEffect(() => stop, []);
-  return (
-    <button
-      type="button"
-      className={`hold-btn ${holding ? 'is-holding' : ''}`}
-      aria-label={label}
-      onPointerDown={start}
-      onPointerUp={stop}
-      onPointerLeave={stop}
-      onPointerCancel={stop}
-      onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) start(); }}
-      onKeyUp={stop}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      {children}
-      <span className="hold-ring" aria-hidden="true" />
-    </button>
-  );
-}
 
 function PathDots({ done }: { done: number }) {
   return (
@@ -100,6 +63,7 @@ export function PrereaderRun({ repo, kid, onDone, onExit }: Props) {
   const [count, setCount] = useState(0);
   const [hits, setHits] = useState(0);
   const [shake, setShake] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   const rerender = () => setTick((t) => t + 1);
 
@@ -175,12 +139,20 @@ export function PrereaderRun({ repo, kid, onDone, onExit }: Props) {
     finishing.current = true;
     countTurn.current++;
     stopSpeaking();
-    const saved = await saveRun(repo, kid, r, startedAt.current);
-    if (!saved) {
-      onExit();
-      return;
+    setSaved(true);
+    // Whatever the save does, the kid leaves the run.
+    let left = false;
+    try {
+      const done = await saveRun(repo, kid, r, startedAt.current);
+      if (done) {
+        left = true;
+        onDone(done.summary, done.updated);
+      }
+    } catch (e) {
+      console.error('Leaving the run: saving threw.', e);
+    } finally {
+      if (!left) onExit();
     }
-    onDone(saved.summary, saved.updated);
   }, [kid, repo, onDone, onExit]);
 
   const next = useCallback(() => {
@@ -287,6 +259,7 @@ export function PrereaderRun({ repo, kid, onDone, onExit }: Props) {
     <div className="screen run early-run">
       <div className="run-top early-top">
         <HoldButton onHold={() => void finish()}><UiIcon name="house" size={44} /></HoldButton>
+        {saved ? <div className="saved-toast" role="status"><UiIcon name="check" size={32} /> Saved!</div> : null}
         <PathDots done={done} />
         <button
           type="button"

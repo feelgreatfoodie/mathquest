@@ -3,7 +3,7 @@ import type { Kid } from '../../engine/models';
 import { word } from '../../engine/modules/early';
 import type { RunSummary } from '../../engine/session';
 import { Sprite, UiIcon } from '../sprites';
-import { HoldButton } from './PrereaderRun';
+import { HoldButton } from './HoldButton';
 import { chime, unlockSounds } from './sounds';
 import { speak, unlockSpeech } from './useSpeech';
 
