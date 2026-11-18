@@ -51,12 +51,15 @@ export function Landing({
 }: {
   initialTab?: LandingTab;
   error: string | null;
-  onKidSubmit: (name: string, pin: string) => void;
+  /** Resolve to false when the name and PIN were refused, so the dots shake and clear. */
+  onKidSubmit: (name: string, pin: string) => void | boolean | Promise<void | boolean>;
   onParentSignIn: () => void;
   onTabChange?: () => void;
 }) {
   const [tab, setTab] = useState<LandingTab>(() => initialTab ?? readTab());
   const [name, setName] = useState('');
+  const nameRef = useRef<HTMLInputElement>(null);
+  const [needName, setNeedName] = useState(false);
   const refocus = useRef(false);
   // The tab list remounts when the panel swaps, so focus moves after the new tab renders.
   useEffect(() => {
@@ -68,6 +71,7 @@ export function Landing({
     if (t === tab) return;
     refocus.current = viaKeyboard;
     setTab(t);
+    setNeedName(false);
     writeTab(t);
     onTabChange?.();
   };
@@ -83,15 +87,16 @@ export function Landing({
             top={tabs}
             title="Who's playing?"
             subtitle="Type your first name, then your 4-digit PIN."
-            error={error}
+            error={needName ? 'Type your first name first.' : error}
             header={
               <>
                 <label htmlFor="kid-signin-name" className="visually-hidden">First name</label>
                 <input
                   id="kid-signin-name"
                   className="kid-name-input"
+                  ref={nameRef}
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => { setName(e.target.value); setNeedName(false); }}
                   placeholder="First name"
                   maxLength={20}
                   autoComplete="off"
@@ -101,7 +106,15 @@ export function Landing({
                 />
               </>
             }
-            onComplete={(pin) => onKidSubmit(name, pin)}
+            onComplete={(pin) => {
+              if (!name.trim()) {
+                setNeedName(true);
+                nameRef.current?.focus();
+                return false;
+              }
+              setNeedName(false);
+              return onKidSubmit(name, pin);
+            }}
           />
         </div>
       </div>

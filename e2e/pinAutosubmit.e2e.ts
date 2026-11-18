@@ -151,7 +151,7 @@ test.describe('parent PIN screens (real app, local data)', () => {
     await expect(page.locator('.error')).toContainText('Wrong PIN');
     await expect.poll(() => dotsOn(page)).toBe(0);
     await tap(page, PARENT_PIN);
-    await expect(page.getByRole('heading', { name: 'Add a player' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Parent area' })).toBeVisible();
     await shot(page, 'pin-parent');
   });
 

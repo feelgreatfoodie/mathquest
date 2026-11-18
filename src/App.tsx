@@ -209,13 +209,15 @@ export function App() {
           setError(null);
         }}
         onKidSubmit={(name, pin) => {
-          if (!name.trim()) {
-            setPinError('Type your first name first.');
-            return;
-          }
           setPinError(null);
           setError(null);
-          signInKid(name, pin).catch((e: { message?: string }) => setPinError(e.message ?? "That name and PIN didn't match"));
+          return signInKid(name, pin).then(
+            () => true,
+            (e: { message?: string }) => {
+              setPinError(e.message ?? "That name and PIN didn't match");
+              return false;
+            },
+          );
         }}
         onParentSignIn={() => {
           setError(null);
@@ -256,9 +258,15 @@ export function App() {
           title={`${kid.name}'s PIN`}
           error={pinError}
           onCancel={() => { setPinError(null); setScreen({ name: 'picker' }); }}
-          onComplete={(p) => {
-            signInKid(kid.name, p).catch((e: { message?: string }) => setPinError(e.message ?? "That name and PIN didn't match"));
-          }}
+          onComplete={(p) =>
+            signInKid(kid.name, p).then(
+              () => true,
+              (e: { message?: string }) => {
+                setPinError(e.message ?? "That name and PIN didn't match");
+                return false;
+              },
+            )
+          }
         />
       ) : null;
     case 'home':
@@ -305,7 +313,10 @@ export function App() {
               // Parent copies of kids can be old by now. Reload them so the area shows stored totals.
               void repo.listKids().then(setKids).catch((e) => reportFailure('Could not load the latest player data.', e));
               setScreen({ name: 'parent' });
-            } else setPinError('Wrong PIN. Try again.');
+              return true;
+            }
+            setPinError('Wrong PIN. Try again.');
+            return false;
           }}
         />
       );
