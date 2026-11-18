@@ -1,11 +1,16 @@
 // Live round trip against a deployed project: kid PIN sign-in on the real kidSignIn function.
-//   node scripts/deploy-probe.mjs --project <gcp-project-id>
+//   node scripts/deploy-probe.mjs --project <gcp-project-id> [--url https://your-live-site]
 // Needs application default credentials with Firestore read/write on the project. Run it after every
 // functions deploy. Exit 0 = pass, 1 = fail, 2 = bad usage. It prints one summary line.
 //
 // Why it exists: the emulator needs no IAM, so the 11-17 missing firebaseauth.viewer role passed every
 // test while every real kid PIN failed. Only a call to the deployed function, with the function's
 // runtime service account, hits that class of fault.
+//
+// It also fetches the page the site serves (--url, default https://<project>.web.app) and every script it loads, and fails
+// unless one of them contains the project id. A bundle built with no VITE_FIREBASE_* config has no project id in it and
+// falls back to local mode, so kid sign-in breaks while the function itself still passes. On 2026-11-18 a rollback from a
+// fresh worktree shipped such a bundle and this probe passed (it never looked at the bundle).
 //
 // It creates a throwaway parent registry doc, family, kid, PIN row and name claim with random values
 // (same scrypt hashing as setKidPin), calls kidSignIn with the right PIN and with a wrong one, then
@@ -21,11 +26,57 @@ const GLOBAL = '_global';
 
 export const callableUrl = (project) => `https://us-west1-${project}.cloudfunctions.net/kidSignIn`;
 
+export const liveUrl = (project) => `https://${project}.web.app/`;
+
 export function parseArgs(argv) {
   const i = argv.indexOf('--project');
   const project = i >= 0 ? argv[i + 1] : undefined;
   if (!project || project.startsWith('--') || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project)) return null;
-  return { project };
+  const u = argv.indexOf('--url');
+  const url = u >= 0 ? argv[u + 1] : liveUrl(project);
+  if (!url || !/^https:\/\/[^\s/]+(\/\S*)?$/.test(url)) return null;
+  return { project, url };
+}
+
+/** The script files a served page loads (module scripts and preloads), as absolute URLs, in page order, no repeats. */
+export function scriptUrls(html, pageUrl) {
+  const out = [];
+  for (const m of String(html).matchAll(/(?:src|href)=["']([^"']+\.js)["']/g)) {
+    let abs;
+    try {
+      abs = new URL(m[1], pageUrl).href;
+    } catch {
+      continue;
+    }
+    if (!out.includes(abs)) out.push(abs);
+  }
+  return out;
+}
+
+/** Problems with the served bundle: no script found, or no script holds the project id. [] means the bundle carries the config. */
+export function checkBundle(files, project) {
+  if (!files.length) return ['bundle: the page loads no script files'];
+  if (!files.some((f) => typeof f.text === 'string' && f.text.includes(project))) {
+    return [`bundle: none of ${files.length} served script file(s) contains the project id "${project}" (a bundle built with no Firebase config; kid sign-in would fail)`];
+  }
+  return [];
+}
+
+/** Fetches the page and its scripts from the live URL and checks them. */
+export async function probeBundle({ url, project, fetchImpl = fetch }) {
+  try {
+    const page = await fetchImpl(url, { headers: { 'cache-control': 'no-cache' } });
+    if (!page.ok) return [`bundle: ${url} answered HTTP ${page.status}`];
+    const html = await page.text();
+    const files = [];
+    for (const u of scriptUrls(html, url)) {
+      const res = await fetchImpl(u, { headers: { 'cache-control': 'no-cache' } });
+      files.push({ url: u, text: res.ok ? await res.text() : null });
+    }
+    return checkBundle(files, project);
+  } catch (e) {
+    return [`bundle: could not fetch ${url}: ${e instanceof Error ? e.message : String(e)}`];
+  }
 }
 
 /** Random throwaway identity. Letters only in the name so normalizeName() leaves it unchanged. */
@@ -138,9 +189,9 @@ export async function cleanup(db, p, { createdCount }) {
   return { sharedCounters };
 }
 
-export async function probe({ db, project, fetchImpl = fetch, log = () => {} }) {
+export async function probe({ db, project, url = liveUrl(project), fetchImpl = fetch, log = () => {} }) {
   const p = makeProbe();
-  const url = callableUrl(project);
+  const signInUrl = callableUrl(project);
   const problems = [];
   const countRef = db.doc('meta/parentCount');
   let createdCount = false;
@@ -154,10 +205,11 @@ export async function probe({ db, project, fetchImpl = fetch, log = () => {} }) 
       tx.set(countRef, { count: Number(snap.data()?.count ?? 0) + 1 });
     });
     log('seeded throwaway parent, family, kid');
-    const ok = await callKidSignIn(url, p.name, p.pin, fetchImpl);
+    const ok = await callKidSignIn(signInUrl, p.name, p.pin, fetchImpl);
     problems.push(...checkSignIn(ok.status, ok.body, p));
-    const bad = await callKidSignIn(url, p.name, p.wrongPin, fetchImpl);
+    const bad = await callKidSignIn(signInUrl, p.name, p.wrongPin, fetchImpl);
     problems.push(...checkWrongPin(bad.status, bad.body));
+    problems.push(...(await probeBundle({ url, project, fetchImpl })));
   } catch (e) {
     problems.push(`probe error: ${e instanceof Error ? e.message : String(e)}`);
   } finally {
@@ -174,7 +226,7 @@ export async function probe({ db, project, fetchImpl = fetch, log = () => {} }) 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args) {
-    console.error('Usage: node scripts/deploy-probe.mjs --project <gcp-project-id>');
+    console.error('Usage: node scripts/deploy-probe.mjs --project <gcp-project-id> [--url https://your-live-site]');
     process.exit(2);
   }
   const { createRequire } = await import('node:module');
@@ -182,10 +234,10 @@ async function main() {
   const { initializeApp } = require('firebase-admin/app');
   const { getFirestore } = require('firebase-admin/firestore');
   initializeApp({ projectId: args.project });
-  const r = await probe({ db: getFirestore(), project: args.project, log: console.error });
+  const r = await probe({ db: getFirestore(), project: args.project, url: args.url, log: console.error });
   for (const m of r.problems) console.error(`FAIL ${m}`);
   const shared = r.sharedCounters ? `, ${r.sharedCounters} shared IP counter left (expires in 15 min)` : '';
-  console.log(`deploy-probe ${r.ok ? 'PASS' : 'FAIL'} project=${args.project}: kidSignIn right PIN + wrong PIN, cleanup ${r.problems.some((x) => x.startsWith('cleanup')) ? 'FAILED' : 'done'}${shared}`);
+  console.log(`deploy-probe ${r.ok ? 'PASS' : 'FAIL'} project=${args.project}: kidSignIn right PIN + wrong PIN + served bundle (${args.url}), cleanup ${r.problems.some((x) => x.startsWith('cleanup')) ? 'FAILED' : 'done'}${shared}`);
   process.exit(r.ok ? 0 : 1);
 }
 
