@@ -64,6 +64,15 @@ export interface KidGame {
   hero: string;
 }
 
+/** One hero bought: written with the game change in the same transaction, never edited or deleted. */
+export interface PurchaseLog {
+  id: string;
+  heroId: string;
+  cost: number;
+  /** Epoch ms. */
+  at: number;
+}
+
 export interface Kid {
   id: string;
   name: string;

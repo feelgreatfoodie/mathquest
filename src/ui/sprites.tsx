@@ -145,7 +145,7 @@ export function Sprite({ name, size = 96, className }: { name: string; size?: nu
   );
 }
 
-export type UiIconName = 'house' | 'speaker' | 'eye' | 'play' | 'flame' | 'arrow-down' | 'gem' | 'check';
+export type UiIconName = 'house' | 'speaker' | 'eye' | 'play' | 'flame' | 'arrow-down' | 'gem' | 'check' | 'chest' | 'sparkle' | 'close';
 
 /** Plain icons for the pre-reader screens. They carry no text: a shape and an aria-label. */
 export function UiIcon({ name, size = 40, label }: { name: UiIconName; size?: number; label?: string }) {
@@ -165,6 +165,12 @@ export function UiIcon({ name, size = 40, label }: { name: UiIconName; size?: nu
       return <svg {...common} fill="currentColor"><path d="M10 3h4v10h5l-7 8-7-8h5z" /></svg>;
     case 'gem':
       return <svg {...common}><path d="M6 3h12l4 6-10 12L2 9z" fill="#38bdf8" stroke="#075985" strokeWidth="1.5" strokeLinejoin="round" /></svg>;
+    case 'chest':
+      return <svg {...common}><path d="M3 10a9 5 0 0 1 18 0v2H3z" fill="#b45309" stroke="#451a03" strokeWidth="1.4" strokeLinejoin="round" /><rect x="3" y="12" width="18" height="8" rx="1" fill="#d97706" stroke="#451a03" strokeWidth="1.4" /><rect x="10" y="11" width="4" height="5" rx="1" fill="#facc15" stroke="#451a03" strokeWidth="1.2" /></svg>;
+    case 'sparkle':
+      return <svg {...common}><path d="M12 1l2.6 7.4L22 11l-7.4 2.6L12 21l-2.6-7.4L2 11l7.4-2.6z" fill="#facc15" stroke="#a16207" strokeWidth="1.2" strokeLinejoin="round" /></svg>;
+    case 'close':
+      return <svg {...common} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round"><path d="M5 5l14 14M19 5L5 19" /></svg>;
     case 'check':
       return <svg {...common} fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><path d="M4 13l5 5L20 6" /></svg>;
   }

@@ -51,7 +51,7 @@ describe('kid with game {} through the repo and the screens', () => {
     expect(listed?.game).toEqual(DEFAULT_GAME);
     expect(got?.game).toEqual(DEFAULT_GAME);
     const noop = () => {};
-    const home = renderToStaticMarkup(createElement(KidHome, { kid: got!, onStart: noop, onGame: async () => {}, onBack: noop }));
+    const home = renderToStaticMarkup(createElement(KidHome, { kid: got!, onStart: noop, onGame: async () => true, onBack: noop }));
     const pick = renderToStaticMarkup(createElement(Picker, { kids: [listed!], onPick: noop, onParent: noop }));
     expect(home).not.toContain('NaN');
     expect(pick).not.toContain('NaN');

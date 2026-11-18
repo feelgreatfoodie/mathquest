@@ -1,6 +1,6 @@
 import { applyDelta, type GameDelta } from '../engine/game';
-import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type SessionLog } from '../engine/models';
-import type { Repo } from './repo';
+import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { newId, type Repo } from './repo';
 
 const PREFIX = 'mathquest:v1';
 
@@ -72,17 +72,54 @@ export class LocalRepo implements Repo {
       const next = applyDelta(current, delta);
       write(`sessions:${kidId}`, [...logs, opts.session].slice(-200));
       this.patchKid(kidId, (k) => ({ ...k, game: next }));
+      this.logPurchase(kidId, current, next, delta);
       return next;
     }
     const next = applyDelta(current, delta);
     this.patchKid(kidId, (k) => ({ ...k, game: next }));
+    this.logPurchase(kidId, current, next, delta);
     return next;
+  }
+
+  private logPurchase(kidId: string, before: KidGame, after: KidGame, delta: GameDelta): void {
+    if (delta.purchase === undefined) return;
+    const logs = read<PurchaseLog[]>(`purchases:${kidId}`, []);
+    write(`purchases:${kidId}`, [...logs, { id: newId(), heroId: delta.purchase, cost: before.gems - after.gems, at: Date.now() }]);
+  }
+
+  async listPurchases(kidId: string, max: number): Promise<PurchaseLog[]> {
+    return read<PurchaseLog[]>(`purchases:${kidId}`, []).sort((a, b) => b.at - a.at).slice(0, max);
+  }
+
+  watchKid(kidId: string, onKid: (kid: Kid | null) => void, opts?: { onError?: (e: Error) => void; pollMs?: number }): () => void {
+    let last: string | undefined;
+    let stopped = false;
+    const tick = () => {
+      if (stopped) return;
+      this.getKid(kidId).then(
+        (k) => {
+          if (stopped) return;
+          const json = JSON.stringify(k);
+          if (json === last) return;
+          last = json;
+          onKid(k);
+        },
+        (e) => opts?.onError?.(e as Error),
+      );
+    };
+    tick();
+    const timer = setInterval(tick, opts?.pollMs ?? 1500);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
   }
 
   async deleteKid(kidId: string): Promise<void> {
     write('kids', read<Kid[]>('kids', []).filter((k) => k.id !== kidId));
     localStorage.removeItem(`${PREFIX}:cards:${kidId}`);
     localStorage.removeItem(`${PREFIX}:sessions:${kidId}`);
+    localStorage.removeItem(`${PREFIX}:purchases:${kidId}`);
   }
 
   async loadCards(kidId: string): Promise<CardMap> {

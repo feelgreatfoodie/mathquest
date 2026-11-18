@@ -69,6 +69,26 @@ service cloud.firestore {
         && after.get('heroes', []).hasAll(before.get('heroes', []));
     }
 
+    // A purchases-log entry is valid only in the transaction that buys the hero: the kid doc after the write
+    // holds one more hero (the logged one, not owned before) and exactly `cost` fewer gems. get() reads the doc
+    // before the write, getAfter() reads it after, so a lone entry, a wrong cost or a wrong hero is refused.
+    function purchaseEntryOk(uid, kidId, purchaseId) {
+      let kidPath = /databases/$(database)/documents/families/$(uid)/kids/$(kidId);
+      let before = get(kidPath).data.get('game', {});
+      let after = getAfter(kidPath).data.get('game', {});
+      let e = request.resource.data;
+      return e.keys().hasOnly(['id', 'heroId', 'cost', 'at'])
+        && e.keys().hasAll(['id', 'heroId', 'cost', 'at'])
+        && e.id == purchaseId
+        && e.heroId is string
+        && e.cost is int && e.cost > 0 && e.cost <= maxHeroPrice()
+        && e.at is number
+        && after.get('heroes', []).hasAll([e.heroId])
+        && !before.get('heroes', []).hasAny([e.heroId])
+        && after.get('heroes', []).size() == before.get('heroes', []).size() + 1
+        && before.get('gems', 0) - after.get('gems', 0) == e.cost;
+    }
+
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
     // touches them.
     match /parents/{document=**} {
@@ -104,6 +124,14 @@ service cloud.firestore {
           allow delete: if isParent(uid);
           allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc()
             && request.resource.data.id == cardId;
+        }
+
+        // Purchases log: the parent reads it, nobody edits or deletes it. A kid token (or the parent device
+        // playing as a kid) creates an entry only for this kidId and only with its game change.
+        match /purchases/{purchaseId} {
+          allow read: if isParent(uid);
+          allow create: if (isParent(uid) || isKid(uid, kidId)) && purchaseEntryOk(uid, kidId, purchaseId);
+          allow update, delete: if false;
         }
 
         match /sessions/{sessionId} {

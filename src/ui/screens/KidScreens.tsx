@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { cardLabel } from '../../engine/modules';
-import { HEROES, levelFor, type GameDelta } from '../../engine/game';
+import { levelFor } from '../../engine/game';
 import { learnerOf, type Kid } from '../../engine/models';
 import { PrereaderHome, PrereaderSummary } from '../early/PrereaderScreens';
+import { HeroShop, type OnGame } from '../HeroShop';
 import type { RunSummary } from '../../engine/session';
 import { TABS, readTab, tabForKey, writeTab, type LandingTab } from '../landingTab';
 import { PinPad } from '../PinPad';
@@ -150,13 +151,13 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-export function KidHome(props: { kid: Kid; onStart: () => void; onGame: (delta: GameDelta) => Promise<void>; onBack: () => void }) {
+export function KidHome(props: { kid: Kid; onStart: () => void; onGame: OnGame; onBack: () => void }) {
   return learnerOf(props.kid.settings) === 'prereader'
-    ? <PrereaderHome kid={props.kid} onStart={props.onStart} onBack={props.onBack} />
+    ? <PrereaderHome kid={props.kid} onStart={props.onStart} onBack={props.onBack} onGame={props.onGame} />
     : <ReaderHome {...props} />;
 }
 
-function ReaderHome({ kid, onStart, onGame, onBack }: { kid: Kid; onStart: () => void; onGame: (delta: GameDelta) => Promise<void>; onBack: () => void }) {
+function ReaderHome({ kid, onStart, onGame, onBack }: { kid: Kid; onStart: () => void; onGame: OnGame; onBack: () => void }) {
   const [shop, setShop] = useState(false);
   const lv = levelFor(kid.game.xp);
   return (
@@ -179,46 +180,7 @@ function ReaderHome({ kid, onStart, onGame, onBack }: { kid: Kid; onStart: () =>
           <button type="button" className="btn btn-ghost" onClick={onBack}>Switch player</button>
         </div>
       </div>
-      {shop ? <HeroShop kid={kid} onGame={onGame} onClose={() => setShop(false)} /> : null}
-    </div>
-  );
-}
-
-function HeroShop({ kid, onGame, onClose }: { kid: Kid; onGame: (delta: GameDelta) => Promise<void>; onClose: () => void }) {
-  return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label="Hero shop">
-      <div className="panel shop">
-        <h2 className="pixel">Hero Shop</h2>
-        <p className="muted">You have {kid.game.gems} gems. Earn gems by finishing quests.</p>
-        <div className="shop-grid">
-          {HEROES.map((h) => {
-            const owned = kid.game.heroes.includes(h.id);
-            const active = kid.game.hero === h.id;
-            const canBuy = !owned && kid.game.gems >= h.cost;
-            return (
-              <div key={h.id} className={`shop-item ${active ? 'is-active' : ''}`}>
-                <Sprite name={h.id} size={72} />
-                <span>{h.name}</span>
-                {owned ? (
-                  <button type="button" className="btn btn-small" disabled={active} onClick={() => void onGame({ equip: h.id })}>
-                    {active ? 'Equipped' : 'Equip'}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    disabled={!canBuy}
-                    onClick={() => void onGame({ purchase: h.id })}
-                  >
-                    {h.cost} gems
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <button type="button" className="btn" onClick={onClose}>Done</button>
-      </div>
+      {shop ? <HeroShop kid={kid} learner="reader" onGame={onGame} onClose={() => setShop(false)} /> : null}
     </div>
   );
 }

@@ -115,13 +115,15 @@ export function App() {
   /** The shop's writes. The screen shows the stored result, so a failed purchase never looks bought. */
   const applyGame = useCallback(
     async (kidId: string, delta: GameDelta) => {
-      if (!repo) return;
+      if (!repo) return false;
       const attempt = async () => showGame(kidId, await repo.applyGameDelta(kidId, delta));
       try {
         await attempt();
+        return true;
       } catch (e) {
         if (e instanceof GameDeltaError) reportFailure(e.message, e);
         else reportFailure('That was not saved.', e, attempt);
+        return false;
       }
     },
     [repo, showGame],
