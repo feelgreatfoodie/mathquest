@@ -19,11 +19,24 @@ const kidRef = (db: Db) => doc(db, `families/${FAM}/kids/${KID}`);
 const purchaseRef = (db: Db, id: string) => doc(db, `families/${FAM}/kids/${KID}/purchases/${id}`);
 
 const GAME = { lastPlayedDay: '2026-11-17', xp: 467, gems: 200, heroes: ['knight'], bestCombo: 16, hero: 'knight', streakDays: 1 };
-const kidDoc = (game: Record<string, unknown> = {}) => ({
-  id: KID, name: 'Testkid', createdAt: 1, hasPin: true,
-  settings: { sessionSize: 30, maxNew: 8, factGroupsUnlocked: 1, paceMultiplier: 3, tracks: { facts: true, multidigit: true, fractions: true } },
-  game: { ...GAME, ...game },
-});
+// The shop fields (items, equipped, goal) are stored in the top-level `inventory` map, never in `game`. The helpers
+// take them mixed into one object, as the tests read best, and split them here.
+const INV_KEYS = ['items', 'equipped', 'goal'];
+function split(fields: Record<string, unknown>) {
+  const game: Record<string, unknown> = { ...GAME };
+  const inv: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(fields)) (INV_KEYS.includes(k) ? inv : game)[k] = v;
+  return { game, inventory: Object.keys(inv).length ? inv : undefined };
+}
+const kidDoc = (fields: Record<string, unknown> = {}) => {
+  const { game, inventory } = split(fields);
+  return {
+    id: KID, name: 'Testkid', createdAt: 1, hasPin: true,
+    settings: { sessionSize: 30, maxNew: 8, factGroupsUnlocked: 1, paceMultiplier: 3, tracks: { facts: true, multidigit: true, fractions: true } },
+    game,
+    ...(inventory ? { inventory } : {}),
+  };
+};
 const entry = (id: string, itemId: string, cost: number) => ({ id, itemId, cost, at: 1000 });
 const heroEntry = (id: string, heroId: string, cost: number) => ({ id, heroId, cost, at: 1000 });
 
@@ -47,7 +60,8 @@ async function seed(game: Record<string, unknown>) {
 type Entry = { id: string; cost: number; at: number } & Record<string, unknown>;
 function batch(db: Db, game: Record<string, unknown>, entries: Entry[] = []) {
   const b = writeBatch(db);
-  b.update(kidRef(db), { game: { ...GAME, ...game } });
+  const { game: g, inventory } = split(game);
+  b.update(kidRef(db), { game: g, ...(inventory ? { inventory } : {}) });
   for (const e of entries) b.set(purchaseRef(db, e.id), e);
   return b.commit();
 }
@@ -193,8 +207,10 @@ describe('through the repo', () => {
   it('applyGameDelta buys the bow, equips it, logs one entry with its id in lastPurchaseId', async () => {
     const repo = new FirestoreRepo(kidDb(), FAM);
     const game = await repo.applyGameDelta(KID, { purchase: 'w-bow' });
-    expect(game).toMatchObject({ gems: 145, items: ['w-bow'], equipped: { weapon: 'w-bow' } });
-    const stored = (await getDoc(kidRef(parentDb()))).data() as { game: { lastPurchaseId?: string } };
+    expect(game).toMatchObject({ gems: 145, items: ['w-bow'], equipped: { weapon: 'w-bow' } }); // merged view
+    const stored = (await getDoc(kidRef(parentDb()))).data() as { game: { lastPurchaseId?: string; items?: unknown }; inventory: { items: string[]; equipped: unknown } };
+    expect(stored.inventory).toMatchObject({ items: ['w-bow'], equipped: { weapon: 'w-bow' } });
+    expect(stored.game.items).toBeUndefined();
     const docs = await getDocs(collection(parentDb(), `families/${FAM}/kids/${KID}/purchases`));
     expect(docs.size).toBe(1);
     expect(stored.game.lastPurchaseId).toBe(docs.docs[0]!.id);
@@ -208,8 +224,9 @@ describe('through the repo', () => {
     await repo.applyGameDelta(KID, { equip: 'w-sword' });
     await repo.applyGameDelta(KID, { goal: 'p-owl' });
     await repo.applyGameDelta(KID, { xp: 100, gems: 4, bestCombo: 8, playedAt: Date.now() });
-    const stored = (await getDoc(kidRef(parentDb()))).data() as { game: { gems: number; items: string[]; goal: string } };
-    expect(stored.game).toMatchObject({ gems: 200 - 15 - 15 - 20 + 4, items: ['g-cape', 'w-sword'], goal: 'p-owl' });
+    const stored = (await getDoc(kidRef(parentDb()))).data() as { game: { gems: number }; inventory: { items: string[]; goal: string } };
+    expect(stored.game.gems).toBe(200 - 15 - 15 - 20 + 4);
+    expect(stored.inventory).toMatchObject({ items: ['g-cape', 'w-sword'], goal: 'p-owl' });
     expect((await getDocs(collection(parentDb(), `families/${FAM}/kids/${KID}/purchases`))).size).toBe(3);
   });
   it('a double confirm buys the item once', async () => {
@@ -217,5 +234,39 @@ describe('through the repo', () => {
     const r = await Promise.allSettled([repo.applyGameDelta(KID, { purchase: 'w-bow' }), repo.applyGameDelta(KID, { purchase: 'w-bow' })]);
     expect(r.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
     expect((await getDocs(collection(parentDb(), `families/${FAM}/kids/${KID}/purchases`))).size).toBe(1);
+  });
+});
+
+describe('the inventory key', () => {
+  const invWrite = (db: Db, inventory: unknown, extra: Record<string, unknown> = {}) => {
+    const b = writeBatch(db);
+    b.update(kidRef(db), { inventory, ...extra });
+    return b.commit();
+  };
+  it('an equip writes inventory alone, with no game change', async () => {
+    await seed({ items: ['w-bow', 'w-sword'], equipped: { weapon: 'w-bow' } });
+    await assertSucceeds(invWrite(kidDb(), { items: ['w-bow', 'w-sword'], equipped: { weapon: 'w-sword' } }));
+  });
+  it('an unknown key inside inventory is refused', async () => {
+    await assertFails(invWrite(kidDb(), { items: [], gems: 9999 }));
+  });
+  it('a kid write that adds inventory and changes settings is refused', async () => {
+    await assertFails(invWrite(kidDb(), { items: [] }, { 'settings.shop2': true }));
+  });
+  it('removing the inventory map of a kid who owns items is refused', async () => {
+    await seed({ items: ['w-bow'] });
+    const { deleteField } = await import('firebase/firestore');
+    await assertFails(invWrite(kidDb(), deleteField()));
+  });
+  it('a goal longer than 40 characters is refused', async () => {
+    await assertFails(invWrite(kidDb(), { items: [], goal: 'x'.repeat(41) }));
+  });
+  it('an old-shape run leaves a stored inventory alone, a hero buy does too', async () => {
+    await seed({ items: ['w-bow'], equipped: { weapon: 'w-bow' }, goal: 'p-owl' });
+    const repo = new FirestoreRepo(kidDb(), FAM);
+    await repo.applyGameDelta(KID, { xp: 10, gems: 3, bestCombo: 2, playedAt: Date.now() });
+    await repo.applyGameDelta(KID, { purchase: 'wizard' });
+    const d = (await getDoc(kidRef(parentDb()))).data() as { inventory: unknown };
+    expect(d.inventory).toEqual({ items: ['w-bow'], equipped: { weapon: 'w-bow' }, goal: 'p-owl' });
   });
 });

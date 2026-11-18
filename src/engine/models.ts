@@ -95,6 +95,13 @@ export interface KidGame {
   gemsDay?: string;
 }
 
+/** The shop fields as stored in the kid doc's top-level `inventory` map. */
+export interface Inventory {
+  items: string[];
+  equipped?: { weapon?: string; gear?: string; pet?: string };
+  goal?: string;
+}
+
 /** One hero or item bought: written with the game change in the same transaction, never edited or deleted. Exactly one of heroId and itemId. */
 export interface PurchaseLog {
   id: string;
@@ -111,6 +118,12 @@ export interface Kid {
   createdAt: number;
   settings: KidSettings;
   game: KidGame;
+  /**
+   * The stored home of the shop fields (owned items, equipped slots, savings goal). On a loaded Kid these are merged
+   * into `game` (items, equipped, goal) and this field is dropped; `splitGame` pulls them out again to write. They
+   * live outside `game` so a save from an old bundle, which writes `game` without them, stays valid.
+   */
+  inventory?: Inventory;
   /** Set by the setKidPin function. The PIN hash itself lives server-side only. */
   hasPin?: boolean;
 }
@@ -252,5 +265,30 @@ export function normalizeGame(raw: unknown): KidGame {
 }
 
 export function normalizeKid(raw: Kid): Kid {
-  return { ...raw, game: normalizeGame((raw as { game?: unknown }).game) };
+  const { inventory, ...rest } = raw;
+  const g = (raw as { game?: unknown }).game;
+  const base = g && typeof g === 'object' ? (g as Record<string, unknown>) : {};
+  // The stored inventory wins over any items, equipped or goal left in game.
+  const inv = inventory && typeof inventory === 'object' ? (inventory as unknown as Record<string, unknown>) : {};
+  const merged = { ...base, ...(inventory ? { items: inv.items, equipped: inv.equipped, goal: inv.goal } : {}) };
+  return { ...rest, game: normalizeGame(merged) };
+}
+
+/**
+ * Splits a game into what the `game` field stores and what the `inventory` field stores. The inventory is undefined
+ * for a game with no items, no equipped slot and no goal, so a kid who never shopped keeps a doc with no inventory.
+ */
+export function splitGame(game: KidGame): { game: KidGame; inventory: Inventory | undefined } {
+  const { items, equipped, goal, ...rest } = game;
+  const hasEquipped = !!equipped && Object.keys(equipped).length > 0;
+  const hasAny = (items?.length ?? 0) > 0 || hasEquipped || !!goal;
+  const inventory: Inventory | undefined = hasAny
+    ? { items: items ?? [], ...(hasEquipped ? { equipped } : {}), ...(goal ? { goal } : {}) }
+    : undefined;
+  return { game: rest, inventory };
+}
+
+/** True when two inventories hold the same items, equipped slots and goal (an absent inventory equals an empty one). */
+export function sameInventory(a: Inventory | undefined, b: Inventory | undefined): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
