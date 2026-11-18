@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { createHash, randomInt } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
@@ -90,7 +91,7 @@ async function seed(page: Page, opts: { family?: boolean } = {}) {
 }
 
 async function shot(page: Page, w: number, name: string, fullPage = false) {
-  if (SHOTS && w === 390) await page.screenshot({ path: `${SHOTS}/${name}-390.png`, fullPage });
+  if (SHOTS && (w === 390 || (w === 375 && /version|whatsnew/.test(name)))) await page.screenshot({ path: `${SHOTS}/${name}-${w}.png`, fullPage });
 }
 async function enterPin(page: Page, pin: string) {
   for (const d of pin) await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
@@ -264,6 +265,26 @@ for (const { w, h } of PHONES) {
       await page.getByRole('button', { name: 'Change PIN' }).first().click();
       await expect(page.locator('.keypad')).toBeVisible();
       await expectFits(page, 'change parent pin');
+    });
+
+    test('footer shows the injected sha and build time, fits, and opens What\'s new with 10 entries', async ({ page }) => {
+      await seed(page);
+      await openParent(page);
+      await pickKid(page, READER_NAME);
+      const footer = page.locator('.version-footer');
+      await footer.scrollIntoViewIfNeeded();
+      const sha = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
+      await expect(footer).toContainText(`Version ${sha} · built `);
+      await expect(footer).toContainText(/built .*\d/);
+      await expectFits(page, 'version footer');
+      await shot(page, w, 'parent-version-footer', false);
+      await footer.getByRole('button', { name: /what.s new/i }).click();
+      const items = page.locator('.whatsnew li');
+      await expect(items).toHaveCount(10);
+      await expect(page.locator('.whatsnew')).toContainText('(behind the scenes)');
+      await expect(page.locator('.whatsnew')).toContainText('(turn on in Settings)');
+      await expectFits(page, 'whats new');
+      await shot(page, w, 'parent-whatsnew', false);
     });
 
     test('header buttons are at least 44 px and sit inside the screen', async ({ page }) => {

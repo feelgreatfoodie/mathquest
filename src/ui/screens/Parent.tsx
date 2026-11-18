@@ -12,6 +12,7 @@ import { median } from '../../engine/scheduler';
 import { hashPin, type Repo } from '../../data/repo';
 import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { reportFailure } from '../failures';
+import { buildLabel, entryText, recentChanges } from '../../whatsnew';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
 
@@ -225,7 +226,26 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
           }}
         />
       )}
+      <VersionFooter />
     </div>
+  );
+}
+
+/** Which build is live, and what changed in the last 10 merged changes. */
+function VersionFooter() {
+  const [open, setOpen] = useState(false);
+  return (
+    <footer className="version-footer">
+      <p className="muted version-line">{buildLabel()}</p>
+      <button type="button" className="btn btn-small btn-ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {open ? 'Hide what\u2019s new' : 'What\u2019s new'}
+      </button>
+      {open ? (
+        <ol className="whatsnew" aria-label="What's new">
+          {recentChanges().map((e) => <li key={e.pr}>{entryText(e)}</li>)}
+        </ol>
+      ) : null}
+    </footer>
   );
 }
 

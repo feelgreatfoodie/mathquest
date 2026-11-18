@@ -665,3 +665,12 @@ legend { padding: 0 6px; color: var(--muted); }
 /* Coverage line in the parent area, and the hint above a preview question. */
 .coverage { list-style: none; margin: 0 0 12px; padding: 0 4px; display: grid; gap: 4px; color: var(--muted, #aab); }
 .preview-hint { margin: 0 0 8px; font-size: 18px; }
+
+/* ---- Parent footer: build version and What's new ---- */
+.version-footer { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 8px 0 16px; }
+.version-line { margin: 0; font-size: 15px; overflow-wrap: anywhere; }
+.whatsnew { margin: 0; padding-left: 22px; display: grid; gap: 8px; line-height: 1.4; }
+.whatsnew li { overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .version-footer .btn { width: 100%; min-height: 48px; }
+}

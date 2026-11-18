@@ -3,7 +3,9 @@ name: Test and deploy
 on:
   push:
     branches: [main]
+  # labeled and unlabeled re-run the what's-new check when "no-whatsnew" is added or removed.
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 jobs:
   test:
@@ -28,6 +30,23 @@ jobs:
       - run: npm ci --prefix functions
       - run: npm run typecheck
       - run: npm test
+
+  # A PR that changes src/ must add a line to src/whatsnew.ts, or carry the "no-whatsnew" label.
+  whatsnew:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-whatsnew.mjs
+        env:
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
 
   # Off until Flynn approves Workload Identity Federation (GCP_WIF_PROVIDER and GCP_DEPLOY_SA are unset,
   # so the auth step failed on every push). Deploys run by hand with `npm run deploy`; see README.
