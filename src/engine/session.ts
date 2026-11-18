@@ -199,6 +199,7 @@ export class SessionRunner {
   private xp = 0;
   private times: number[] = [];
   private stats = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0 };
+  private newIds: string[] = [];
   private missed = new Set<string>();
   private faster = new Set<string>();
   private nextId = 0;
@@ -327,7 +328,10 @@ export class SessionRunner {
       if (!free) this.stats.graded++;
       if (correct) this.stats.correct++;
       if (fast) this.stats.fast++;
-      if (entry.isNew && correct) this.stats.newLearned++;
+      if (entry.isNew && correct) {
+        this.stats.newLearned++;
+        this.newIds.push(entry.cardId);
+      }
       if (!correct && !free) this.missed.add(entry.cardId);
     } else {
       next = practice(prev, ms, correct, now);
@@ -379,6 +383,11 @@ export class SessionRunner {
   /** Cards changed this run (save these). */
   changedCards(): CardState[] {
     return [...this.changed].map((id) => this.cards[id]!);
+  }
+
+  /** Cards first answered correctly this run, in answer order. Kept out of summary(): the golden profile pins that shape. */
+  newlyLearned(): string[] {
+    return [...this.newIds];
   }
 
   summary(): RunSummary {

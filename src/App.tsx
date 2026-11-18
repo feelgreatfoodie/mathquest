@@ -7,6 +7,7 @@ import { VersionGuard, guardFor } from './data/versionGate';
 import { GameDeltaError, type GameDelta } from './engine/game';
 import { learnerOf, type Family, type Kid, type KidGame } from './engine/models';
 import type { RunSummary } from './engine/session';
+import type { RunInfo } from './ui/runShared';
 import { dataMode, getFirebase, kidClaims, registerParent, signInKid, signInParent, signOutParent } from './firebase';
 import { clearUpdateAttempt } from './update';
 import { FailureToasts } from './ui/FailureToasts';
@@ -26,7 +27,7 @@ type Screen =
   | { name: 'picker' }
   | { name: 'home'; kidId: string }
   | { name: 'run'; kidId: string; key: number }
-  | { name: 'summary'; kidId: string; summary: RunSummary }
+  | { name: 'summary'; kidId: string; summary: RunSummary; info: RunInfo }
   | { name: 'pin' }
   | { name: 'parent' };
 
@@ -286,9 +287,9 @@ export function App() {
           kid={kid}
           onExit={() => setScreen({ name: 'home', kidId: kid.id })}
           onSynced={(game) => showGame(kid.id, game)}
-          onDone={(summary, updated) => {
+          onDone={(summary, updated, info) => {
             setKids((ks) => ks.map((x) => (x.id === updated.id ? updated : x)));
-            setScreen({ name: 'summary', kidId: kid.id, summary });
+            setScreen({ name: 'summary', kidId: kid.id, summary, info });
           }}
         />
       ) : null;
@@ -297,6 +298,9 @@ export function App() {
         <Summary
           kid={kid}
           summary={screen.summary}
+          info={screen.info}
+          loadCards={() => repo.loadCards(kid.id)}
+          onGame={(d) => applyGame(kid.id, d)}
           onAgain={() => void startRun(kid.id)}
           onHome={() => setScreen({ name: 'home', kidId: kid.id })}
         />

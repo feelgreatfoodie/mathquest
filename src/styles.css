@@ -588,3 +588,49 @@ legend { padding: 0 6px; color: var(--muted); }
 /* Coverage line in the parent area, and the hint above a preview question. */
 .coverage { list-style: none; margin: 0 0 12px; padding: 0 4px; display: grid; gap: 4px; color: var(--muted, #aab); }
 .preview-hint { margin: 0 0 8px; font-size: 18px; }
+
+/* ---- Pre-reader end screen: steps of about 1.5 s, tap to skip. Pictures and numerals only. ---- */
+.screen.center.sum { gap: 14px; justify-content: flex-start; padding-top: 28px; overflow-y: auto; }
+.sum-panel { position: relative; display: flex; align-items: center; justify-content: center; gap: 20px; width: 100%; max-width: 760px; animation: sum-in 0.35s ease both; }
+@keyframes sum-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.sum-btn { width: 140px; height: 140px; display: inline-flex; align-items: center; justify-content: center; color: var(--text); background: var(--panel-2); border: 3px solid var(--line); border-bottom-width: 8px; border-radius: 28px; cursor: pointer; touch-action: manipulation; }
+.sum-btn:active { transform: translateY(5px); border-bottom-width: 3px; }
+.sum-btn:disabled { opacity: 0.5; }
+.sum-btn.sum-play { width: 180px; color: #1a1300; background: var(--gold); border-color: var(--gold-dark); }
+.sum-buttons { gap: 24px; justify-content: center; margin-top: 8px; }
+.sum-total { display: inline-flex; align-items: center; gap: 10px; }
+.sum-fly { position: absolute; inset: 0; pointer-events: none; }
+.sum-fly span { position: absolute; left: 20%; top: 0; opacity: 0; animation: sum-fly 0.9s ease-in forwards; }
+@keyframes sum-fly { 0% { opacity: 1; transform: translate(0, 0); } 100% { opacity: 0; transform: translate(150px, 60px) scale(0.5); } }
+.sum-hero { position: relative; }
+.sum-badge { position: absolute; right: -14px; bottom: -6px; min-width: 56px; height: 56px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 700; color: #1a1300; background: var(--gold); border: 3px solid var(--gold-dark); border-radius: 28px; }
+.sum-bar { flex: 1; height: 44px; max-width: 360px; background: var(--bg-2); border: 3px solid var(--line); border-radius: 22px; overflow: hidden; }
+.sum-bar-fill { height: 100%; background: #4ade80; transition: width 0.6s ease; }
+.sum-bar-fill.no-anim { transition: none; }
+.sum-xp-num { font-size: 28px; opacity: 0.7; }
+.sum-confetti { position: absolute; inset: -40px 0 0 0; pointer-events: none; overflow: hidden; }
+.sum-confetti i { position: absolute; top: 0; width: 14px; height: 22px; border-radius: 3px; animation: sum-fall 1.4s ease-in forwards; }
+@keyframes sum-fall { from { transform: translateY(-10px) rotate(0); opacity: 1; } to { transform: translateY(220px) rotate(540deg); opacity: 0; } }
+.sum-learned { flex-wrap: wrap; }
+.sum-dotcard { position: relative; min-width: 140px; padding: 10px 14px; background: var(--panel-2); border: 3px solid var(--line); border-radius: 18px; text-align: center; }
+.sum-dotcard-n { font-size: 36px; font-weight: 700; }
+.sum-dotcard-d { display: flex; gap: 12px; justify-content: center; margin-top: 6px; }
+.sum-dots { display: inline-flex; flex-wrap: wrap; gap: 4px; max-width: 70px; justify-content: center; }
+.sum-dots i { width: 12px; height: 12px; border-radius: 50%; background: var(--text); }
+.sum-bolt { position: absolute; top: -18px; right: -14px; }
+.sum-map { flex-direction: column; gap: 14px; padding-top: 64px; }
+.sum-trail { display: flex; align-items: flex-end; gap: 18px; }
+.sum-op { font-size: 56px; font-weight: 700; width: 56px; text-align: center; }
+.sum-stone { position: relative; min-width: 150px; min-height: 120px; padding: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: var(--panel-2); border: 3px solid var(--line); border-bottom-width: 8px; border-radius: 50px; }
+.sum-stone.locked { opacity: 0.7; }
+.sum-stone.current { border-color: var(--gold-dark); }
+.sum-stone-hero { position: absolute; top: -52px; }
+.sum-stone-dots { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; max-width: 130px; }
+.sum-stone-dots i { width: 12px; height: 12px; border-radius: 50%; background: var(--bg-2); border: 2px solid var(--line); box-sizing: border-box; }
+.sum-stone-dots i.on { background: #facc15; border-color: #a16207; }
+.sum-lock { display: inline-flex; align-items: center; gap: 4px; }
+.sum-lock b { font-size: 36px; }
+.sum-fail { gap: 24px; }
+.sum-fail-text { font-size: 44px; font-weight: 700; }
+.sum-streak { margin-top: 4px; }
+.sum-bar-reader { width: 100%; max-width: 360px; height: 20px; border-width: 2px; }

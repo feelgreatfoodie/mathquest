@@ -1,12 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { Kid } from '../../engine/models';
-import { word } from '../../engine/modules/early';
-import type { RunSummary } from '../../engine/session';
 import { HeroShop, type OnGame } from '../HeroShop';
 import { Sprite, UiIcon } from '../sprites';
 import { HoldButton } from './HoldButton';
-import { chime, unlockSounds } from './sounds';
-import { speak, unlockSpeech } from './useSpeech';
+import { unlockSounds } from './sounds';
+import { unlockSpeech } from './useSpeech';
 
 const MAX_FLAMES = 7;
 
@@ -52,39 +50,6 @@ export function PrereaderHome({ kid, onStart, onBack, onGame }: { kid: Kid; onSt
       <div className="flames" role="img" aria-label={`${kid.game.streakDays} day streak`}>
         {Array.from({ length: flames }, (_, i) => <UiIcon key={i} name="flame" size={44} />)}
         {kid.game.streakDays > MAX_FLAMES ? <span className="flame-count">{kid.game.streakDays}</span> : null}
-      </div>
-    </div>
-  );
-}
-
-/** Stars and gems, and the voice says how many stars. */
-export function PrereaderSummary({ kid, summary, onAgain, onHome }: { kid: Kid; summary: RunSummary; onAgain: () => void; onHome: () => void }) {
-  const stars = summary.correct;
-  const total = Math.max(summary.graded, stars);
-  useEffect(() => {
-    chime();
-    const line = stars > 0 ? `Great job! You got ${word(stars)} ${stars === 1 ? 'star' : 'stars'}!` : "Nice try! Let's play again!";
-    void speak(line);
-  }, [stars]);
-  return (
-    <div className="screen center early-summary">
-      <Sprite name={kid.game.hero} size={160} className="bob" />
-      <div className="big-stars" role="img" aria-label={`${stars} of ${total} stars`}>
-        {Array.from({ length: total }, (_, i) => (
-          <svg key={i} width="64" height="64" viewBox="0 0 24 24" aria-hidden="true" className={i < stars ? 'star on' : 'star'}>
-            <path d="M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21.1l1.4-7L2 9.3l7-.8z" />
-          </svg>
-        ))}
-      </div>
-      <div className="early-tally">
-        <span className="tally-num">{stars}</span>
-        <span className="tally-gems"><UiIcon name="gem" size={56} /><span className="tally-num">{summary.gems}</span></span>
-      </div>
-      <div className="row">
-        <button type="button" className="play-btn small" aria-label="Play again" onClick={() => { unlockSounds(); unlockSpeech(); onAgain(); }}>
-          <UiIcon name="play" size={96} />
-        </button>
-        <button type="button" className="icon-btn" aria-label="Home" onClick={onHome}><UiIcon name="house" size={56} /></button>
       </div>
     </div>
   );
