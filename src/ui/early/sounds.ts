@@ -62,3 +62,10 @@ export function softTone(): void {
 export function tick(): void {
   tone(880, 0, 0.08, 'sine', 0.1);
 }
+
+/** A soft rising tone when a hold starts. */
+export function risingTone(): void {
+  tone(392, 0, 0.3, 'sine', 0.08);
+  tone(523.25, 0.3, 0.3, 'sine', 0.08);
+  tone(659.25, 0.6, 0.4, 'sine', 0.08);
+}

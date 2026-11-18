@@ -362,12 +362,32 @@ legend { padding: 0 6px; color: var(--muted); }
 }
 .icon-btn:active { transform: translateY(3px); border-bottom-width: 3px; }
 .icon-btn:disabled { opacity: 0.4; }
-.hold-btn { -webkit-touch-callout: none; }
+.hold-btn { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
+.hold-wrap { position: relative; display: inline-flex; }
+.hold-btn.is-wiggle { animation: hold-wiggle 0.6s ease; }
+@keyframes hold-wiggle { 15% { transform: rotate(-12deg); } 35% { transform: rotate(10deg); } 55% { transform: rotate(-7deg); } 75% { transform: rotate(4deg); } }
+.hold-hint {
+  position: absolute; top: calc(100% + 14px); left: 0; z-index: 20;
+  display: inline-flex; gap: 10px; align-items: center; padding: 10px 16px;
+  color: #1a1300; background: var(--gold); border-radius: 20px; white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.hold-hint::before {
+  content: ''; position: absolute; top: -8px; left: 26px; width: 16px; height: 16px;
+  background: var(--gold); transform: rotate(45deg);
+}
+.saved-toast {
+  position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 30;
+  display: inline-flex; gap: 8px; align-items: center; padding: 10px 22px;
+  font: 700 28px var(--body); color: #04210f; background: var(--good); border-radius: 22px;
+}
 .hold-ring {
   position: absolute; inset: -6px; border-radius: 22px; pointer-events: none;
   border: 5px solid transparent;
 }
-.hold-btn.is-holding .hold-ring { border-color: var(--gold); animation: hold-fill 2s linear forwards; }
+.hold-btn.is-holding .hold-ring { border-color: var(--gold); animation: hold-fill 1.2s linear forwards; }
+.hold-btn.is-peek .hold-ring { border-color: var(--gold); animation: hold-peek 0.5s ease-out forwards; }
+@keyframes hold-peek { from { clip-path: inset(0 100% 0 0); opacity: 1; } 70% { clip-path: inset(0 40% 0 0); opacity: 1; } to { clip-path: inset(0 40% 0 0); opacity: 0; } }
 @keyframes hold-fill { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 
 .path-dots { flex: 1; display: flex; justify-content: center; align-items: center; gap: 14px; }
