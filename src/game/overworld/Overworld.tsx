@@ -21,7 +21,7 @@ import { MAX_VISIBLE, planEntities, retryEntity, type Entity } from './encounter
 import { MAPS, findTiles, heroStart, isWalkable, tileAt, type Point, type RegionId, type WalkCtx } from './maps';
 import { approach } from './pathfind';
 import { NEXT_REGION, PREV_REGION, REGION_NAMES, gateInfo, lairMessage, regionProgress } from './regions';
-import { fromDoc, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
+import { fromDoc, settleHero, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
 
 const SPEED = 4; // tiles a second
 const BOOT_SPEED = 6;
@@ -214,10 +214,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         }
         if (!alive) return;
         const w0 = fromDoc(stored, Date.now());
-        const map = MAPS[w0.region];
-        const ok = isWalkable(map, w0.x, w0.y, { gateOpen: true, hasKey: false, hasBridgeKit: false });
-        const s = heroStart(map);
-        const w = ok ? w0 : { ...w0, x: s.x, y: s.y };
+        const w = settleHero(w0);
         runnerRef.current = runner;
         // The trip: resume an open one under 24 h old, else start a new one (and close the expired one as 'left').
         const { trip, close } = resolveTrip(loadTrip(kidRef.current.id), Date.now(), newId);

@@ -10,7 +10,7 @@ import { planEntities, retryEntity, MAX_VISIBLE } from './encounters';
 import { MAPS, REGION_IDS, findTiles, heroStart, isWalkable, tileAt, type WalkCtx } from './maps';
 import { findPath } from './pathfind';
 import { gateInfo, lairMessage, regionCardIds, regionFactsText, regionProgress, NEXT_REGION, REGION_GROUPS } from './regions';
-import { MAX_OPENED, fromDoc, newWorld, toDoc, worldReducer } from './worldState';
+import { MAX_OPENED, fromDoc, newWorld, settleHero, toDoc, worldReducer } from './worldState';
 
 const NOW = new Date('2026-11-16T16:00:00').getTime();
 const DAY = 86_400_000;
@@ -439,5 +439,120 @@ describe('worldState', () => {
       expect(w.keys).toBeGreaterThanOrEqual(0);
       expect(w.bossesDefeated.every((b) => ['meadow', 'forest', 'castle'].includes(b))).toBe(true);
     }
+  });
+});
+
+describe('adventure regions: distinct Forest and Castle', () => {
+  const tiles = (id: (typeof REGION_IDS)[number], t: Parameters<typeof findTiles>[1]) => findTiles(MAPS[id], t);
+  const same = (a: string[], b: string[]) => {
+    let n = 0;
+    let all = 0;
+    for (let y = 0; y < a.length; y++) for (let x = 0; x < a[y]!.length; x++) (all++, a[y]![x] === b[y]![x] && n++);
+    return n / all;
+  };
+  const waterColumns = (id: (typeof REGION_IDS)[number]) => new Set(tiles(id, 'water').map((t) => t.x));
+
+  it('no two regions share more than half of their tiles', () => {
+    for (const [a, b] of [['meadow', 'forest'], ['meadow', 'castle'], ['forest', 'castle']] as const) expect(same(MAPS[a].rows, MAPS[b].rows), `${a} vs ${b}`).toBeLessThan(0.5);
+  });
+  it('the Meadow keeps its river at columns 28 and 29; the Forest stream and the Castle moat run elsewhere', () => {
+    expect([...waterColumns('meadow')].filter((x) => x === 28 || x === 29)).toHaveLength(2);
+    for (const id of ['forest', 'castle'] as const) {
+      const inRiver = tiles(id, 'water').filter((t) => t.x === 28 || t.x === 29).length;
+      expect(inRiver, `${id} water in river columns`).toBeLessThan(4);
+    }
+  });
+  it('the Forest is dense with trees, and its stream is narrow and winds', () => {
+    const interior = (MAPS.forest.w - 2) * (MAPS.forest.h - 2);
+    expect(tiles('forest', 'tree').length / interior).toBeGreaterThan(0.3);
+    expect(tiles('meadow', 'tree').length / interior).toBeLessThan(0.2);
+    // The stream is one or two tiles wide on every row, and its column moves by at least 4 between its far points.
+    const water = tiles('forest', 'water').filter((t) => !(t.x >= 7 && t.x <= 12 && t.y >= 21 && t.y <= 24));
+    const cols = new Set(water.map((t) => t.x));
+    expect(cols.size).toBeGreaterThanOrEqual(4);
+    for (let y = 1; y < MAPS.forest.h - 1; y++) expect(water.filter((t) => t.y === y).length, `row ${y}`).toBeLessThanOrEqual(5);
+  });
+  it('the Forest path winds: its rows move away from the straight line', () => {
+    const rows = new Set(tiles('forest', 'path').filter((t) => t.x >= 8 && t.x <= 32).map((t) => t.y));
+    expect(Math.max(...rows) - Math.min(...rows)).toBeGreaterThanOrEqual(6);
+  });
+  it('the Castle has courtyard walls, torches, a moat crossed by a drawbridge, and keeps the closed door', () => {
+    expect(tiles('castle', 'wall').length).toBeGreaterThanOrEqual(100);
+    expect(tiles('castle', 'torch').length).toBeGreaterThanOrEqual(8);
+    expect(tiles('castle', 'water').length).toBeGreaterThanOrEqual(40);
+    const bridge = tiles('castle', 'bridge');
+    expect(bridge.length).toBeGreaterThanOrEqual(2);
+    // The drawbridge sits between moat tiles in its own column, so the moat is crossed there and nowhere else on the road.
+    for (const b of bridge) expect(tileAt(MAPS.castle, b.x, b.y - 1) === 'water' || tileAt(MAPS.castle, b.x, b.y + 1) === 'water' || tileAt(MAPS.castle, b.x - 1, b.y) === 'bridge' || tileAt(MAPS.castle, b.x + 1, b.y) === 'bridge').toBe(true);
+    for (const w of [...tiles('castle', 'wall'), ...tiles('castle', 'torch')]) expect(isWalkable(MAPS.castle, w.x, w.y, { gateOpen: true, hasKey: true, hasBridgeKit: true })).toBe(false);
+    expect(findTiles(MAPS.castle, 'gate').length).toBeGreaterThanOrEqual(1);
+  });
+  it('with every gate open, every chest, the camp, the lair door and every spawn tile are reachable on the new maps', () => {
+    for (const id of REGION_IDS) {
+      const m = MAPS[id];
+      const s = heroStart(m);
+      for (const t of [...findTiles(m, 'camp'), ...findTiles(m, 'chest'), ...findTiles(m, 'spawn')]) expect(findPath(m, s, t, open), `${id} ${t.x},${t.y}`).not.toBeNull();
+      const b = findTiles(m, 'boss')[0]!;
+      expect(findPath(m, s, { x: b.x, y: b.y + 1 }, open), `${id} lair`).not.toBeNull();
+    }
+  });
+  it('the forest gate onward and the way back into each region from the next one are walkable', () => {
+    const g = findTiles(MAPS.forest, 'gate')[0]!;
+    expect(findPath(MAPS.forest, heroStart(MAPS.forest), g, open)).not.toBeNull();
+    // Coming back through a forward gate, the hero stands one tile left of it.
+    for (const id of ['meadow', 'forest'] as const) {
+      const gate = findTiles(MAPS[id], 'gate')[0]!;
+      expect(isWalkable(MAPS[id], gate.x - 1, gate.y, open), id).toBe(true);
+    }
+  });
+});
+
+describe('adventure regions: saved state survives the new layouts', () => {
+  const doc = (over: Record<string, unknown>) => ({ region: 'castle', x: 6, y: 8, facing: 'left', openedChests: ['mul:6x7', 'mul:7x8'], bossesDefeated: ['meadow'], keys: 1, version: 1, updatedAt: NOW, ...over });
+
+  it('a hero saved at the old castle tile (6,8) is not on a walkable tile now, and loads at the castle start', () => {
+    expect(isWalkable(MAPS.castle, 6, 8, open)).toBe(false);
+    const w = settleHero(fromDoc(doc({}), NOW));
+    expect({ x: w.x, y: w.y }).toEqual(heroStart(MAPS.castle));
+    expect(isWalkable(MAPS.castle, w.x, w.y, open)).toBe(true);
+    // Everything else in the save is untouched.
+    expect(w).toMatchObject({ region: 'castle', facing: 'left', keys: 1, bossesDefeated: ['meadow'], openedChests: ['mul:6x7', 'mul:7x8'] });
+  });
+  it('a hero on a walkable tile stays where the save put it', () => {
+    const w = settleHero(fromDoc(doc({ x: 20, y: 14 }), NOW));
+    expect({ x: w.x, y: w.y }).toEqual({ x: 20, y: 14 });
+  });
+  it('every region start and every old saved tile that is now blocked settles onto a walkable tile', () => {
+    for (const id of REGION_IDS) for (let y = 0; y < MAPS[id].h; y++) for (let x = 0; x < MAPS[id].w; x++) {
+      const w = settleHero(fromDoc(doc({ region: id, x, y }), NOW));
+      expect(isWalkable(MAPS[id], w.x, w.y, { gateOpen: true, hasKey: false, hasBridgeKit: false })).toBe(true);
+    }
+  });
+  it('opened chests are stored as card ids, never as positions, so a redrawn map cannot lose them', () => {
+    const r = new SessionRunner([{ cardId: 'mul:6x7', isNew: true }, { cardId: 'mul:7x8', isNew: true }, { cardId: 'mul:6x8', isNew: true }], {}, mulberry32(3), () => NOW, DEFAULT_SETTINGS);
+    for (const id of ['forest', 'castle'] as const) {
+      const m = MAPS[id];
+      const ents = planEntities({ entries: r.queue, map: m, hero: heroStart(m), openedChests: [], rng: mulberry32(9), ctx: open });
+      const chests = ents.filter((e) => e.kind === 'chest');
+      expect(chests.length, id).toBe(3);
+      let w = newWorld(NOW);
+      for (const c of chests) w = worldReducer(w, { t: 'chest', cardId: c.cardId });
+      expect(w.openedChests.sort()).toEqual(['mul:6x7', 'mul:6x8', 'mul:7x8']);
+      for (const stored of w.openedChests) expect(stored).toMatch(/^[a-z]+:/);
+    }
+  });
+  it('a chest opened before the redraw stays opened on the new maps: the same card is a monster, never a chest again', () => {
+    const w = fromDoc(doc({}), NOW);
+    expect(w.openedChests).toEqual(['mul:6x7', 'mul:7x8']);
+    const r = new SessionRunner([{ cardId: 'mul:6x7', isNew: true }, { cardId: 'mul:6x8', isNew: true }], {}, mulberry32(3), () => NOW, DEFAULT_SETTINGS);
+    for (const id of REGION_IDS) {
+      const m = MAPS[id];
+      const ents = planEntities({ entries: r.queue, map: m, hero: heroStart(m), openedChests: w.openedChests, rng: mulberry32(9), ctx: open });
+      expect(ents.find((e) => e.cardId === 'mul:6x7')!.kind, id).toBe('monster');
+      expect(ents.find((e) => e.cardId === 'mul:6x8')!.kind, id).toBe('chest');
+    }
+  });
+  it('the stored world doc keeps its 10 fields', () => {
+    expect(Object.keys(toDoc({ ...newWorld(NOW), lastMode: 'overworld' })).length).toBeLessThanOrEqual(10);
   });
 });

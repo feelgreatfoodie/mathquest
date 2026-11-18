@@ -57,7 +57,7 @@ async function seed(page: Page, opts: { settings: object; cards?: Record<string,
   );
 }
 
-const castleWorld = (over: object = {}) => ({ region: 'castle', x: 33, y: 6, facing: 'up', openedChests: [], bossesDefeated: [], keys: 0, version: 1, updatedAt: 1, ...over });
+const castleWorld = (over: object = {}) => ({ region: 'castle', x: 32, y: 6, facing: 'up', openedChests: [], bossesDefeated: [], keys: 0, version: 1, updatedAt: 1, ...over });
 
 type Ow = {
   state(): { region: string; hero: { x: number; y: number }; paused: boolean; entities: Array<{ id: string; kind: string; x: number; y: number }>; world: { bossesDefeated: string[]; keys: number } };
@@ -104,7 +104,7 @@ test('a locked lair (reader) says which facts wake the dragon and counts the lar
   ];
   await seed(page, { settings: READER, cards: cardsOf(now, specs), world: castleWorld() });
   await openAdventure(page);
-  await ow(page, (o) => o.tapTile(33, 4));
+  await ow(page, (o) => o.tapTile(32, 4));
   await expect(page.getByTestId('ow-msg')).toContainText('Answer the Castle facts to wake the dragon: 6s, 7s, 8s and 12x12. 3 of 10 ready.');
   await expect(page.locator('.ow-msg .progress-fill')).toHaveAttribute('style', /width: 30%/);
   await expect(page.locator('.question-modal')).toHaveCount(0);
@@ -119,7 +119,7 @@ test('a profile with 1 of 10 reviewing and 8 of 10 steady: the lair opens and th
   ];
   await seed(page, { settings: READER, cards: cardsOf(now, specs), world: castleWorld() });
   await openAdventure(page);
-  await ow(page, (o) => o.tapTile(33, 4));
+  await ow(page, (o) => o.tapTile(32, 4));
   await expect(page.locator('.question-modal')).toBeVisible({ timeout: 25_000 });
   await expect(page.getByTestId('ow-msg')).toHaveCount(0);
 });
@@ -129,7 +129,7 @@ test('a locked lair (pre-reader) shows an icon and dots with the voice line, and
   const specs: Spec[] = CASTLE.slice(0, 3).map((id) => ({ id, stability: 0.6, lastResults: [true, true] }));
   await seed(page, { settings: PRE, cards: cardsOf(now, specs), world: castleWorld(), name: 'Pip' });
   await openAdventure(page, 'Pip', true);
-  await ow(page, (o) => o.tapTile(33, 4));
+  await ow(page, (o) => o.tapTile(32, 4));
   const lair = page.getByTestId('ow-lair-dots');
   await expect(lair).toBeVisible();
   await expect(lair).toHaveAttribute('aria-label', '3 of 10 ready');
@@ -147,7 +147,7 @@ test('a lair that was already won pays nothing again: no fight, no gems, no key,
   await seed(page, { settings: READER, cards: cardsOf(now, specs), world: castleWorld({ bossesDefeated: ['castle'], keys: 1 }) });
   await openAdventure(page);
   for (let i = 0; i < 2; i++) {
-    await ow(page, (o) => o.tapTile(33, 4));
+    await ow(page, (o) => o.tapTile(32, 4));
     await expect(page.getByTestId('ow-msg')).toContainText('The lair is quiet');
     await expect(page.locator('.question-modal')).toHaveCount(0);
     expect(await gems(page)).toBe(5);
