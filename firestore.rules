@@ -214,9 +214,9 @@ service cloud.firestore {
     // A deposit doc is valid only in the write that takes its gems: the amount (an int, at least 10) equals the drop in
     // game.gems, the kid's vault map gains one active entry named for this deposit (lastId, active + 1, at most 3), the
     // parent has the vault on, the term is 3, 7 or 14, ratePer10 is the parent's rate for that term (the default 1, 3 or 7
-    // when none is set), bonus is floor(amount / 10) * ratePer10, status is active, nothing is paid, and createdAt is
-    // request.time (the server's clock; the doc has no client time). maturesAt is not stored: the payout rule reads
-    // createdAt plus the term.
+    // when none is set, and never above 10), bonus is floor(amount / 10) * ratePer10, status is active, nothing is paid out,
+    // and createdAt is request.time (the server's clock; the doc has no client time). maturesAt is not stored: the payout
+    // rule reads createdAt plus the term.
     function vaultCreateOk(uid, kidId, depositId) {
       let kidP = /databases/$(database)/documents/families/$(uid)/kids/$(kidId);
       let before = get(kidP).data;
@@ -225,16 +225,17 @@ service cloud.firestore {
       let va = after.get('vault', {});
       let rates = before.get('settings', {}).get('vault', {});
       let d = request.resource.data;
-      return d.keys().hasOnly(['id', 'amount', 'termDays', 'ratePer10', 'bonus', 'status', 'paid', 'createdAt'])
-        && d.keys().hasAll(['id', 'amount', 'termDays', 'ratePer10', 'bonus', 'status', 'paid', 'createdAt'])
+      return d.keys().hasOnly(['id', 'amount', 'termDays', 'ratePer10', 'bonus', 'status', 'paidOut', 'createdAt'])
+        && d.keys().hasAll(['id', 'amount', 'termDays', 'ratePer10', 'bonus', 'status', 'paidOut', 'createdAt'])
         && d.id == depositId
         && d.amount is int && d.amount >= 10
         && d.termDays in [3, 7, 14]
         && rates.get('on', false) == true
         && d.ratePer10 == (d.termDays == 3 ? rates.get('d3', 1) : (d.termDays == 7 ? rates.get('d7', 3) : rates.get('d14', 7)))
+        && d.ratePer10 >= 0 && d.ratePer10 <= 10
         && d.bonus == math.floor(d.amount / 10) * d.ratePer10
         && d.status == 'active'
-        && d.paid == 0
+        && d.paidOut == 0
         && d.createdAt == request.time
         && before.get('game', {}).get('gems', 0) - after.get('game', {}).get('gems', 0) == d.amount
         && va.get('lastId', '') == depositId
@@ -242,13 +243,15 @@ service cloud.firestore {
         && va.get('active', 0) <= 3;
     }
 
-    // A payout is one chunk: game.gems rises by `chunk` (1 to 10, the kid-write raise bound) and the deposit's `paid` rises
-    // by the same chunk, in one write, so gems leave the vault only as fast as paid records it. Paid never passes the
-    // payout: amount + bonus when collected, amount when broken. The FIRST chunk closes the deposit: status goes from
-    // active to collected (only when request.time >= createdAt + termDays, server times both) or to broken (any time, the
-    // bonus is lost), collectedAt is request.time, and the kid's vault map drops its active count in the same write
-    // (closedId names the deposit). A later chunk changes `paid` and nothing else, and the vault map stays. A closed
-    // deposit never reopens and never changes its amount, bonus or term.
+    // A payout is a run of chunks, each one write. A chunk raises game.gems by `chunk` (1 to 10, the kid-write raise bound)
+    // and the deposit's paidOut by the same chunk, so gems leave the vault only as fast as paidOut records it, and a repeated
+    // or stale chunk fails because the stored paidOut and gems have moved on. The deposit stays `collecting` (or `breaking`)
+    // until paidOut equals the payout, and only the last chunk sets `collected` (paidOut == amount + bonus) or `broken`
+    // (paidOut == amount). The FIRST chunk leaves `active`: collecting (or collected when it is also the last) only when
+    // request.time >= createdAt + termDays, server times both; breaking (or broken) any time, and the bonus is lost.
+    // collectedAt is request.time, and the kid's vault map drops its active count in the same write (closedId names the
+    // deposit). Later chunks change paidOut (and status on the last) and nothing else, the vault map stays, and the mode
+    // never switches, so the principal cannot be drawn early and the bonus later. amount, bonus and term never change.
     function vaultPayOk(uid, kidId, depositId) {
       let kidP = /databases/$(database)/documents/families/$(uid)/kids/$(kidId);
       let gb = get(kidP).data.get('game', {});
@@ -258,21 +261,41 @@ service cloud.firestore {
       let b = resource.data;
       let a = request.resource.data;
       let changed = a.diff(b).affectedKeys();
-      let chunk = a.paid - b.paid;
-      return a.paid is int
+      let chunk = a.paidOut - b.paidOut;
+      let total = a.amount + a.bonus;
+      let matured = request.time >= b.createdAt + duration.value(b.termDays, 'd');
+      return a.paidOut is int
         && chunk >= 1 && chunk <= 10
         && ga.get('gems', 0) - gb.get('gems', 0) == chunk
-        && a.paid <= (a.status == 'broken' ? a.amount : a.amount + a.bonus)
-        && ((b.status != 'active'
-            && changed.hasOnly(['paid'])
-            && va == vb)
-          || (b.status == 'active'
-            && changed.hasOnly(['status', 'paid', 'collectedAt'])
+        && ((b.status == 'active'
+            && changed.hasOnly(['status', 'paidOut', 'collectedAt'])
             && a.collectedAt == request.time
-            && (a.status == 'broken'
-              || (a.status == 'collected' && request.time >= b.createdAt + duration.value(b.termDays, 'd')))
             && va.get('closedId', '') == depositId
-            && va.get('active', 0) == vb.get('active', 0) - 1));
+            && va.get('active', 0) == vb.get('active', 0) - 1
+            && ((a.status == 'breaking' && a.paidOut < a.amount)
+              || (a.status == 'broken' && a.paidOut == a.amount)
+              || (matured && a.status == 'collecting' && a.paidOut < total)
+              || (matured && a.status == 'collected' && a.paidOut == total)))
+          || (va == vb
+            && ((b.status == 'collecting'
+                && ((a.status == 'collecting' && changed.hasOnly(['paidOut']) && a.paidOut < total)
+                  || (a.status == 'collected' && changed.hasOnly(['status', 'paidOut']) && a.paidOut == total)))
+              || (b.status == 'breaking'
+                && ((a.status == 'breaking' && changed.hasOnly(['paidOut']) && a.paidOut < a.amount)
+                  || (a.status == 'broken' && changed.hasOnly(['status', 'paidOut']) && a.paidOut == a.amount))))));
+    }
+
+    // The vault setting the parent writes: only on, d3, d7 and d14, on a boolean, each rate a whole number from 0 to 10 per
+    // 10 gems saved (the defaults are 1, 3 and 7, so the cap lets a parent at most double the longest). The screen offers the
+    // same range; this is the check that holds when a screen does not. Kids never write settings. Applies to the parent branch.
+    function vaultSettingsOk() {
+      let v = request.resource.data.get('settings', {}).get('vault', {});
+      return v is map
+        && v.keys().hasOnly(['on', 'd3', 'd7', 'd14'])
+        && (!('on' in v) || v.on is bool)
+        && (!('d3' in v) || (v.d3 is int && v.d3 >= 0 && v.d3 <= 10))
+        && (!('d7' in v) || (v.d7 is int && v.d7 >= 0 && v.d7 <= 10))
+        && (!('d14' in v) || (v.d14 is int && v.d14 >= 0 && v.d14 <= 10));
     }
 
     // game.hero may change only to a hero the kid owns after the write (a buy equips the new hero in the same
@@ -404,8 +427,8 @@ service cloud.firestore {
       match /kids/{kidId} {
         allow read: if isParent(uid) || isKid(uid, kidId);
         allow delete: if isParent(uid);
-        allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId;
-        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId))
+        allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId && vaultSettingsOk();
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && vaultSettingsOk())
           || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk() || kidVaultKeysOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && kidHeroGrowthOk() && kidRaiseOk());
 
         match /cards/{cardId} {

@@ -11,7 +11,8 @@ export const VAULT_MIN = 10;
 export const VAULT_MAX_ACTIVE = 3;
 /** Most gems one write moves out of the vault. Equals the kid-write raise bound in firestore.rules. */
 export const PAY_CHUNK = 10;
-export const RATE_MAX = 20;
+/** The most a parent can set per 10 gems. firestore.rules holds the same cap (vaultSettingsOk, vaultCreateOk). */
+export const RATE_MAX = 10;
 
 /** The stored parent setting. A missing value reads as off with the default rates. */
 export interface VaultSettings {
@@ -21,7 +22,14 @@ export interface VaultSettings {
   d14?: number;
 }
 
-export type VaultStatus = 'active' | 'collected' | 'broken';
+/**
+ * `collecting` and `breaking` are a payout in progress (some chunks paid, more owed). Only the last chunk makes it `collected`
+ * (paidOut equals amount + bonus) or `broken` (paidOut equals amount).
+ */
+export type VaultStatus = 'active' | 'collecting' | 'breaking' | 'collected' | 'broken';
+
+/** A payout that started and has chunks left: the app finishes it on the next open. */
+export const inProgress = (d: Pick<VaultDeposit, 'status'>): boolean => d.status === 'collecting' || d.status === 'breaking';
 
 /** One deposit. `createdAt` is the server's time (epoch ms). A term runs from it in calendar days. */
 export interface VaultDeposit {
@@ -31,8 +39,8 @@ export interface VaultDeposit {
   ratePer10: number;
   bonus: number;
   status: VaultStatus;
-  /** Gems already paid back out of this deposit. */
-  paid: number;
+  /** Gems already paid back out of this deposit. Rises with game.gems in the same write. */
+  paidOut: number;
   createdAt: number;
   collectedAt?: number;
 }
@@ -57,10 +65,10 @@ export function bonusFor(amount: number, ratePer10: number): number {
 }
 
 /** What a deposit pays when collected, and what it pays when broken. */
-export const payoutOf = (d: Pick<VaultDeposit, 'amount' | 'bonus' | 'status'>): number => (d.status === 'broken' ? d.amount : d.amount + d.bonus);
+export const payoutOf = (d: Pick<VaultDeposit, 'amount' | 'bonus' | 'status'>): number => (d.status === 'broken' || d.status === 'breaking' ? d.amount : d.amount + d.bonus);
 
 /** Gems still owed to the kid by this deposit: all of it while active (as a collect), the unpaid rest once closed. */
-export const owedOf = (d: Pick<VaultDeposit, 'amount' | 'bonus' | 'status' | 'paid'>): number => payoutOf(d) - d.paid;
+export const owedOf = (d: Pick<VaultDeposit, 'amount' | 'bonus' | 'status' | 'paidOut'>): number => payoutOf(d) - d.paidOut;
 
 /** The server time the term ends. Display only: the rules compute it from createdAt and request.time. */
 export const maturesAtOf = (d: Pick<VaultDeposit, 'createdAt' | 'termDays'>): number => d.createdAt + d.termDays * 86_400_000;

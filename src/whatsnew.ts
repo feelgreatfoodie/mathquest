@@ -15,6 +15,7 @@ export interface WhatsNewEntry {
 }
 
 export const WHATS_NEW: readonly WhatsNewEntry[] = [
+  { pr: 28, text: 'Vault payouts pay each gem once and pick up where they stopped. If the app closes in the middle of a collect, the rest arrives the next time the vault opens, and two devices collecting at once never pay twice. A parent can set the vault bonus from 0 to 10 extra per 10 gems.', setting: true },
   { pr: 27, text: 'A gem vault. Put 10 or more gems in for 3, 7 or 14 days and get a fixed bonus back: 1, 3 or 7 extra for every 10. Break early and every gem you put in comes back, only the bonus is lost. A glowing chest on Home shows when a deposit is ready. The vault opens by the server clock, so changing the iPad clock does nothing. No random rewards. Pre-readers get a picture-and-voice vault of 10 gems for 3 days.', setting: true },
   { pr: 26, text: 'Leaving a round can no longer freeze the screen: if a save fails, you still go back and a note says so. The progress bar only moves forward, even after a retry. After a miss, the right answer shows big in the sum with a check, your answer small and crossed out, and a bigger hint with a speaker that reads it. Each player picks a hero and a color, so the player screen shows each one with their own picture.' },
   { pr: 25, text: 'A round never opens with a preview of a locked group. Pre-readers get no preview in the first 3 questions, readers none in the first 2, and previews never come back to back.', behindTheScenes: true },

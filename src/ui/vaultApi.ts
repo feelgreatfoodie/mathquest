@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { VaultDeposit, VaultTerm } from '../game/vault';
+import { inProgress, type VaultDeposit, type VaultTerm } from '../game/vault';
 
 /** What a screen can do with the vault. The app builds it from the repo; a screen never touches the repo itself. */
 export interface VaultApi {
@@ -40,4 +40,22 @@ export function useDeposits(vault: VaultApi | undefined, active: boolean, gems: 
     void refresh();
   }, [refresh, gems]);
   return { deposits, loaded, refresh };
+}
+
+/**
+ * Finishes a payout that was interrupted (the app closed or a chunk failed): each deposit in progress gets its remaining
+ * chunks once per mount, in order. The server pays each chunk once, so a second screen doing the same cannot overpay.
+ */
+export function useResume(vault: VaultApi | undefined, deposits: readonly VaultDeposit[], refresh: () => Promise<void>) {
+  const tried = useRef(new Set<string>());
+  useEffect(() => {
+    if (!vault) return;
+    const todo = deposits.filter((d) => inProgress(d) && !tried.current.has(d.id));
+    if (!todo.length) return;
+    for (const d of todo) tried.current.add(d.id);
+    void (async () => {
+      for (const d of todo) await vault.pay(d.id, d.status === 'breaking' ? 'break' : 'collect');
+      await refresh();
+    })();
+  }, [vault, deposits, refresh]);
 }

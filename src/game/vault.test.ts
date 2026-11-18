@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_RATES, PAY_CHUNK, VAULT_MAX_ACTIVE, VAULT_MIN, VAULT_TERMS, bonusFor, daysLeft, depositProblem, looksReady, maturesAtOf, owedOf, payChunks, payoutOf, rateOf, vaultBalance, vaultOn, type VaultDeposit } from './vault';
+import { RATE_MAX, DEFAULT_RATES, PAY_CHUNK, VAULT_MAX_ACTIVE, VAULT_MIN, VAULT_TERMS, bonusFor, daysLeft, depositProblem, looksReady, maturesAtOf, owedOf, payChunks, payoutOf, rateOf, vaultBalance, vaultOn, type VaultDeposit } from './vault';
 
-const dep = (over: Partial<VaultDeposit> = {}): VaultDeposit => ({ id: 'd', amount: 50, termDays: 7, ratePer10: 3, bonus: 15, status: 'active', paid: 0, createdAt: 0, ...over });
+const dep = (over: Partial<VaultDeposit> = {}): VaultDeposit => ({ id: 'd', amount: 50, termDays: 7, ratePer10: 3, bonus: 15, status: 'active', paidOut: 0, createdAt: 0, ...over });
 const DAY = 86_400_000;
 
 describe('bonus math', () => {
@@ -28,6 +28,8 @@ describe('payouts', () => {
     expect(payoutOf(dep({ status: 'active' }))).toBe(65);
     expect(payoutOf(dep({ status: 'collected' }))).toBe(65);
     expect(payoutOf(dep({ status: 'broken' }))).toBe(50);
+    expect(payoutOf(dep({ status: 'collecting' }))).toBe(65);
+    expect(payoutOf(dep({ status: 'breaking' }))).toBe(50);
   });
   it('splits into chunks of at most 10 that add up to the payout', () => {
     expect(payChunks(65)).toEqual([10, 10, 10, 10, 10, 10, 5]);
@@ -37,13 +39,13 @@ describe('payouts', () => {
     expect(PAY_CHUNK).toBe(10);
   });
   it('owed is the payout less what was paid', () => {
-    expect(owedOf(dep({ status: 'collected', paid: 30 }))).toBe(35);
+    expect(owedOf(dep({ status: 'collecting', paidOut: 30 }))).toBe(35);
   });
 });
 
 describe('balance and time labels', () => {
   it('the vault balance is active amounts plus what closed deposits still owe', () => {
-    expect(vaultBalance([dep(), dep({ id: 'e', amount: 30, bonus: 3, status: 'collected', paid: 20 }), dep({ id: 'f', status: 'broken', paid: 50 })])).toBe(50 + 13);
+    expect(vaultBalance([dep(), dep({ id: 'e', amount: 30, bonus: 3, status: 'collecting', paidOut: 20 }), dep({ id: 'f', status: 'broken', paidOut: 50 })])).toBe(50 + 13);
   });
   it('matures at createdAt plus the term in calendar days; looks ready only past it and only when active', () => {
     const d = dep({ createdAt: 1000 });
@@ -57,6 +59,11 @@ describe('balance and time labels', () => {
 });
 
 describe('settings and checks', () => {
+  it('a rate above 10 reads as the default (the rules cap it at 10)', () => {
+    expect(rateOf({ vault: { d7: 10 } }, 7)).toBe(10);
+    expect(rateOf({ vault: { d7: 11 } }, 7)).toBe(3);
+    expect(RATE_MAX).toBe(10);
+  });
   it('a missing or bad rate reads as the default; a parent rate wins; off by default', () => {
     expect(rateOf(undefined, 7)).toBe(3);
     expect(rateOf({ vault: { d7: 5 } }, 7)).toBe(5);
@@ -83,6 +90,8 @@ describe('rules and code agree', () => {
     expect(rules).toMatch(/get\('d7', 3\)/);
     expect(rules).toMatch(/get\('d14', 7\)/);
     expect(rules).toMatch(/chunk <= 10/);
+    expect(rules).toMatch(/d7 <= 10/);
+    expect(rules).toMatch(/ratePer10 <= 10/);
   });
   it('no vault rule reads the device clock and nothing in the vault rules is random', () => {
     const vaultPart = rules.slice(rules.indexOf('function vaultPath'));

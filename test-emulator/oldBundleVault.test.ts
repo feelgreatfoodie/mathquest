@@ -28,8 +28,8 @@ describe('a pre-vault bundle writes game for a kid with a vault', () => {
     const after = await stored(env);
     expect(after.game.gems).toBe(127);
     expect(after.vault).toEqual(before.vault);
-    expect(await storedDeposit(env, 'd1')).toMatchObject({ amount: 50, status: 'active', paid: 0 });
-    expect(await storedDeposit(env, 'd2')).toMatchObject({ amount: 30, status: 'active', paid: 0 });
+    expect(await storedDeposit(env, 'd1')).toMatchObject({ amount: 50, status: 'active', paidOut: 0 });
+    expect(await storedDeposit(env, 'd2')).toMatchObject({ amount: 30, status: 'active', paidOut: 0 });
   });
   it('a hero equip write through the repo (game only) is accepted and the vault is unchanged', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {

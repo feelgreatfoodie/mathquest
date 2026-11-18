@@ -64,12 +64,12 @@ describe('a kid with 23 items, 5 heroes, 3 equipped slots and 3 active deposits:
   });
   it('(7) a payout chunk that closes a deposit (first chunk, collect after the term)', async () => {
     await seedFull([4, 0.5, 0.5]);
-    await assertSucceeds(payChunk(kidDb(env), 'v1', { gemsBefore: 300, chunk: 10, close: 'collected', activeBefore: 3, lastId: 'v3' }, { game: { ...FULL_GAME, gems: 310 } }));
+    await assertSucceeds(payChunk(kidDb(env), 'v1', { gemsBefore: 300, chunk: 10, close: 'collecting', activeBefore: 3, lastId: 'v3' }, { game: { ...FULL_GAME, gems: 310 } }));
   });
   it('(8) a payout chunk that closes a deposit (first chunk, break) through the repo', async () => {
     const r = await repo().vaultPay(KID, 'v2', 'break');
     expect(r.paid).toBe(10);
-    expect((await storedDeposit(env, 'v2'))!.status).toBe('broken');
+    expect((await storedDeposit(env, 'v2'))!.status).toBe('breaking');
   });
   it('(9) a continuation chunk', async () => {
     await seedFull([4, 0.5, 0.5]);
@@ -96,9 +96,9 @@ describe('a kid with 23 items, 5 heroes, 3 equipped slots and 3 active deposits:
   });
   it('writes the deposit for an old-shape check last: the seeded matured doc exists', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
-      await setDoc(doc(ctx.firestore(), `families/${FAM}/kids/${KID}/vault/old`), { id: 'old', amount: 10, status: 'collected', paid: 11, createdAt: Timestamp.fromMillis(0) });
+      await setDoc(doc(ctx.firestore(), `families/${FAM}/kids/${KID}/vault/old`), { id: 'old', amount: 10, status: 'collected', paidOut: 11, createdAt: Timestamp.fromMillis(0) });
     });
-    expect((await storedDeposit(env, 'old'))!.paid).toBe(11);
+    expect((await storedDeposit(env, 'old'))!.paidOut).toBe(11);
     expect(vaultRef).toBeDefined();
   });
 });
