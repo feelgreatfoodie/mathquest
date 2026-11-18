@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FocusEvent } from 'react';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { HEROES, levelFor } from '../../engine/game';
 import { gemHistory } from '../../engine/gemHistory';
@@ -12,6 +12,7 @@ import { median } from '../../engine/scheduler';
 import { hashPin, type Repo } from '../../data/repo';
 import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { reportFailure } from '../failures';
+import { buildLabel, entryText, recentChanges } from '../../whatsnew';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
 
@@ -150,7 +151,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
     );
 
   return (
-    <div className="screen parent">
+    <div className="screen parent" onFocus={keepFocusVisible}>
       <header className="parent-head">
         <h1 className="pixel">Parent area</h1>
         <div className="row">
@@ -225,7 +226,26 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
           }}
         />
       )}
+      <VersionFooter />
     </div>
+  );
+}
+
+/** Which build is live, and what changed in the last 10 merged changes. */
+function VersionFooter() {
+  const [open, setOpen] = useState(false);
+  return (
+    <footer className="version-footer">
+      <p className="muted version-line">{buildLabel()}</p>
+      <button type="button" className="btn btn-small btn-ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {open ? 'Hide what\u2019s new' : 'What\u2019s new'}
+      </button>
+      {open ? (
+        <ol className="whatsnew" aria-label="What's new">
+          {recentChanges().map((e) => <li key={e.pr}>{entryText(e)}</li>)}
+        </ol>
+      ) : null}
+    </footer>
   );
 }
 
@@ -323,6 +343,25 @@ function KidPinPanel({ kid, onSet }: { kid: Kid; onSet: () => Promise<void> }) {
       </form>
     </section>
   );
+}
+
+/** The iOS keyboard covers the lower half of the screen. After it opens, bring the focused field to the middle. */
+function keepFocusVisible(e: FocusEvent<HTMLElement>) {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement)) return;
+  setTimeout(() => t.scrollIntoView?.({ block: 'center', behavior: 'smooth' }), 300);
+}
+
+/** Tapping a grid square shows its fact and level in a sheet at the bottom. Squares are too small to hold a tooltip. */
+function useCellSheet() {
+  const [tip, setTip] = useState<string | null>(null);
+  const sheet = tip ? (
+    <div className="hm-sheet" role="status">
+      <span>{tip}</span>
+      <button type="button" className="btn btn-small btn-ghost" onClick={() => setTip(null)}>Close</button>
+    </div>
+  ) : null;
+  return { setTip, sheet };
 }
 
 const LEVEL_CLASS: Record<Level, string> = { 0: 'lv0', 1: 'lv1', 2: 'lv2', 3: 'lv3', 4: 'lv4' };
@@ -531,10 +570,10 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
               const c = cards[s.id];
               return (
                 <tr key={s.id}>
-                  <td>{s.label}</td>
-                  <td>{c ? LEVEL_LABELS[cardLevel(c, baseline, pace)] : 'Locked or not started'}</td>
-                  <td className="num">{c?.attempts ? `${Math.round((c.correct / c.attempts) * 100)}%` : '–'}</td>
-                  <td className="num">{c ? fmtSec(median(c.recentMs)) : '–'}</td>
+                  <td data-label="Skill">{s.label}</td>
+                  <td data-label="Status">{c ? LEVEL_LABELS[cardLevel(c, baseline, pace)] : 'Locked or not started'}</td>
+                  <td className="num" data-label="Accuracy">{c?.attempts ? `${Math.round((c.correct / c.attempts) * 100)}%` : '–'}</td>
+                  <td className="num" data-label="Typical time">{c ? fmtSec(median(c.recentMs)) : '–'}</td>
                 </tr>
               );
             })}
@@ -552,12 +591,12 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
             <tbody>
               {sessions.map((s) => (
                 <tr key={s.id}>
-                  <td>{new Date(s.startedAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
-                  <td className="num">{s.graded}</td>
-                  <td className="num">{s.graded ? `${Math.round((s.correct / s.graded) * 100)}%` : '–'}</td>
-                  <td className="num">{s.fast}</td>
-                  <td className="num">{s.newLearned}</td>
-                  <td className="num">{Math.max(1, Math.round((s.endedAt - s.startedAt) / 60_000))}</td>
+                  <td data-label="When">{new Date(s.startedAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
+                  <td className="num" data-label="Questions">{s.graded}</td>
+                  <td className="num" data-label="Correct">{s.graded ? `${Math.round((s.correct / s.graded) * 100)}%` : '–'}</td>
+                  <td className="num" data-label="Fast">{s.fast}</td>
+                  <td className="num" data-label="New">{s.newLearned}</td>
+                  <td className="num" data-label="Minutes">{Math.max(1, Math.round((s.endedAt - s.startedAt) / 60_000))}</td>
                 </tr>
               ))}
             </tbody>
@@ -706,7 +745,9 @@ function TriangleGrid({
   cell: (a: number, b: number) => { id: string; shown: number; tip: string } | null;
 }) {
   const nums = Array.from({ length: 11 }, (_, i) => i);
+  const { setTip, sheet } = useCellSheet();
   return (
+    <>
     <div className="heatmap triangle" role="table" aria-label={label}>
       <div className="hm-row" role="row">
         <span className="hm-head" role="columnheader" />
@@ -722,7 +763,7 @@ function TriangleGrid({
             const lv = cardLevel(st, baseline, pace);
             const tip = `${c.tip}: ${LEVEL_LABELS[lv]}${st?.recentMs.length ? `, ${fmtSec(median(st.recentMs))}` : ''}${st?.fsrs.lapses ? `, missed ${st.fsrs.lapses}×` : ''}`;
             return (
-              <span key={b} role="cell" title={tip} aria-label={tip} data-card={c.id} className={`hm-cell ${LEVEL_CLASS[lv]} ${st && st.fsrs.lapses >= 3 ? 'leech' : ''}`}>
+              <span key={b} role="cell" title={tip} aria-label={tip} data-card={c.id} onClick={() => setTip(tip)} className={`hm-cell ${LEVEL_CLASS[lv]} ${st && st.fsrs.lapses >= 3 ? 'leech' : ''}`}>
                 {c.shown}
               </span>
             );
@@ -730,12 +771,16 @@ function TriangleGrid({
         </div>
       ))}
     </div>
+    {sheet}
+    </>
   );
 }
 
 function Heatmap({ cards, baseline, pace }: { cards: CardMap; baseline: number; pace: number }) {
   const nums = Array.from({ length: 13 }, (_, i) => i);
+  const { setTip, sheet } = useCellSheet();
   return (
+    <>
     <div className="heatmap" role="table" aria-label="Times table mastery, 0 to 12">
       <div className="hm-row" role="row">
         <span className="hm-head" role="columnheader">×</span>
@@ -749,7 +794,7 @@ function Heatmap({ cards, baseline, pace }: { cards: CardMap; baseline: number; 
             const lv = cardLevel(c, baseline, pace);
             const tip = `${a} × ${b} = ${a * b}: ${LEVEL_LABELS[lv]}${c?.recentMs.length ? `, ${fmtSec(median(c.recentMs))}` : ''}${c?.fsrs.lapses ? `, missed ${c.fsrs.lapses}×` : ''}`;
             return (
-              <span key={b} role="cell" title={tip} aria-label={tip} className={`hm-cell ${LEVEL_CLASS[lv]} ${c && c.fsrs.lapses >= 3 ? 'leech' : ''}`}>
+              <span key={b} role="cell" title={tip} aria-label={tip} onClick={() => setTip(tip)} className={`hm-cell ${LEVEL_CLASS[lv]} ${c && c.fsrs.lapses >= 3 ? 'leech' : ''}`}>
                 {a * b}
               </span>
             );
@@ -757,5 +802,7 @@ function Heatmap({ cards, baseline, pace }: { cards: CardMap; baseline: number; 
         </div>
       ))}
     </div>
+    {sheet}
+    </>
   );
 }
