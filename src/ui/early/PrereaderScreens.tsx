@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { GoalJar, goalName } from '../GoalJar';
 import { CampRow } from '../CampRow';
+import { ShopMathEntry } from '../ShopMathCard';
+import type { Repo } from '../../data/repo';
 import { HeroFigure } from '../HeroFigure';
-import type { Kid } from '../../engine/models';
+import type { Kid, KidGame } from '../../engine/models';
 import { HeroShop, type OnGame } from '../HeroShop';
 import { UiIcon } from '../sprites';
 import { looksReady, owedOf, vaultOn } from '../../game/vault';
@@ -14,7 +16,7 @@ import { speak, unlockSpeech } from './useSpeech';
 const MAX_FLAMES = 7;
 
 /** Home for a pre-reader: the hero, a huge Play triangle, and streak flames. No reading needed. */
-export function PrereaderHome({ kid, onStart, onBack, onGame, vault }: { kid: Kid; onStart: () => void; onBack: () => void; onGame: OnGame; vault?: VaultApi }) {
+export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, vault }: { kid: Kid; repo: Repo; onStart: () => void; onBack: () => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; vault?: VaultApi }) {
   const [shop, setShop] = useState(false);
   const [shopVault, setShopVault] = useState(false);
   const hasVault = !!vault && vaultOn(kid.settings);
@@ -30,6 +32,7 @@ export function PrereaderHome({ kid, onStart, onBack, onGame, vault }: { kid: Ki
       <HeroFigure game={kid.game} size={220} className="bob" />
       <CampRow game={kid.game} size={64} />
       <GoalJar game={kid.game} learner="prereader" onClick={() => void speak(`Saving for the ${goalName(kid.game.goal ?? '')}! You have ${kid.game.gems}.`)} />
+      <ShopMathEntry kid={kid} repo={repo} onGame={onTipGame ?? (() => undefined)} />
       <div className="early-home-row">
         <button
           type="button"

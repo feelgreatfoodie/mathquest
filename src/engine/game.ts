@@ -54,6 +54,11 @@ export interface GameDelta {
    * out from the stored count at write time, and count toward today. Replaces `gems`. Needs `playedAt`.
    */
   gemGrant?: { base: number; learner: Learner; settings: GemSettings };
+  /**
+   * Marks a shop math tip. It must carry `gemGrant` (base 1) and `playedAt` and nothing else that changes the game.
+   * applyDelta counts it against SHOP_TIPS_PER_DAY on the stored game and throws GameDeltaError for the 4th of a day.
+   */
+  shopTip?: boolean;
   /** A combo from this run. The stored best only moves up. */
   bestCombo?: number;
   /** When a run finished (epoch ms). Moves the day streak. Leave it out for a shop action. */
@@ -69,6 +74,16 @@ export interface GameDelta {
 }
 
 /** The delta cannot apply to the current game (a hero already owned, not enough gems). Retrying will not help. */
+/** Tips a kid can earn from the shop math card in one day. */
+export const SHOP_TIPS_PER_DAY = 3;
+
+/** Tips already paid on the day of `at`. A stored day later than `at` (a clock set back) keeps its count, so rewinding the clock cannot reset it. */
+export function shopTipsToday(game: { shopTipsToday?: number; shopTipsDay?: string }, at: number): number {
+  const n = game.shopTipsToday;
+  if (typeof game.shopTipsDay !== 'string' || typeof n !== 'number' || !Number.isFinite(n) || n <= 0) return 0;
+  return game.shopTipsDay >= dayKey(at) ? n : 0;
+}
+
 export class GameDeltaError extends Error {
   constructor(message: string) {
     super(message);
@@ -98,7 +113,16 @@ export function awardedGems(game: KidGame, delta: GameDelta): number {
   return gemsForRun(stats, learner, settings, earnedTodayOf(game, delta.playedAt));
 }
 
+function checkShopTip(game: KidGame, delta: GameDelta): void {
+  const onlyTip = delta.gemGrant && delta.playedAt !== undefined && !delta.gemRun && delta.gems === undefined && !delta.xp && !delta.bestCombo
+    && delta.purchase === undefined && delta.equip === undefined && delta.unequip === undefined && delta.goal === undefined;
+  if (!onlyTip) throw new GameDeltaError('A tip is one gem grant and nothing else.');
+  if (delta.gemGrant!.base !== 1) throw new GameDeltaError('A tip is 1 gem.');
+  if (shopTipsToday(game, delta.playedAt!) >= SHOP_TIPS_PER_DAY) throw new GameDeltaError('That is all the tips for today.');
+}
+
 export function applyDelta(game: KidGame, delta: GameDelta): KidGame {
+  if (delta.shopTip) checkShopTip(game, delta);
   const xp = delta.xp ?? 0;
   const bestCombo = delta.bestCombo ?? 0;
   if (!Number.isFinite(xp) || xp < 0) throw new GameDeltaError('XP cannot go down.');
@@ -120,6 +144,10 @@ export function applyDelta(game: KidGame, delta: GameDelta): KidGame {
     if (earned > 0 && (game.gemsDay === undefined || game.gemsDay <= today)) {
       next = { ...next, gemsEarnedToday: earnedTodayOf(game, delta.playedAt) + earned, gemsDay: today };
     }
+  }
+  if (delta.shopTip) {
+    const today = dayKey(delta.playedAt!);
+    next = { ...next, shopTipsToday: shopTipsToday(game, delta.playedAt!) + 1, shopTipsDay: game.shopTipsDay !== undefined && game.shopTipsDay > today ? game.shopTipsDay : today };
   }
   if (delta.purchase !== undefined) {
     const hero = HEROES.find((h) => h.id === delta.purchase);

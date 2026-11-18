@@ -3,7 +3,7 @@
 // the entry through applyGameDelta, which stores the session log and the delta in one transaction. A stored
 // session log with the same id means the delta already landed, so a replay is idempotent by runId.
 
-import type { GameDelta } from '../engine/game';
+import { GameDeltaError, type GameDelta } from '../engine/game';
 import { GEM_RUN_MAX } from '../engine/gems';
 import type { KidGame, SessionLog } from '../engine/models';
 import { isSaveDenied } from '../version';
@@ -18,7 +18,8 @@ export interface OutboxEntry {
   /** The session log id: one finished run. */
   runId: string;
   kidId: string;
-  sessionLog: SessionLog;
+  /** Absent on a shop math tip: a tip has no session, and the cap (not a stored log) stops a repeat. */
+  sessionLog?: SessionLog;
   gameDelta: GameDelta;
   savedAt: number;
   /** How many times the server refused this run (permission-denied). */
@@ -157,8 +158,13 @@ export async function replayOutbox(
     const delta = (e.denied ?? 0) >= MAX_DENIED_TRIES - 1 ? clampToRules(e.gameDelta) : e.gameDelta;
     let game: KidGame;
     try {
-      game = await repo.applyGameDelta(e.kidId, delta, { session: e.sessionLog });
+      game = await repo.applyGameDelta(e.kidId, delta, e.sessionLog ? { session: e.sessionLog } : undefined);
     } catch (err) {
+      // A tip the stored game cannot take (the 4th of the day) will never apply: drop it, do not retry, do not block the queue.
+      if (e.gameDelta.shopTip && err instanceof GameDeltaError) {
+        await outbox.remove(e.runId);
+        continue;
+      }
       if (!isSaveDenied(err)) throw err; // offline or other: keep it, stop, the next launch tries again
       const denied = (e.denied ?? 0) + 1;
       if (denied < MAX_DENIED_TRIES) {

@@ -1000,3 +1000,20 @@ legend { padding: 0 6px; color: var(--muted); }
 .ins-dl dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 600px) { .ins-matrix { gap: 1px; } .ins-head { height: 18px; font-size: 9px; } }
 @media (min-width: 700px) { .ins-cell, .ins-gap { height: 28px; } .ins-cell { font-size: 11px; } .ins-head { font-size: 11px; height: 24px; } }
+
+/* Shop math card: a practice sum with the kid's own gems. */
+.shopmath-open { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; }
+.shopmath-open-pre { min-width: 120px; min-height: 120px; border-radius: 24px; }
+.screen.center.shopmath { position: fixed; inset: 0; z-index: 40; background: var(--bg); padding: 8px; justify-content: flex-start; overflow-x: hidden; overflow-y: auto; }
+.shopmath-body { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; max-width: 560px; }
+.shopmath-text { font-size: 22px; font-weight: 700; text-align: center; margin: 0; }
+.shopmath-text-pre { font-size: 28px; }
+.shopmath-entry { font: 700 48px var(--body); min-height: 60px; min-width: 140px; text-align: center; background: var(--panel-2); border: 3px solid var(--line); border-radius: 14px; padding: 4px 16px; }
+.shopmath-answer, .shopmath-right { font-size: 22px; text-align: center; margin: 0; }
+.shopmath-right { color: var(--good); font-weight: 700; display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.shopmath-dots { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 320px; }
+.shopmath-dot { width: 24px; height: 24px; border-radius: 50%; border: 3px solid var(--gold); box-sizing: border-box; }
+.shopmath-dot.is-have { background: var(--gold); }
+.shopmath .choices { gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.shopmath .choice { width: 120px; min-width: 120px; min-height: 120px; height: 150px; }
+.shopmath .choice-num { font-size: 56px; }
