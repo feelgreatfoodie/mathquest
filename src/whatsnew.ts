@@ -15,6 +15,7 @@ export interface WhatsNewEntry {
 }
 
 export const WHATS_NEW: readonly WhatsNewEntry[] = [
+  { pr: 22, text: 'Pre-readers get a picture-only end screen after a round: gems earned, XP and level, the map, and the streak. A tap skips ahead.' },
   { pr: 21, text: 'Rounds always save. An update never interrupts a round.', behindTheScenes: true },
   { pr: 20, text: 'The parent area fits an iPhone: a row of players at the top, two-column stat tiles, a times-table grid you can tap, full-width buttons. Pinch-zoom works for parents. Kids cannot pinch-zoom while they play. A version line at the bottom shows which build is live.' },
   { pr: 19, text: 'A parent can choose which sum group a player starts at for Addition and Subtraction within 10.', setting: true },

@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { cardLabel } from '../../engine/modules';
-import { levelFor } from '../../engine/game';
-import { learnerOf, type Kid } from '../../engine/models';
-import { PrereaderHome, PrereaderSummary } from '../early/PrereaderScreens';
+import { levelFor, type GameDelta } from '../../engine/game';
+import { readerMapLine } from '../../engine/summaryView';
+import { learnerOf, type CardMap, type Kid } from '../../engine/models';
+import { PrereaderHome } from '../early/PrereaderScreens';
+import { PrereaderSummary } from '../early/PrereaderSummary';
+import type { RunInfo } from '../runShared';
 import { HeroShop, type OnGame } from '../HeroShop';
 import type { RunSummary } from '../../engine/session';
 import { TABS, readTab, tabForKey, writeTab, type LandingTab } from '../landingTab';
@@ -198,11 +201,32 @@ function ReaderHome({ kid, onStart, onGame, onBack }: { kid: Kid; onStart: () =>
   );
 }
 
-export function Summary(props: { kid: Kid; summary: RunSummary; onAgain: () => void; onHome: () => void }) {
+export interface SummaryProps {
+  kid: Kid;
+  summary: RunSummary;
+  info: RunInfo;
+  loadCards: () => Promise<CardMap>;
+  onGame: (d: GameDelta) => Promise<boolean>;
+  onAgain: () => void;
+  onHome: () => void;
+}
+
+export function Summary(props: SummaryProps) {
   return learnerOf(props.kid.settings) === 'prereader' ? <PrereaderSummary {...props} /> : <ReaderSummary {...props} />;
 }
 
-function ReaderSummary({ kid, summary, onAgain, onHome }: { kid: Kid; summary: RunSummary; onAgain: () => void; onHome: () => void }) {
+function ReaderSummary({ kid, summary, info, loadCards, onAgain, onHome }: SummaryProps) {
+  const [mapLine, setMapLine] = useState<string | null>(null);
+  const loadRef = useRef(loadCards);
+  loadRef.current = loadCards;
+  useEffect(() => {
+    let live = true;
+    void loadRef.current().then((c) => live && setMapLine(readerMapLine(c, kid.settings))).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [kid.settings]);
+  const lv = levelFor(kid.game.xp);
   const acc = summary.graded ? summary.correct / summary.graded : 0;
   const stars = acc >= 0.9 ? 3 : acc >= 0.75 ? 2 : 1;
   return (
@@ -223,6 +247,20 @@ function ReaderSummary({ kid, summary, onAgain, onHome }: { kid: Kid; summary: R
           <Stat label="XP" value={`+${summary.xp}`} />
           <Stat label="gems" value={`+${summary.gems}`} />
         </div>
+        {info.saved ? (
+          <>
+            <div className="stats">
+              <Stat label="gems in total" value={kid.game.gems} />
+              <Stat label="level" value={lv.level} />
+            </div>
+            <div className="sum-bar sum-bar-reader" role="progressbar" aria-label="XP to next level" aria-valuemin={0} aria-valuemax={lv.span} aria-valuenow={lv.into}>
+              <div className="sum-bar-fill" style={{ width: `${(lv.into / lv.span) * 100}%` }} />
+            </div>
+            {mapLine ? <p className="muted" data-testid="reader-map">{mapLine}</p> : null}
+          </>
+        ) : (
+          <p className="muted">Your totals are not saved yet. Use Try again on the message.</p>
+        )}
         {summary.newLearned ? <p>You learned <strong>{summary.newLearned}</strong> new {summary.newLearned === 1 ? 'thing' : 'things'}!</p> : null}
         {summary.faster.length ? (
           <div className="chips">
