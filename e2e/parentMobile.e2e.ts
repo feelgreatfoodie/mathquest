@@ -361,9 +361,9 @@ test.describe('kid screens block pinch-zoom with touch-action', () => {
     await expect(page.locator('.kid-card').first()).toBeVisible();
     expect(await page.evaluate(blocksPinch), 'picker').toEqual([]);
     await page.locator('.kid-card', { hasText: READER_NAME }).click();
-    await page.locator('.btn-start').waitFor();
+    await page.locator('.mode-card[data-mode="dungeon"]').waitFor(); // Adventure is on by default, so Home shows two mode cards
     expect(await page.evaluate(blocksPinch), 'home').toEqual([]);
-    await page.locator('.btn-start').click();
+    await page.locator('.mode-card[data-mode="dungeon"]').click();
     await expect(page.locator('.screen.run')).toBeVisible();
     expect(await page.evaluate(blocksPinch), 'run').toEqual([]);
   });

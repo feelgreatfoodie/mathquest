@@ -262,7 +262,7 @@ function WeekStars({ days, streak }: { days: ReturnType<typeof weekDays>; streak
 
 export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; onBack: () => void; vault?: VaultApi }) {
   return learnerOf(props.kid.settings) === 'prereader'
-    ? <PrereaderHome kid={props.kid} repo={props.repo} onStart={() => props.onStart()} onBack={props.onBack} onGame={props.onGame} onTipGame={props.onTipGame} vault={props.vault} />
+    ? <PrereaderHome kid={props.kid} repo={props.repo} onStart={(mode) => { writeLastMode(props.kid.id, mode); void props.repo.setWorldLastMode(props.kid.id, mode).catch(() => undefined); props.onStart(mode); }} onBack={props.onBack} onGame={props.onGame} onTipGame={props.onTipGame} vault={props.vault} />
     : <ReaderHome {...props} />;
 }
 

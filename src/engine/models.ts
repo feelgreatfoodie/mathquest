@@ -77,8 +77,8 @@ export interface KidSettings {
   modules?: Partial<Record<ModuleId, boolean>>;
   /**
    * Which game modes the kid can pick. Only a parent writes it. Optional on stored docs: a missing value gives a reader
-   * the Dungeon run and a pre-reader the picture run, and the Overworld stays off until it is set to true. Read it
-   * through `modesOnOf`. The kid's last pick lives on the device (`lastMode.ts`), because a kid token cannot write settings.
+   * the Dungeon run and Adventure, and a pre-reader the picture run and Adventure. Adventure is off only when this is
+   * exactly false. Read it through `modesOnOf`. The kid's last pick lives on the device (`lastMode.ts`), because a kid token cannot write settings.
    */
   modes?: Partial<Record<'dungeon' | 'prereader' | 'overworld', boolean>>;
   /** Sound effects: on unless this is false. A missing value reads as on. Read it through `soundOf`. */
@@ -239,12 +239,13 @@ export function soundOf(settings: { sound?: boolean } | undefined | null): boole
 }
 
 /**
- * Which game modes are on. A pre-reader has the picture run only. A reader has the Dungeon unless `modes.dungeon` is
- * false and the Overworld is on; the Overworld is on only when `modes.overworld` is exactly true. Old docs read as before.
+ * Which game modes are on. Adventure (the Overworld) is on for every kid unless `modes.overworld` is exactly false.
+ * A pre-reader has the picture run and no Dungeon. A reader has the Dungeon unless `modes.dungeon` is false and
+ * Adventure is on. Old docs with no `modes` field read as on.
  */
 export function modesOnOf(settings: Pick<KidSettings, 'modes' | 'learner'> | undefined | null): Record<'dungeon' | 'prereader' | 'overworld', boolean> {
-  if (settings?.learner === 'prereader') return { dungeon: false, prereader: true, overworld: false };
-  const overworld = settings?.modes?.overworld === true;
+  const overworld = settings?.modes?.overworld !== false;
+  if (settings?.learner === 'prereader') return { dungeon: false, prereader: true, overworld };
   const dungeon = settings?.modes?.dungeon !== false || !overworld;
   return { dungeon, prereader: false, overworld };
 }

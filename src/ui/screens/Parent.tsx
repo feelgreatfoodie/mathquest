@@ -831,17 +831,16 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onPinSet, onPictu
           Shop math card (needs the item shop)
           <span className="hint">A practice sum with the player's own gems and savings goal. A right first answer earns a 1-gem tip, up to 3 a day. It never changes the review schedule.</span>
         </label>
-        {learnerOf(settings) === 'reader' ? (
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={modesOnOf(settings).overworld}
-              onChange={(e) => setSettings({ ...settings, modes: { ...settings.modes, overworld: e.target.checked } })}
-            />
-            Game modes: Adventure (walk a map, meet monsters and chests, fight a boss)
-            <span className="hint">The Dungeon run stays. Adventure adds a second choice on Home. Questions come from the same review schedule.</span>
-          </label>
-        ) : null}
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={modesOnOf(settings).overworld}
+            data-testid="setting-adventure"
+            onChange={(e) => setSettings({ ...settings, modes: { ...settings.modes, overworld: e.target.checked } })}
+          />
+          Game modes: Adventure (walk a map, meet monsters and chests, fight a boss)
+          <span className="hint">On by default. {learnerOf(settings) === 'prereader' ? 'Picture Run stays. Adventure adds a second button on Home; questions are the same picture questions with 3 big choices.' : 'The Dungeon run stays. Adventure adds a second choice on Home.'} Questions come from the same review schedule.</span>
+        </label>
         <label className="check">
           <input type="checkbox" checked={soundOf(settings)} onChange={(e) => setSettings({ ...settings, sound: e.target.checked })} />
           Sound effects

@@ -6,6 +6,7 @@ import { reportFailure } from '../../ui/failures';
 import { loadRunner } from '../../ui/runShared';
 import { HoldButton } from '../../ui/early/HoldButton';
 import { chest as chestSound, defeat, unlockSounds } from '../../ui/early/sounds';
+import { unlockSpeech } from '../../ui/early/useSpeech';
 import { MuteButton, useMute } from '../../ui/MuteButton';
 import { Sprite, UiIcon } from '../../ui/sprites';
 import { QuestionPanel } from '../QuestionPanel';
@@ -53,6 +54,8 @@ type Intent = 'boss' | 'gate' | null;
 export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameModeProps) {
   const kidRef = useRef<Kid>(kid);
   kidRef.current = kid;
+  // A pre-reader gets the picture question (dots or a ten-frame, 3 big choices, a voice); a reader gets the keypad.
+  const learner = learnerOf(kid.settings);
   const mute = useMute(kid);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -82,6 +85,17 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const [hud, setHud] = useState<Hud>({ left: 0, lit: false });
   const [keys, setKeys] = useState(0);
   const [, bump] = useState(0);
+
+  // The first tap unlocks audio on iOS, so a pre-reader's first question can be spoken.
+  useEffect(() => {
+    if (learner !== 'prereader') return;
+    const unlock = () => {
+      unlockSounds();
+      unlockSpeech();
+    };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    return () => window.removeEventListener('pointerdown', unlock);
+  }, [learner]);
 
   const modalRef = useRef<ModalState | null>(null);
   modalRef.current = modal;
@@ -695,22 +709,25 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           </div>
         ) : null}
       </div>
-      <div className="ow-dpad" role="group" aria-label="Walk">
-        {(['up', 'left', 'down', 'right'] as Facing[]).map((d) => (
-          <button
-            key={d}
-            type="button"
-            className={`ow-dir ow-${d}`}
-            aria-label={`Walk ${d}`}
-            onPointerDown={hold(d)}
-            onPointerUp={hold(null)}
-            onPointerLeave={hold(null)}
-            onPointerCancel={hold(null)}
-          >
-            <UiIcon name="arrow-down" size={32} />
-          </button>
-        ))}
-      </div>
+      {/* The pad sits over the world; a pre-reader's 3 big choices reach the left edge, so the pad hides while one is open. */}
+      {learner === 'prereader' && modal ? null : (
+        <div className="ow-dpad" role="group" aria-label="Walk">
+          {(['up', 'left', 'down', 'right'] as Facing[]).map((d) => (
+            <button
+              key={d}
+              type="button"
+              className={`ow-dir ow-${d}`}
+              aria-label={`Walk ${d}`}
+              onPointerDown={hold(d)}
+              onPointerUp={hold(null)}
+              onPointerLeave={hold(null)}
+              onPointerCancel={hold(null)}
+            >
+              <UiIcon name="arrow-down" size={32} />
+            </button>
+          ))}
+        </div>
+      )}
       {modal ? (
         <QuestionPanel
           key={modal.entry.id}
@@ -718,7 +735,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           entry={modal.entry}
           kid={kid}
           repo={repo}
-          learner="reader"
+          learner={learner}
           display="modal"
           onResolved={onPanelResolved}
         />

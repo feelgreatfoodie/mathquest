@@ -19,7 +19,7 @@ async function seed(page: Page, learner: 'prereader' | 'reader' = 'prereader') {
   const settings =
     learner === 'prereader'
       ? { learner: 'prereader', modules: { add10: true }, tracks: { facts: false, multidigit: false, fractions: false }, sessionSize: 10, maxNew: 4, factGroupsUnlocked: 1, paceMultiplier: 3 }
-      : { tracks: { facts: true, multidigit: true, fractions: true }, sessionSize: 30, maxNew: 8, factGroupsUnlocked: 1, paceMultiplier: 3 };
+      : { modes: { overworld: false }, tracks: { facts: true, multidigit: true, fractions: true }, sessionSize: 30, maxNew: 8, factGroupsUnlocked: 1, paceMultiplier: 3 };
   await page.addInitScript(
     ({ kidId, name, settings, pinHash }) => {
       // The voice and WebAudio, stubbed: record what is said and played.
