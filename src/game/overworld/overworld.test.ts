@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { FACTS } from '../../engine/modules/facts';
-import { unlockedFactGroups } from '../../engine/mastery';
+import { GROUP_UNLOCK_SHARE, groupSteady, steadyShare, unlockedFactGroups } from '../../engine/mastery';
 import type { CardMap, CardState } from '../../engine/models';
 import { DEFAULT_SETTINGS } from '../../engine/models';
 import { mulberry32 } from '../../engine/problems';
 import { SessionRunner, type PlanItem } from '../../engine/session';
-import { bossPlan, bossReady } from './boss';
+import { BOSS_GEMS, bossPlan, bossReady, bossReward } from './boss';
 import { planEntities, retryEntity, MAX_VISIBLE } from './encounters';
 import { MAPS, REGION_IDS, findTiles, heroStart, isWalkable, tileAt, type WalkCtx } from './maps';
 import { findPath } from './pathfind';
-import { gateInfo, REGION_GROUPS } from './regions';
+import { gateInfo, lairMessage, regionCardIds, regionFactsText, regionProgress, NEXT_REGION, REGION_GROUPS } from './regions';
 import { MAX_OPENED, fromDoc, newWorld, toDoc, worldReducer } from './worldState';
 
 const NOW = new Date('2026-11-16T16:00:00').getTime();
@@ -22,6 +22,13 @@ function solid(id: string, dueIn = 5 * DAY): CardState {
   return {
     id, attempts: 5, correct: 5, recentMs: [2000, 2100], lastRating: 3, updatedAt: NOW - DAY, lastResults: [true, true],
     fsrs: { due: NOW + dueIn, stability: 5, difficulty: 5, elapsed_days: 1, scheduled_days: 5, learning_steps: 0, reps: 3, lapses: 0, state: 2, last_review: NOW - DAY },
+  };
+}
+/** Seen and answered, but FSRS stability is still under 2 days, so cardLevel is 1. */
+function young(id: string, results: boolean[]): CardState {
+  return {
+    id, attempts: results.length, correct: results.filter(Boolean).length, recentMs: [2500], lastRating: 3, updatedAt: NOW - DAY, lastResults: results,
+    fsrs: { due: NOW + DAY, stability: 0.6, difficulty: 5, elapsed_days: 1, scheduled_days: 1, learning_steps: 0, reps: 2, lapses: 0, state: 2, last_review: NOW - DAY },
   };
 }
 const group = (i: number) => FACTS.groups![i]!.cardIds;
@@ -55,10 +62,31 @@ describe('maps', () => {
       expect(findPath(m, s, { x: b.x, y: b.y + 1 }, open) ?? findPath(m, s, { x: b.x, y: b.y - 1 }, open)).not.toBeNull();
     }
   });
-  it('the last region has no gate forward, and the first has no gate back', () => {
+  it('the last region ends in a closed door, and the first has no gate back', () => {
     expect(findTiles(MAPS.meadow, 'back')).toHaveLength(0);
-    expect(findTiles(MAPS.castle, 'gate')).toHaveLength(0);
+    expect(NEXT_REGION.castle).toBeNull();
+    // The door is drawn as a closed gate and never opens: no walk reaches it, with every gate open or shut.
+    for (const t of findTiles(MAPS.castle, 'gate')) expect(isWalkable(MAPS.castle, t.x, t.y, shut)).toBe(false);
+    expect(findTiles(MAPS.castle, 'gate').length).toBeGreaterThanOrEqual(1);
     expect(findTiles(MAPS.meadow, 'gate').length).toBeGreaterThanOrEqual(1);
+  });
+  it.each(REGION_IDS)('%s: no walkable tile on the border except the gates G and g', (id) => {
+    const m = MAPS[id];
+    const bad: string[] = [];
+    for (let y = 0; y < m.h; y++)
+      for (let x = 0; x < m.w; x++) {
+        if (x !== 0 && y !== 0 && x !== m.w - 1 && y !== m.h - 1) continue;
+        const ch = m.rows[y]![x]!;
+        const walk = isWalkable(m, x, y, { gateOpen: true, hasKey: true, hasBridgeKit: true });
+        if (walk && ch !== 'G' && ch !== 'g') bad.push(`${x},${y}=${ch}`);
+      }
+    expect(bad).toEqual([]);
+  });
+  it('a gate on the border of the last region is closed even when every other gate is open', () => {
+    // NEXT_REGION.castle is null, so the app's walk context has gateOpen false there.
+    const g = findTiles(MAPS.castle, 'gate')[0]!;
+    expect(isWalkable(MAPS.castle, g.x, g.y, shut)).toBe(false);
+    expect(findPath(MAPS.castle, heroStart(MAPS.castle), g, shut)).toBeNull();
   });
 });
 
@@ -162,6 +190,74 @@ describe('boss', () => {
     expect(bossReady('meadow', some)).toBe(false);
     some[all[need - 1]!] = solid(all[need - 1]!);
     expect(bossReady('meadow', some)).toBe(true);
+  });
+  it('the lair also opens at the steady share: seen, and the last 2 answers right (1 of 10 reviewing, 8 of 10 steady)', () => {
+    const ids = regionCardIds('castle');
+    expect(ids).toHaveLength(10);
+    const cards: CardMap = {};
+    // 1 card Reviewing; 8 cards young (stability under 2 days) but with 2 right answers; 1 card never seen.
+    cards[ids[0]!] = { ...solid(ids[0]!), lastResults: [true, false] };
+    ids.slice(1, 9).forEach((id) => (cards[id] = young(id, [true, true])));
+    const p = regionProgress('castle', cards);
+    expect(p.reviewing).toBe(1);
+    expect(p.steady).toBe(8);
+    expect(p.done).toBe(8);
+    expect(bossReady('castle', cards)).toBe(true);
+    // One answer short of the share on both rules keeps it shut.
+    cards[ids[8]!] = young(ids[8]!, [true, false]);
+    expect(regionProgress('castle', cards)).toMatchObject({ reviewing: 1, steady: 7, done: 7 });
+    expect(bossReady('castle', cards)).toBe(false);
+  });
+  it('the count and the bar use the larger of the 2 counts', () => {
+    const ids = regionCardIds('castle');
+    const reviewingHigher: CardMap = {};
+    ids.slice(0, 6).forEach((id) => (reviewingHigher[id] = { ...solid(id), lastResults: [true, false] }));
+    expect(regionProgress('castle', reviewingHigher)).toMatchObject({ reviewing: 6, steady: 0, done: 6, share: 0.6 });
+    const steadyHigher: CardMap = {};
+    ids.slice(0, 5).forEach((id) => (steadyHigher[id] = young(id, [true, true])));
+    steadyHigher[ids[5]!] = solid(ids[5]!);
+    expect(regionProgress('castle', steadyHigher)).toMatchObject({ reviewing: 1, steady: 5 + 1, done: 6 });
+    const none = regionProgress('castle', {});
+    expect(none).toMatchObject({ done: 0, total: 10, share: 0 });
+  });
+  it('shares the steady logic with the module groups: steadyShare is what groupSteady calls', () => {
+    const cards = cardsFor([3]);
+    const half: CardMap = {};
+    group(3).forEach((id, i) => (half[id] = i % 2 ? solid(id) : young(id, [true, false])));
+    expect(groupSteady(FACTS, 3, half)).toBe(steadyShare(group(3), half));
+    expect(steadyShare([], cards)).toBe(1);
+    expect(GROUP_UNLOCK_SHARE).toBe(0.8);
+  });
+  it('the locked lair message names the region and its facts', () => {
+    expect(regionFactsText('castle')).toBe('6s, 7s, 8s and 12x12');
+    expect(lairMessage('castle', 1, 10)).toBe('Answer the Castle facts to wake the dragon: 6s, 7s, 8s and 12x12. 1 of 10 ready.');
+    expect(lairMessage('forest', 3, 20)).toBe(`Answer the Forest facts to wake the dragon: ${regionFactsText('forest')}. 3 of 20 ready.`);
+    expect(regionFactsText('meadow')).toBe('0s, 1s, 2s, 5s, 10s, 3s and 4s');
+  });
+  it('a lair pays once per region: the first win pays gems and a key, a second win (also after a reload) pays 0', () => {
+    let w = newWorld(NOW);
+    const first = bossReward(w, 'meadow');
+    expect(first).toEqual({ gems: BOSS_GEMS, first: true });
+    w = worldReducer(w, { t: 'boss', region: 'meadow' }, NOW);
+    expect(w.keys).toBe(1);
+    // Same session.
+    expect(bossReward(w, 'meadow')).toEqual({ gems: 0, first: false });
+    expect(worldReducer(w, { t: 'boss', region: 'meadow' }, NOW + 1).keys).toBe(1);
+    // After a reload: the stored doc, read back.
+    const reloaded = fromDoc(JSON.parse(JSON.stringify(toDoc(w))), NOW + 2);
+    expect(reloaded.bossesDefeated).toEqual(['meadow']);
+    expect(bossReward(reloaded, 'meadow')).toEqual({ gems: 0, first: false });
+    expect(worldReducer(reloaded, { t: 'boss', region: 'meadow' }, NOW + 3).keys).toBe(1);
+    // Another region still pays.
+    expect(bossReward(reloaded, 'forest').gems).toBe(BOSS_GEMS);
+  });
+  it('golden profile (1 of 10 reviewing, 8 of 10 steady): opens the Castle lair on the steady rule and reads N of 10 from the larger count', () => {
+    const ids = regionCardIds('castle');
+    const cards: CardMap = { [ids[0]!]: { ...solid(ids[0]!), lastResults: [true, false] } };
+    ids.slice(1, 9).forEach((id) => (cards[id] = young(id, [true, true])));
+    expect(bossReady('castle', cards)).toBe(true);
+    const p = regionProgress('castle', cards);
+    expect(lairMessage('castle', p.done, p.total)).toBe('Answer the Castle facts to wake the dragon: 6s, 7s, 8s and 12x12. 8 of 10 ready.');
   });
   it('a fight is 5 questions from seen cards in the region, weakest first', () => {
     const cards = cardsFor([0, 1]);

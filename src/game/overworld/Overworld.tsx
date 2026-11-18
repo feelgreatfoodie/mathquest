@@ -8,19 +8,19 @@ import { newId } from '../../data/repo';
 import { CHECKPOINT_EVERY, addRun, loadTrip, resolveTrip, saveTrip, type TripState, type TripTotals } from './trip';
 import { queueCheckpoint } from './tripWrite';
 import { HoldButton } from '../../ui/early/HoldButton';
-import { chest as chestSound, defeat, unlockSounds } from '../../ui/early/sounds';
-import { unlockSpeech } from '../../ui/early/useSpeech';
+import { chest as chestSound, defeat, isMuted, unlockSounds } from '../../ui/early/sounds';
+import { speak, unlockSpeech } from '../../ui/early/useSpeech';
 import { MuteButton, useMute } from '../../ui/MuteButton';
 import { Sprite, UiIcon } from '../../ui/sprites';
 import { QuestionPanel } from '../QuestionPanel';
 import { ownedItems } from '../shop/shopState';
 import type { GameModeProps } from '../modes/types';
-import { BOSS_GEMS, BOSS_WIN, bossPlan, bossReady } from './boss';
+import { BOSS_WIN, bossPlan, bossReady, bossReward } from './boss';
 import { TILE, drawScene, viewFor, type Scene } from './draw';
 import { MAX_VISIBLE, planEntities, retryEntity, type Entity } from './encounters';
 import { MAPS, findTiles, heroStart, isWalkable, tileAt, type Point, type RegionId, type WalkCtx } from './maps';
-import { approach } from './pathfind';
-import { NEXT_REGION, PREV_REGION, REGION_NAMES, gateInfo, regionProgress } from './regions';
+import { approach, findPath } from './pathfind';
+import { NEXT_REGION, PREV_REGION, REGION_NAMES, gateInfo, lairMessage, regionProgress } from './regions';
 import { fromDoc, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
 
 const SPEED = 4; // tiles a second
@@ -44,7 +44,18 @@ interface ModalState {
 interface Msg {
   text: string;
   progress?: number;
+  /** A pre-reader's lair message: a dragon icon and one dot per card, filled for the ready ones. No sentence. */
+  dots?: { done: number; total: number };
 }
+
+/** The voice, unless the kid is muted. */
+function voice(text: string) {
+  if (!isMuted()) void speak(text);
+}
+
+export const CAMP_VOICE = 'Walk to the campfire to finish your trip!';
+export const COMING_SOON_VOICE = 'More lands are coming soon!';
+export const LAIR_VOICE = 'Wake the dragon! Answer the facts.';
 
 type Intent = 'boss' | 'gate' | null;
 
@@ -363,7 +374,12 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     if (w.bossesDefeated.includes(w.region)) return say({ text: 'The lair is quiet. You already won here.' });
     if (!bossReady(w.region, cards)) {
       const p = regionProgress(w.region, cards);
-      return say({ text: `The lair opens when 80% of the ${REGION_NAMES[w.region]} facts are reviewing: ${p.done} of ${p.total}.`, progress: p.share });
+      // N and the bar use the larger of the two counts (reviewing, steady). A pre-reader gets the icon, the dots and the voice.
+      if (learner === 'prereader') {
+        voice(LAIR_VOICE);
+        return say({ text: '', dots: { done: p.done, total: p.total } });
+      }
+      return say({ text: lairMessage(w.region, p.done, p.total), progress: p.share });
     }
     const plan = bossPlan({ region: w.region, cards, now: Date.now(), rng: Math.random });
     if (!plan.length) return say({ text: 'Nothing to fight yet.' });
@@ -379,15 +395,19 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     setMsg(null);
     setModal({ entry: entries[0]!, boss: true });
     refreshHud();
-  }, [liveCards, say, refreshHud]);
+  }, [liveCards, say, refreshHud, learner]);
 
   const gateMessage = useCallback(() => {
     const w = worldRef.current!;
     const next = NEXT_REGION[w.region];
-    if (!next) return;
+    if (!next) {
+      // The last region: the gate is a closed door with nothing behind it yet.
+      voice(COMING_SOON_VOICE);
+      return say({ text: learner === 'prereader' ? 'Coming soon' : 'More lands coming soon' });
+    }
     const info = gateInfo(next, liveCards(), kidRef.current.settings);
     say({ text: `The gate to the ${REGION_NAMES[next]} is locked: ${info.label}`, progress: info.total ? info.learned / info.total : 0 });
-  }, [liveCards, say]);
+  }, [liveCards, say, learner]);
 
   const onArrive = useCallback(() => {
     const w = worldRef.current!;
@@ -468,9 +488,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       const win = run.correct >= needed;
       const w = worldRef.current!;
       if (win) {
+        // Read the reward before the world records the win: a lair already on the list pays 0 gems.
+        const reward = bossReward(w, w.region);
         touchWorld({ t: 'boss', region: w.region });
         setKeys(worldRef.current!.keys);
-        void grant(BOSS_GEMS);
+        if (reward.gems > 0) void grant(reward.gems);
         defeat();
         void flushWorld();
       }
@@ -585,6 +607,19 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       draw(time);
       raf = requestAnimationFrame(loop);
     };
+    const campGuide = (region: RegionId, x: number, y: number): Point[] | null => {
+      if (!hudLit.current) {
+        guide.current = { key: '', path: null };
+        return null;
+      }
+      const key = `${region}:${x},${y}`;
+      if (guide.current.key !== key) {
+        const map = MAPS[region];
+        const camp = findTiles(map, 'camp')[0];
+        guide.current = { key, path: camp ? findPath(map, { x, y }, camp, walkCtx()) : null };
+      }
+      return guide.current.path;
+    };
     const draw = (time: number) => {
       const canvas = canvasRef.current;
       const w = worldRef.current;
@@ -611,6 +646,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         lantern: gearRef.current.lantern,
         time,
         marker: markerRef.current,
+        campGuide: campGuide(w.region, h.x, h.y),
       };
       drawScene(g, canvas.width, canvas.height, scale, scene);
       viewScale.current = scale;
@@ -623,6 +659,15 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const viewScale = useRef(4);
   const hudLit = useRef(false);
   hudLit.current = hud.lit;
+  // The voice says once, when the camp first lights, where to go next.
+  const campSpoken = useRef(false);
+  useEffect(() => {
+    if (!hud.lit || campSpoken.current) return;
+    campSpoken.current = true;
+    voice(CAMP_VOICE);
+  }, [hud.lit]);
+  // The guide to the campfire: the walk from the hero to the camp tile, worked out when the hero's tile changes.
+  const guide = useRef<{ key: string; path: Point[] | null }>({ key: '', path: null });
   const gateCache = useRef({ at: 0, open: false });
   const walkCtxCache = (): boolean => {
     const now = performance.now();
@@ -642,6 +687,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         entities: entsRef.current.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, shown: e.shown, cardId: e.cardId })),
         world: worldRef.current,
         paused: pausedRef.current,
+        guide: guide.current.path?.length ?? null,
       }),
       answerOf: (id: string) => {
         const a = runnerRef.current!.queue.find((q) => q.id === id)?.problem.answer;
@@ -772,7 +818,15 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         <canvas ref={canvasRef} className="ow-canvas" data-testid="ow-canvas" onPointerUp={onCanvasTap} aria-label="The map. Tap a tile to walk there." role="img" />
         {msg ? (
           <div className="ow-msg" role="status" data-testid="ow-msg">
-            <p>{msg.text}</p>
+            {msg.dots ? (
+              <div className="ow-lair" data-testid="ow-lair-dots" role="img" aria-label={`${msg.dots.done} of ${msg.dots.total} ready`}>
+                <Sprite name="boss" size={44} />
+                <span className="ow-dots">
+                  {Array.from({ length: msg.dots.total }, (_, i) => <i key={i} className={i < msg.dots!.done ? 'on' : ''} />)}
+                </span>
+              </div>
+            ) : null}
+            {msg.text ? <p>{msg.text}</p> : null}
             {msg.progress !== undefined ? <div className="progress"><div className="progress-fill" style={{ width: `${msg.progress * 100}%` }} /></div> : null}
             <button type="button" className="icon-btn" aria-label="Close" onClick={() => setMsg(null)}><UiIcon name="close" size={24} /></button>
           </div>
