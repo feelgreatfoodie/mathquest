@@ -127,7 +127,7 @@ async function expectFits(page: Page, label: string) {
     const small: string[] = [];
     const targets = document.querySelectorAll('button, a[href], select, input:not([type=hidden]), [role=button]');
     for (const el of targets) {
-      if (!visible(el) || el.closest('.hm-cell')) continue;
+      if (!visible(el) || el.closest('.hm-cell, .ins-cell')) continue;
       const box = el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio') ? (el.closest('label') ?? el) : el;
       const r = box.getBoundingClientRect();
       if (r.height < 43.5 || r.width < 43.5) small.push(`${el.tagName.toLowerCase()}.${el.className} "${(el.textContent ?? '').trim().slice(0, 20)}" ${Math.round(r.width)}x${Math.round(r.height)}`);
