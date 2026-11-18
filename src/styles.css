@@ -560,3 +560,7 @@ legend { padding: 0 6px; color: var(--muted); }
 .gem-delta { font-weight: 700; font-variant-numeric: tabular-nums; }
 .gem-history .gain .gem-delta { color: #4ade80; }
 .gem-history .spend .gem-delta { color: #fb923c; }
+
+/* The update screen: one huge button for a pre-reader, a panel for everyone else. */
+.update-screen { gap: 24px; }
+.update-screen .play-btn:disabled { opacity: 0.7; }

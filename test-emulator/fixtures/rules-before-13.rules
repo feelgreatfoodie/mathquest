@@ -1,0 +1,106 @@
+rules_version = '2';
+
+// Each parent's Google account owns one family tree: families/{uid}/...
+// Kids sign in through the kidSignIn Cloud Function (first name + 4-digit PIN). It returns a
+// custom token with role 'kid', familyUid and kidId. A kid reaches only their own kid doc,
+// cards and sessions. pinIndex holds PIN hashes and brute-force counters: server only.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedInAs(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // A registered parent: a verified Google email and a parents/{uid} doc. Only the registerParent
+    // function writes that doc, and it stops at MAX_PARENTS (20), so a stranger who finds the URL can
+    // sign in but cannot create or read any family.
+    function allowedAccount() {
+      return request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/parents/$(request.auth.uid));
+    }
+
+    // Guards against junk writes: our documents have well under 20 top-level fields.
+    function smallDoc() {
+      return request.resource == null || request.resource.data.size() < 20;
+    }
+
+    // The parent: signed in as this family's Google account, and registered.
+    function isParent(uid) {
+      return signedInAs(uid) && allowedAccount();
+    }
+
+    // A kid: a custom token minted by kidSignIn for exactly this family and this kid.
+    function isKid(uid, kidId) {
+      return request.auth != null
+        && request.auth.token.role == 'kid'
+        && request.auth.token.familyUid == uid
+        && request.auth.token.kidId == kidId;
+    }
+
+    // The only kid doc fields a run writes. Everything else (name, settings, paceMultiplier,
+    // hasPin, createdAt) is parent-only.
+    function kidOnlyChangedGame() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['game']);
+    }
+
+    // The most gems any hero costs (HEROES in src/engine/game.ts; a unit test keeps the two equal).
+    function maxHeroPrice() {
+      return 100;
+    }
+
+    // A write may not take away more gems than the dearest hero costs, unless the hero list grows in the
+    // same write (a purchase). A stale copy written back over a kid's totals fails this when it wipes a
+    // big balance. A missing game, gems or heroes reads as empty, so wiping game is a drop too.
+    function gemsDropOk() {
+      let before = resource.data.get('game', {});
+      let after = request.resource.data.get('game', {});
+      return before.get('gems', 0) - after.get('gems', 0) <= maxHeroPrice()
+        || after.get('heroes', []).size() > before.get('heroes', []).size();
+    }
+
+    // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
+    // touches them.
+    match /parents/{document=**} {
+      allow read, write: if false;
+    }
+    match /meta/{document=**} {
+      allow read, write: if false;
+    }
+    match /nameKeys/{document=**} {
+      allow read, write: if false;
+    }
+
+    // PIN hashes, salts and attempt counters. Only the Admin SDK in Cloud Functions touches them.
+    match /pinIndex/{document=**} {
+      allow read, write: if false;
+    }
+
+    // The family doc holds the parent PIN hash, and no kid screen reads a family field, so
+    // kids get no access here.
+    match /families/{uid} {
+      allow read: if isParent(uid);
+      allow write: if isParent(uid) && smallDoc();
+
+      match /kids/{kidId} {
+        allow read: if isParent(uid) || isKid(uid, kidId);
+        allow delete: if isParent(uid);
+        allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId;
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropOk())
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && kidOnlyChangedGame() && gemsDropOk());
+
+        match /cards/{cardId} {
+          allow read: if isParent(uid) || isKid(uid, kidId);
+          allow delete: if isParent(uid);
+          allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc()
+            && request.resource.data.id == cardId;
+        }
+
+        match /sessions/{sessionId} {
+          allow read: if isParent(uid) || isKid(uid, kidId);
+          allow delete: if isParent(uid);
+          allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc();
+        }
+      }
+    }
+  }
+}

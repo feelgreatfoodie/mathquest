@@ -138,6 +138,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // The release gate: config/app holds { minVersion }, the oldest build allowed to write. Any signed-in
+    // account, kid or parent, reads it (one public number). No client writes it: the release script sets it
+    // through the Admin SDK, which skips these rules. Every other config doc stays closed.
+    match /config/{docId} {
+      allow read: if docId == 'app' && request.auth != null;
+      allow write: if false;
+    }
+
     // PIN hashes, salts and attempt counters. Only the Admin SDK in Cloud Functions touches them.
     match /pinIndex/{document=**} {
       allow read, write: if false;

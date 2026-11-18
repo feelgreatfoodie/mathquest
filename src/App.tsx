@@ -1,13 +1,16 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FirestoreRepo } from './data/firestoreRepo';
 import { LocalRepo } from './data/localRepo';
 import { hashPin, type Repo } from './data/repo';
+import { VersionGuard, guardFor } from './data/versionGate';
 import { GameDeltaError, type GameDelta } from './engine/game';
-import type { Family, Kid, KidGame } from './engine/models';
+import { learnerOf, type Family, type Kid, type KidGame } from './engine/models';
 import type { RunSummary } from './engine/session';
 import { dataMode, getFirebase, kidClaims, registerParent, signInKid, signInParent, signOutParent } from './firebase';
+import { clearUpdateAttempt } from './update';
 import { FailureToasts } from './ui/FailureToasts';
+import { UpdateScreen } from './ui/UpdateScreen';
 import { reportFailure } from './ui/failures';
 import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
@@ -27,7 +30,28 @@ type Screen =
   | { name: 'pin' }
   | { name: 'parent' };
 
+/**
+ * The release gate for this bundle. Firestore mode reads config/app.minVersion. Local mode has no server, so
+ * only the dev server (the e2e run) gets a gate, fed by one localStorage key; a production build has none.
+ */
+function makeGuard(): VersionGuard | null {
+  if (dataMode === 'firestore') return guardFor(getFirebase().db);
+  if (import.meta.env.DEV) {
+    return new VersionGuard(null, {
+      build: 100,
+      maxAgeMs: 0,
+      read: async () => {
+        const v = localStorage.getItem('mathquest:test:minVersion');
+        return v === null ? undefined : Number(v);
+      },
+    });
+  }
+  return null;
+}
+
 export function App() {
+  const guard = useMemo(makeGuard, []);
+  const [stale, setStale] = useState(false);
   const [screen, setScreen] = useState<Screen>({ name: 'boot' });
   const [repo, setRepo] = useState<Repo | null>(null);
   const [salt, setSalt] = useState('local');
@@ -105,7 +129,42 @@ export function App() {
     });
   }, [load]);
 
+  // Behind config/app.minVersion: the update screen replaces the app. Checked after sign-in, whenever the
+  // app comes back to the front, and before each run.
+  useEffect(() => {
+    if (!guard) return;
+    const sync = () => {
+      setStale(guard.stale);
+      if (!guard.stale) clearUpdateAttempt();
+    };
+    sync();
+    const off = guard.subscribe(sync);
+    const onShow = () => {
+      if (document.visibilityState === 'visible') void guard.refresh();
+    };
+    document.addEventListener('visibilitychange', onShow);
+    return () => {
+      off();
+      document.removeEventListener('visibilitychange', onShow);
+    };
+  }, [guard]);
+  useEffect(() => {
+    if (guard && repo) void guard.refresh();
+  }, [guard, repo]);
+
+  const startRun = useCallback(
+    async (kidId: string) => {
+      if (guard) {
+        await guard.refresh();
+        if (guard.stale) return; // the update screen is already showing
+      }
+      setScreen({ name: 'run', kidId, key: Date.now() });
+    },
+    [guard],
+  );
+
   const kid = 'kidId' in screen ? kids.find((k) => k.id === screen.kidId) : undefined;
+  const pictureMode = learnerOf((kid ?? (kidSession ? kids[0] : undefined))?.settings) === 'prereader';
 
   /** Puts the stored game on screen for one kid. */
   const showGame = useCallback((kidId: string, game: KidGame) => {
@@ -129,11 +188,11 @@ export function App() {
     [repo, showGame],
   );
 
-  const body = renderScreen();
+  const body = stale ? <UpdateScreen picture={pictureMode} /> : renderScreen();
   return (
     <>
       {body}
-      <FailureToasts />
+      <FailureToasts picture={pictureMode} />
     </>
   );
 
@@ -207,7 +266,7 @@ export function App() {
         <KidHome
           kid={kid}
           onGame={(d) => applyGame(kid.id, d)}
-          onStart={() => setScreen({ name: 'run', kidId: kid.id, key: Date.now() })}
+          onStart={() => void startRun(kid.id)}
           onBack={() => (kidSession ? void signOutParent() : setScreen({ name: 'picker' }))}
         />
       ) : null;
@@ -230,7 +289,7 @@ export function App() {
         <Summary
           kid={kid}
           summary={screen.summary}
-          onAgain={() => setScreen({ name: 'run', kidId: kid.id, key: Date.now() })}
+          onAgain={() => void startRun(kid.id)}
           onHome={() => setScreen({ name: 'home', kidId: kid.id })}
         />
       ) : null;
