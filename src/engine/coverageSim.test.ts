@@ -81,6 +81,28 @@ describe('one evening: the younger boy (20 runs, 93%)', () => {
   it('no card gets more than 3 graded answers in a day', () => expect(r.maxGradedPerCard).toBeLessThanOrEqual(3));
 });
 
+describe('on top of the parent floor (groupsUnlocked)', () => {
+  it('add g2 is open from run 1 when the parent set it, and previews move on to the next locked group', () => {
+    const s = prereaderStart();
+    const settings = { ...s.settings, groupsUnlocked: { add10: 2 } } as KidSettings;
+    const r = runEvening({ cards: s.cards, settings, start: START, runs: 20, accuracy: 0.93, seed: 20261119, universe: modFacts('add10').map((c) => c.id) });
+    expect(r.openedAtRun['add10:g2']).toBe(1);
+    expect(r.seenAtEnd).toBe(r.universe);
+    expect(r.maxPreviewsPerRun).toBeLessThanOrEqual(1);
+    expect(r.maxGradedPerCard).toBeLessThanOrEqual(3);
+    expect(r.fsrsChangedAfterCap).toBe(0);
+  });
+  it('a reader floor of 3 keeps groups 1 to 3 open and previews the 6s, 7s and 8s first', () => {
+    const s = readerStart();
+    const settings = { ...s.settings, factGroupsUnlocked: 3 } as KidSettings;
+    const r = runEvening({ cards: s.cards, settings, start: START, runs: 25, accuracy: 0.93, seed: 20261118, universe: factIds(0).concat(factIds(1), factIds(2), factIds(3), factIds(4)) });
+    expect(r.openedAtRun['facts:g3']).toBe(1);
+    expect(r.firstSeenRun['facts:g4']).toBeLessThanOrEqual(3);
+    expect(r.seenAtEnd).toBe(r.universe);
+    expect(r.cardsOverCap).toBe(0);
+  });
+});
+
 describe('real card data (local only)', () => {
   const dir = '.private-eval';
   const files = [
