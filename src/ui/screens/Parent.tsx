@@ -2,6 +2,7 @@ import { useEffect, useState, type FocusEvent } from 'react';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { HEROES, levelFor } from '../../engine/game';
 import { gemHistory } from '../../engine/gemHistory';
+import { GEM_SPEEDS, earnedTodayOf, gemFullRateOf, gemSpeedOf, gemTier } from '../../engine/gems';
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
@@ -10,6 +11,7 @@ import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
 import { hashPin, type Repo } from '../../data/repo';
+import { outbox, type ParkedRun } from '../../data/outbox';
 import { dataMode, kidLockStatus, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { reportFailure } from '../failures';
 import { buildLabel, entryText, recentChanges } from '../../whatsnew';
@@ -126,6 +128,34 @@ interface ParentProps {
   onSignOut?: () => void;
 }
 
+/** Rounds the server refused 3 times. They stay on this device, are never retried, and the parent sees their date and values. */
+export function ParkedRounds({ kids }: { kids: Kid[] }) {
+  const [parked, setParked] = useState<ParkedRun[]>([]);
+  useEffect(() => {
+    let live = true;
+    outbox.listParked().then((p) => live && setParked(p)).catch((e) => console.error('Could not read the parked rounds.', e));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (parked.length === 0) return null;
+  const name = (id: string) => kids.find((k) => k.id === id)?.name ?? 'A player';
+  return (
+    <section className="panel" role="alert">
+      <h2 className="pixel">{parked.length === 1 ? "1 round couldn't be saved" : `${parked.length} rounds couldn't be saved`}</h2>
+      <ul>
+        {parked.map((r) => (
+          <li key={r.runId}>
+            {name(r.kidId)}, {new Date(r.sessionLog.endedAt ?? r.savedAt).toLocaleString()}: {r.gameDelta.xp ?? 0} XP, {r.gameDelta.gems ?? 0} gems
+            {' '}
+            <button type="button" className="btn btn-ghost btn-small" onClick={() => void outbox.removeParked(r.runId).then(() => setParked((p) => p.filter((x) => x.runId !== r.runId)))}>Dismiss</button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut }: ParentProps) {
   const [selected, setSelected] = useState<string | 'add'>(kids[0]?.id ?? 'add');
   const [changingPin, setChangingPin] = useState(false);
@@ -161,6 +191,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
         </div>
       </header>
       <LockBanner />
+      <ParkedRounds kids={kids} />
       <nav className="tabs" aria-label="Players">
         {kids.map((k) => (
           <button key={k.id} type="button" className={`tab ${selected === k.id ? 'is-active' : ''}`} onClick={() => setSelected(k.id)}>
@@ -448,6 +479,8 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
   const groups = unlockedFactGroups(cards, kid.settings);
   const on = modulesOf(kid.settings);
   const learner = learnerOf(kid.settings);
+  const earnedToday = earnedTodayOf(kid.game, Date.now());
+  const tier = gemTier(earnedToday, learner, kid.settings);
   const factStates = Object.values(cards).filter((c) => c.id.startsWith('mul:'));
   const leeches = factStates.filter((c) => c.fsrs.lapses >= 3).sort((a, b) => b.fsrs.lapses - a.fsrs.lapses);
   const slow = factStates
@@ -477,6 +510,10 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
           <div className="progress" role="img" aria-label={`${lv.into} of ${lv.span} xp to the next level`}><div className="progress-fill xp" style={{ width: `${(lv.into / lv.span) * 100}%` }} /></div>
         </div>
         <div className="stat stat-gems"><span className="stat-value">{kid.game.gems}</span><span className="stat-label">gems</span></div>
+        <div className="stat stat-earned">
+          <span className="stat-value">{earnedToday}</span>
+          <span className="stat-label">earned today · {TIER_LABELS[tier]}</span>
+        </div>
         <div className="stat stat-hero">
           <Sprite name={kid.game.hero} size={48} />
           <span className="stat-label">hero · {heroName} · {kid.game.heroes.length} of {HEROES.length}</span>
@@ -652,6 +689,19 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
             {PACE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
+        <label>
+          Gem speed
+          <select value={gemSpeedOf(settings)} onChange={(e) => setSettings({ ...settings, gemSpeed: Number(e.target.value) })}>
+            {GEM_SPEEDS.map((v) => <option key={v} value={v}>{GEM_SPEED_LABELS[v]}</option>)}
+          </select>
+        </label>
+        <label>
+          Full-rate gems per day
+          <select value={gemFullRateOf(learner, settings)} onChange={(e) => setSettings({ ...settings, gemFullRate: Number(e.target.value) })}>
+            {gemRateOptions(gemFullRateOf(learner, settings)).map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <span className="hint">After {gemFullRateOf(learner, settings)} gems today, new gems come at half speed. After {2 * gemFullRateOf(learner, settings)}, a quarter. Runs always earn at least 1.</span>
+        </label>
         {MODULES.filter((m) => m.status === 'live' && m.groups && m.id !== 'facts' && modulesOf(settings)[m.id]).map((m) => (
           <label key={m.id}>
             Start {m.name} at
@@ -711,6 +761,11 @@ function KidDetail({ repo, kid: kidProp, onSettings, onPinSet, onDelete }: { rep
     </div>
   );
 }
+
+const TIER_LABELS = { full: 'full rate', half: 'half rate', quarter: 'quarter rate' } as const;
+const GEM_SPEED_LABELS: Record<(typeof GEM_SPEEDS)[number], string> = { 0.5: 'Slow (0.5x)', 1: 'Normal (1x)', 1.5: 'Fast (1.5x)' };
+/** The full-rate choices, plus the stored value when it is not one of them. */
+const gemRateOptions = (current: number) => [...new Set([5, 10, 15, 20, 25, 30, 40, 50, 75, 100, current])].sort((a, b) => a - b);
 
 const PACE_OPTIONS = [
   { value: 3, label: '3x: most time (default)' },

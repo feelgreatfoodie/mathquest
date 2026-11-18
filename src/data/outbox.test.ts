@@ -124,3 +124,37 @@ describe('the outbox keeps a finished run until both writes are confirmed', () =
     expect(await outbox.list()).toHaveLength(0);
   });
 });
+
+describe('a run the server always refuses', () => {
+  beforeEach(async () => {
+    await outbox.clear();
+  });
+  const denied = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+  it('is parked after 3 tries, and the next launch makes 0 attempts', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const seen: number[] = [];
+    const repo = { applyGameDelta: vi.fn(async (_k: string, d: { gems?: number; xp?: number }) => { seen.push(d.gems ?? 0); throw denied(); }) } as unknown as Parameters<typeof replayOutbox>[0];
+    const session = { id: 'r1', startedAt: 1, endedAt: 2, answered: 1, graded: 1, correct: 1, fast: 0, newLearned: 0, medianMs: 1, xp: 3000, gems: 12, bestCombo: 1, missed: [] };
+    await outbox.put({ runId: 'r1', kidId: 'k1', sessionLog: session, gameDelta: { xp: 3000, gems: 12, playedAt: 5 }, savedAt: 5 });
+    await expect(replayOutbox(repo)).rejects.toThrow(); // try 1
+    await expect(replayOutbox(repo)).rejects.toThrow(); // try 2
+    expect(await replayOutbox(repo)).toEqual({ replayed: 0 }); // try 3, clamped, then parked
+    expect(seen).toEqual([12, 12, 10]); // the third try carries gems cut to 10
+    expect(await outbox.list()).toHaveLength(0);
+    expect((await outbox.listParked()).map((p) => p.runId)).toEqual(['r1']);
+    expect(log).toHaveBeenCalled(); // console.error on parking
+    const calls = (repo.applyGameDelta as unknown as { mock: { calls: unknown[] } }).mock.calls.length;
+    expect(await replayOutbox(repo)).toEqual({ replayed: 0 }); // next launch
+    expect((repo.applyGameDelta as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(calls);
+    expect(calls).toBe(3);
+    log.mockRestore();
+  });
+  it('an offline failure is not counted and never parks', async () => {
+    const repo = { applyGameDelta: vi.fn(async () => { throw Object.assign(new Error('offline'), { code: 'unavailable' }); }) } as unknown as Parameters<typeof replayOutbox>[0];
+    const session = { id: 'r2', startedAt: 1, endedAt: 2, answered: 1, graded: 1, correct: 1, fast: 0, newLearned: 0, medianMs: 1, xp: 3, gems: 1, bestCombo: 1, missed: [] };
+    await outbox.put({ runId: 'r2', kidId: 'k1', sessionLog: session, gameDelta: { xp: 3, gems: 1, playedAt: 5 }, savedAt: 5 });
+    for (let i = 0; i < 5; i++) await expect(replayOutbox(repo)).rejects.toThrow();
+    expect(await outbox.list()).toHaveLength(1);
+    expect(await outbox.listParked()).toHaveLength(0);
+  });
+});

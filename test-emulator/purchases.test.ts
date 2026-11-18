@@ -205,7 +205,7 @@ describe('a kid token cannot add a hero on the kid doc except at the catalog pri
   });
 });
 
-// Measured on 58 stored sessions (3 kids, 1 family): max 504 xp and 9 gems per session. Bounds: +2000 xp, +50 gems per write.
+// Measured on 58 stored sessions (3 kids, 1 family): max 504 xp and 9 gems per session. Bounds: +2000 xp per write; gems are bounded at +10 per write (gemEconomy.test.ts).
 describe('a kid token write raises gems and xp by a bounded amount', () => {
   const write = (db: Db, over: Record<string, unknown>) => updateDoc(kidRef(db), { game: { ...storedKid(KID).game, ...over } });
   const base = storedKid(KID).game as { xp: number; gems: number };
@@ -214,12 +214,12 @@ describe('a kid token write raises gems and xp by a bounded amount', () => {
     await assertSucceeds(write(kidDb(), { xp: base.xp + 504, gems: base.gems + 9 }));
   });
 
-  it('the bound itself passes (+2000 xp, +50 gems)', async () => {
-    await assertSucceeds(write(kidDb(), { xp: base.xp + 2000, gems: base.gems + 50 }));
+  it('the bound itself passes (+2000 xp, +10 gems)', async () => {
+    await assertSucceeds(write(kidDb(), { xp: base.xp + 2000, gems: base.gems + 10 }));
   });
 
-  it('gems +51 is refused', async () => {
-    await assertFails(write(kidDb(), { gems: base.gems + 51 }));
+  it('gems +11 is refused (the old bound was +50; see gemEconomy.test.ts)', async () => {
+    await assertFails(write(kidDb(), { gems: base.gems + 11 }));
   });
 
   it('xp +2001 is refused', async () => {

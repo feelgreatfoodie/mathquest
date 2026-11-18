@@ -101,12 +101,11 @@ export class FirestoreRepo implements Repo {
       const snap = await tx.get(ref);
       if (!snap.exists()) throw new Error('That player was removed.');
       const current = normalizeGame((snap.data() as { game?: unknown }).game);
-      if (sessionRef && opts?.session) {
-        // The log is written with the delta, so a stored log means this delta already landed.
-        if ((await tx.get(sessionRef)).exists()) return current;
-        tx.set(sessionRef, opts.session);
-      }
+      // The log is written with the delta, so a stored log means this delta already landed.
+      if (sessionRef && (await tx.get(sessionRef)).exists()) return current;
       let next = applyDelta(current, delta);
+      // The log records the gems the transaction awarded (the throttle reads the stored count), not the screen's estimate.
+      if (sessionRef && opts?.session) tx.set(sessionRef, { ...opts.session, gems: next.gems - current.gems });
       if (delta.purchase !== undefined) {
         // The log entry rides in the same transaction as the hero and the gems it records. The kid doc names it
         // (lastPurchaseId) so the rules can find it: a gem drop is legal only with that one entry.

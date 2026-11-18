@@ -67,7 +67,7 @@ export class LocalRepo implements Repo {
       const logs = read<SessionLog[]>(`sessions:${kidId}`, []);
       if (logs.some((l) => l.id === opts.session!.id)) return current;
       const next = applyDelta(current, delta);
-      write(`sessions:${kidId}`, [...logs, opts.session].slice(-200));
+      write(`sessions:${kidId}`, [...logs, { ...opts.session, gems: next.gems - current.gems }].slice(-200));
       this.patchKid(kidId, (k) => ({ ...k, game: next }));
       this.logPurchase(kidId, current, next, delta);
       return next;
