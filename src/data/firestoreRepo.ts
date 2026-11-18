@@ -11,7 +11,7 @@ import {
   writeBatch,
   type Firestore,
 } from 'firebase/firestore';
-import type { CardMap, CardState, Family, Kid, SessionLog } from '../engine/models';
+import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type SessionLog } from '../engine/models';
 import type { Repo } from './repo';
 
 const BATCH_MAX = 450;
@@ -59,12 +59,12 @@ export class FirestoreRepo implements Repo {
 
   async listKids(): Promise<Kid[]> {
     const snap = await getDocs(query(this.kids(), orderBy('createdAt')));
-    return snap.docs.map((d) => d.data() as Kid);
+    return snap.docs.map((d) => normalizeKid(d.data() as Kid));
   }
 
   async getKid(kidId: string): Promise<Kid | null> {
     const snap = await getDoc(doc(this.kids(), kidId));
-    return snap.exists() ? (snap.data() as Kid) : null;
+    return snap.exists() ? normalizeKid(snap.data() as Kid) : null;
   }
 
   async saveKid(kid: Kid): Promise<void> {
