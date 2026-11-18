@@ -12,6 +12,6 @@ export interface GemChange {
 /** Runs that earned gems (+) and purchases (-), merged, newest first, at most `max` of them. */
 export function gemHistory(sessions: SessionLog[], purchases: PurchaseLog[], max = 20): GemChange[] {
   const runs: GemChange[] = sessions.filter((s) => s.gems > 0).map((s) => ({ kind: 'run', at: s.endedAt, gems: s.gems }));
-  const buys: GemChange[] = purchases.map((p) => ({ kind: 'purchase', at: p.at, gems: -p.cost, heroId: p.heroId }));
+  const buys: GemChange[] = purchases.map((p) => ({ kind: 'purchase', at: p.at, gems: -p.cost, heroId: p.heroId ?? p.itemId }));
   return [...runs, ...buys].sort((a, b) => b.at - a.at).slice(0, max);
 }

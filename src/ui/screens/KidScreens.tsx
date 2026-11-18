@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import { GoalJar } from '../GoalJar';
+import { CampRow } from '../CampRow';
+import { HeroFigure } from '../HeroFigure';
 import { cardLabel } from '../../engine/modules';
 import { levelFor, type GameDelta } from '../../engine/game';
 import { readerMapLine } from '../../engine/summaryView';
-import { learnerOf, type CardMap, type Kid } from '../../engine/models';
+import { learnerOf, shop2On, type CardMap, type Kid } from '../../engine/models';
 import { PrereaderHome } from '../early/PrereaderScreens';
 import { PrereaderSummary } from '../early/PrereaderSummary';
 import type { RunInfo } from '../runShared';
@@ -179,7 +182,7 @@ function ReaderHome({ kid, onStart, onGame, onBack }: { kid: Kid; onStart: () =>
   return (
     <div className="screen center">
       <div className="panel home">
-        <Sprite name={kid.game.hero} size={150} className="bob" />
+        <HeroFigure game={kid.game} size={150} className="bob" />
         <h1 className="pixel">{kid.name}</h1>
         <div className="level">
           <span className="pixel small">LV {lv.level}</span>
@@ -190,9 +193,11 @@ function ReaderHome({ kid, onStart, onGame, onBack }: { kid: Kid; onStart: () =>
           <Stat label="gems" value={kid.game.gems} />
           <Stat label="best combo" value={kid.game.bestCombo} />
         </div>
+        <GoalJar game={kid.game} learner="reader" onClick={() => setShop(true)} />
+        <CampRow game={kid.game} />
         <button type="button" className="btn btn-big btn-start" onClick={onStart}>Start Quest</button>
         <div className="row">
-          <button type="button" className="btn btn-ghost" onClick={() => setShop(true)}>Hero shop</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setShop(true)}>{shop2On(kid.settings) ? 'Shop' : 'Hero shop'}</button>
           <button type="button" className="btn btn-ghost" onClick={onBack}>Switch player</button>
         </div>
       </div>

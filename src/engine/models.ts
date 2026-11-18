@@ -1,6 +1,7 @@
 import type { Track } from './content';
 import { MODULE_IDS, type ModuleId } from './modules/types';
 import { DEFAULT_GAME as GAME_DEFAULTS } from './gameDefaults';
+import { slotOf } from '../game/shop/catalog';
 
 /** ts-fsrs Card, flattened to JSON-safe numbers (epoch ms) for Firestore and localStorage. */
 export interface StoredFsrs {
@@ -56,6 +57,8 @@ export interface KidSettings {
    * Optional on stored docs: a missing value reads as 3. Read it through `paceOf`.
    */
   paceMultiplier?: number;
+  /** The item shop (weapons, gear, pets, adventure, camp): off until a parent turns it on. A missing value reads as off. Read it through `shop2On`. */
+  shop2?: boolean;
   /** Gem speed: 0.5 (Slow), 1 (Normal) or 1.5 (Fast). A missing value reads as 1. Read it through `gemSpeedOf` in gems.ts. */
   gemSpeed?: number;
   /** Gems earned today at full rate (half to twice this, a quarter after). A missing value reads as 25 (reader) or 15 (pre-reader). Read it through `gemFullRateOf`. */
@@ -79,17 +82,24 @@ export interface KidGame {
   bestCombo: number;
   heroes: string[];
   hero: string;
-  /** Set by the write that buys a hero: the id of its purchases doc, so the rules can find that doc. */
+  /** Items bought in the shop (src/game/shop/catalog.ts). Never loses an entry. Absent before shop-2: read it through `ownedItems`. */
+  items?: string[];
+  /** Worn items by slot. Each must be in `items`. Absent before shop-2: read it through `equippedOf`. */
+  equipped?: { weapon?: string; gear?: string; pet?: string };
+  /** The item or hero the kid is saving for (the jar on home). */
+  goal?: string;
+  /** Set by the write that buys a hero or an item: the id of its purchases doc, so the rules can find that doc. */
   lastPurchaseId?: string;
   /** Gems earned from runs on `gemsDay` (local YYYY-MM-DD). Absent on a game from before the throttle. Read it through `earnedTodayOf`. */
   gemsEarnedToday?: number;
   gemsDay?: string;
 }
 
-/** One hero bought: written with the game change in the same transaction, never edited or deleted. */
+/** One hero or item bought: written with the game change in the same transaction, never edited or deleted. Exactly one of heroId and itemId. */
 export interface PurchaseLog {
   id: string;
-  heroId: string;
+  heroId?: string;
+  itemId?: string;
   cost: number;
   /** Epoch ms. */
   at: number;
@@ -149,6 +159,10 @@ export const PRESETS: Record<Learner, KidSettings> = {
     paceMultiplier: 3,
   },
 };
+
+export function shop2On(settings: { shop2?: boolean } | undefined | null): boolean {
+  return settings?.shop2 === true;
+}
 
 export function learnerOf(settings: { learner?: Learner } | undefined | null): Learner {
   return settings?.learner === 'prereader' ? 'prereader' : 'reader';
@@ -212,6 +226,14 @@ export function normalizeGame(raw: unknown): KidGame {
   const heroes = Array.isArray(g.heroes) && g.heroes.every((h) => typeof h === 'string') && g.heroes.length > 0
     ? (g.heroes as string[]).slice()
     : DEFAULT_GAME.heroes.slice();
+  const items = Array.isArray(g.items) ? (g.items.filter((i) => typeof i === 'string') as string[]) : [];
+  const eq = g.equipped && typeof g.equipped === 'object' ? (g.equipped as Record<string, unknown>) : {};
+  const equipped: NonNullable<KidGame['equipped']> = {};
+  for (const slot of ['weapon', 'gear', 'pet'] as const) {
+    const id = eq[slot];
+    // Each slot keeps only an owned item that fits it: junk and a stale slot read as empty.
+    if (typeof id === 'string' && items.includes(id) && slotOf(id) === slot) equipped[slot] = id;
+  }
   return {
     xp: num(g.xp, DEFAULT_GAME.xp),
     gems: num(g.gems, DEFAULT_GAME.gems),
@@ -220,6 +242,9 @@ export function normalizeGame(raw: unknown): KidGame {
     bestCombo: num(g.bestCombo, DEFAULT_GAME.bestCombo),
     heroes,
     hero: str(g.hero, DEFAULT_GAME.hero),
+    ...(items.length ? { items } : {}),
+    ...(Object.keys(equipped).length ? { equipped } : {}),
+    ...(typeof g.goal === 'string' && g.goal ? { goal: g.goal } : {}),
     ...(typeof g.gemsDay === 'string' && typeof g.gemsEarnedToday === 'number' && Number.isFinite(g.gemsEarnedToday)
       ? { gemsEarnedToday: g.gemsEarnedToday, gemsDay: g.gemsDay }
       : {}),

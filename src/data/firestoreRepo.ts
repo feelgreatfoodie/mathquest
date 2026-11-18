@@ -14,7 +14,7 @@ import {
   writeBatch,
   type Firestore,
 } from 'firebase/firestore';
-import { applyDelta, type GameDelta } from '../engine/game';
+import { applyDelta, purchaseTarget, type GameDelta } from '../engine/game';
 import { normalizeGame, normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import { newId, type Repo } from './repo';
 
@@ -110,7 +110,7 @@ export class FirestoreRepo implements Repo {
         // The log entry rides in the same transaction as the hero and the gems it records. The kid doc names it
         // (lastPurchaseId) so the rules can find it: a gem drop is legal only with that one entry.
         const id = newId();
-        const entry: PurchaseLog = { id, heroId: delta.purchase, cost: current.gems - next.gems, at: Date.now() };
+        const entry: PurchaseLog = { id, ...purchaseTarget(delta.purchase), cost: current.gems - next.gems, at: Date.now() };
         tx.set(doc(this.purchases(kidId), id), entry);
         next = { ...next, lastPurchaseId: id };
       }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { HeroFigure } from '../HeroFigure';
 import type { GameDelta } from '../../engine/game';
 import type { CardMap, Kid } from '../../engine/models';
 import { getCardDef } from '../../engine/modules';
@@ -199,7 +200,7 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
       {saved && at >= 2 ? (
         <div className="sum-panel sum-xp" data-testid="sum-xp">
           <div className="sum-hero">
-            <Sprite name={kid.game.hero} size={130} className="bob" />
+            <HeroFigure game={kid.game} size={130} className="bob" />
             <span className="sum-badge" data-testid="sum-level">{badge}</span>
           </div>
           <div className="sum-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(barFrac * 100)}>

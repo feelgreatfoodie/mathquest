@@ -1,3 +1,5 @@
+import { ITEM_SPRITES } from './itemSprites';
+
 /** Original 12×12 pixel sprites, drawn as SVG rects (crisp at any size, no image files). */
 
 type SpriteDef = { rows: string[]; palette: Record<string, string> };
@@ -116,7 +118,7 @@ export const SPRITES: Record<string, SpriteDef> = {
 export const MONSTERS = ['slime', 'bat', 'ghost', 'skeleton'] as const;
 
 export function Sprite({ name, size = 96, className }: { name: string; size?: number; className?: string }) {
-  const def = SPRITES[name] ?? SPRITES.knight!;
+  const def = SPRITES[name] ?? ITEM_SPRITES[name] ?? SPRITES.knight!;
   const rects: { x: number; y: number; w: number; c: string }[] = [];
   def.rows.forEach((row, y) => {
     let x = 0;
