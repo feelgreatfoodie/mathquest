@@ -1442,3 +1442,4 @@ html[data-crt='on'] body::after {
 
 @media (max-width: 480px) { .early-numerals { font-size: 44px; gap: 10px; min-height: 64px; } }
 @media (max-width: 480px) { .px-torches { gap: 2px; padding: 6px; } }
+@media (max-height: 720px) { .keypad { gap: 6px; } }
