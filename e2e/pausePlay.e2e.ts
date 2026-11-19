@@ -87,7 +87,7 @@ async function enterPin(page: Page, pin: string) {
 }
 async function openParent(page: Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: /parent/i }).first().click();
+  await page.getByRole('button', { name: /grown-ups/i }).first().click();
   await enterPin(page, PIN);
   await expect(page.locator('.parent')).toBeVisible();
 }

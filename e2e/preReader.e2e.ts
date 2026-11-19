@@ -199,9 +199,9 @@ test('a pre-reader plays a first run, misses one, finishes, and the parent grid 
   await expect(page.locator('.kid-card')).toBeVisible();
 
   // Parent: the add10 grid has filled.
-  await page.getByRole('button', { name: 'Parent area' }).click();
+  await page.getByRole('button', { name: 'Grown-ups area' }).click();
   await enterPin(page, PARENT_PIN);
-  await expect(page.getByRole('heading', { name: 'Parent area' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Grown-ups area' })).toBeVisible();
   const grid = page.getByRole('table', { name: 'Addition within 10 mastery' });
   await expect(grid).toBeVisible();
   // a + b <= 10 gives 66 squares (a and b both 0..10); a + b and b + a are one card, so 36 distinct cards.
@@ -217,7 +217,7 @@ test('a pre-reader plays a first run, misses one, finishes, and the parent grid 
 test('Add player offers Player type, and Pre-reader applies the preset', async ({ page }) => {
   await seed(page, 'reader');
   await page.goto('/');
-  await page.getByRole('button', { name: 'Parent area' }).click();
+  await page.getByRole('button', { name: 'Grown-ups area' }).click();
   await enterPin(page, PARENT_PIN);
   await page.getByRole('button', { name: '+ Add player' }).click();
   await expect(page.getByText('Player type')).toBeVisible();

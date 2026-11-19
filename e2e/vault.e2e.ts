@@ -232,7 +232,7 @@ test('pre-reader: a ready chest glows on Home, a tap collects 11 with the shower
 test('parent: turn the vault on, edit a rate, see the history and the vault balance', async ({ page }) => {
   await seed(page, { vault: false, gems: 100, deposits: [READY] });
   await page.goto('/');
-  await page.getByRole('button', { name: /parent/i }).first().click();
+  await page.getByRole('button', { name: /grown-ups/i }).first().click();
   await enterPin(page, PARENT_PIN);
   await expect(page.locator('.parent')).toBeVisible();
   await page.locator('.tabs .tab', { hasText: KID_NAME }).click();

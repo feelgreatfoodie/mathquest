@@ -16,7 +16,9 @@
     "release:min-version": "node scripts/set-min-version.mjs --from-firebaserc",
     "test:emulator": "firebase emulators:exec --only firestore --project demo-mathquest \"vitest run -c vitest.emulator.config.ts\"",
     "test:all": "npm test && npm run test:emulator",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:emulator": "firebase emulators:exec --only auth,firestore,functions --project demo-e2e \"playwright test -c playwright.emulator.config.ts\"",
+    "intro-shots": "INTRO_SHOTS=1 playwright test introShots --project=chrome"
   },
   "dependencies": {
     "firebase": "^13.4.0",

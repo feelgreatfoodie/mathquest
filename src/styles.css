@@ -1217,3 +1217,60 @@ html[data-crt='on'] body::after {
   .px-twinkle, .title-bat { animation: none; }
   .px-btn:active:not(:disabled) { transform: none; }
 }
+
+/* ===== Grown-ups tour (hand-rolled). The card is a bottom sheet on every width; the spotlight frames the real section. ===== */
+.tour-layer { position: fixed; inset: 0; z-index: 1000; }
+.tour-offer { border-color: var(--gold); }
+.tour-shield { position: absolute; inset: 0; touch-action: pan-y; }
+.tour-spot { position: fixed; border: 4px solid var(--gold); box-shadow: 0 0 0 100vmax rgba(8, 10, 25, 0.78); pointer-events: none; transition: top 0.2s steps(4), height 0.2s steps(4); }
+.tour-card {
+  position: fixed;
+  left: 50%;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 24px));
+  max-height: 50vh;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+  border: 3px solid var(--gold);
+  padding: 16px 18px;
+  box-shadow: 0 6px 0 #0d1020;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.tour-card p { margin: 0 0 10px; }
+.tour-title { font-size: 20px; margin: 0 0 8px; }
+.tour-count { color: var(--gold); margin-bottom: 6px; }
+.tour-buttons { justify-content: flex-end; margin-top: 6px; }
+.tour-buttons .btn { min-height: 48px; }
+.tour-q { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border: 2px solid currentColor; font: 400 12px var(--pixel); margin-right: 4px; }
+[data-tour-active] { scroll-margin-top: 12px; }
+/* On a phone the player tabs stick to the top; keep the spotlighted section clear of them. */
+@media (max-width: 600px) { [data-tour-active]:not([data-tour="kids"]) { scroll-margin-top: 76px; } }
+@media (prefers-reduced-motion: reduce) { .tour-spot { transition: none; } }
+
+/* Title menu: PLAY 420 by 120 (a pre-reader target), GROWN-UPS 420 by 72, then the intro link. */
+.title-menu { gap: 22px; padding-top: 8px; align-items: center; justify-content: flex-start; }
+.title-menu .px-btn { width: min(420px, calc(100% - 16px)); }
+.title-menu .title-play { min-height: 120px; }
+.title-menu .title-play .pixel-label { font-size: 40px; }
+.title-menu .title-grownups { min-height: 72px; }
+.title-menu .title-grownups .pixel-label { font-size: 18px; }
+.title-link { min-height: 48px; padding: 8px 16px; background: rgba(15, 18, 48, 0.78); color: #fde68a; border: 0; font: 700 18px var(--body); text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+.title-link:focus-visible { outline: 3px solid #f8fafc; outline-offset: 2px; }
+.landing-sub { margin: 0; text-align: center; }
+
+/* Intro cards: native scroll snap, so a swipe works with no script. */
+.intro-panel { max-width: 720px; display: flex; flex-direction: column; gap: 14px; }
+.intro-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; touch-action: pan-x pan-y; outline-offset: 4px; }
+.intro-track::-webkit-scrollbar { display: none; }
+.intro-card { flex: 0 0 100%; scroll-snap-align: center; margin: 0; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.intro-card img { width: 100%; height: auto; max-width: 640px; aspect-ratio: 8 / 5; background: var(--bg-2); image-rendering: auto; }
+.intro-card figcaption { font-size: 20px; line-height: 1.4; text-align: center; min-height: 3.6em; }
+.intro-dots { display: flex; gap: 10px; justify-content: center; }
+.intro-dots i { width: 14px; height: 14px; background: var(--line); display: block; }
+.intro-dots i.is-on { background: var(--gold); }
+.intro-buttons { justify-content: space-between; }
+.intro-buttons .btn { min-width: 140px; }
+@media (prefers-reduced-motion: reduce) { .intro-track { scroll-behavior: auto; } }

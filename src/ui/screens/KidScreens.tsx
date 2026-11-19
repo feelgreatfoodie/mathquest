@@ -26,11 +26,12 @@ import { PicturePad } from '../early/PicturePad';
 import { Sprite, UiIcon } from '../sprites';
 import { looksReady, owedOf, vaultBalance, vaultOn } from '../../game/vault';
 import { useDeposits, type VaultApi } from '../vaultApi';
-import { TitleScreen } from './TitleScreen';
+import { TitleMenu, TitleScreen } from './TitleScreen';
+import { Intro } from './Intro';
 import { applyCrt, readCrt, writeCrt } from '../pixel';
 
 function LandingTabs({ tab, onTab }: { tab: LandingTab; onTab: (t: LandingTab, viaKeyboard?: boolean) => void }) {
-  const labels: Record<LandingTab, string> = { kid: 'Kid', parent: 'Parent' };
+  const labels: Record<LandingTab, string> = { kid: 'Kid', parent: 'Grown-ups' };
   return (
     <div className="landing-tabs" role="tablist" aria-label="Who is signing in?">
       {TABS.map((t) => (
@@ -81,6 +82,8 @@ interface LandingProps {
 
 function LandingCard({ initialTab, error, onKidSubmit, onParentSignIn, onTabChange }: LandingProps) {
   const [tab, setTab] = useState<LandingTab>(() => initialTab ?? readTab());
+  // The first signed-out screen is the title menu. A caller that names a tab (the grown-up sign-in after a break screen) skips it.
+  const [view, setView] = useState<'title' | 'signin' | 'intro'>(() => (initialTab ? 'signin' : 'title'));
   const [name, setName] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
   const [needName, setNeedName] = useState(false);
@@ -104,7 +107,18 @@ function LandingCard({ initialTab, error, onKidSubmit, onParentSignIn, onTabChan
     onTabChange?.();
   };
   const tabs = <LandingTabs tab={tab} onTab={pick} />;
+  const back = <button type="button" className="btn btn-ghost btn-small" data-testid="landing-back" onClick={() => setView('title')}>Back</button>;
+  const open = (t: LandingTab) => {
+    setTab(t);
+    writeTab(t);
+    setNeedName(false);
+    onTabChange?.();
+    setView('signin');
+  };
   const panelProps = { id: 'landing-panel', role: 'tabpanel', 'aria-labelledby': `landing-tab-${tab}` } as const;
+
+  if (view === 'title') return <TitleMenu onPlay={() => open('kid')} onGrownUps={() => open('parent')} onIntro={() => setView('intro')} />;
+  if (view === 'intro') return <Intro onStart={() => open('parent')} onBack={() => setView('title')} />;
 
   if (tab === 'kid' && faces.length > 0 && !typed) {
     return (
@@ -139,6 +153,7 @@ function LandingCard({ initialTab, error, onKidSubmit, onParentSignIn, onTabChan
                 ))}
               </div>
               <button type="button" className="btn btn-ghost" onClick={() => setTyped(true)}>Type a name instead</button>
+              {back}
             </>
           )}
         </div>
@@ -183,7 +198,7 @@ function LandingCard({ initialTab, error, onKidSubmit, onParentSignIn, onTabChan
               setNeedName(false);
               return onKidSubmit(name, pin);
             }}
-            footer={faces.length > 0 ? <button type="button" className="btn btn-ghost" onClick={() => setTyped(false)}>Show faces</button> : null}
+            footer={<>{faces.length > 0 ? <button type="button" className="btn btn-ghost" onClick={() => setTyped(false)}>Show faces</button> : null}{back}</>}
           />
         </div>
       </div>
@@ -194,8 +209,10 @@ function LandingCard({ initialTab, error, onKidSubmit, onParentSignIn, onTabChan
       <div className="panel title-panel landing-parent" {...panelProps}>
         {tabs}
         {error ? <p className="error">{error}</p> : null}
+        <p className="muted landing-sub">For parents and teachers</p>
         <button type="button" className="btn btn-big" onClick={onParentSignIn}>Sign in with Google</button>
         <p className="muted">New here? Sign in with Google to create your family.</p>
+        {back}
       </div>
     </div>
   );
@@ -228,7 +245,7 @@ export function Picker({ kids, onPick, onParent }: { kids: Kid[]; onPick: (k: Ki
           <PickerCard key={k.id} kid={k} onPick={onPick} />
         ))}
       </div>
-      <button type="button" className="btn btn-ghost parent-link" onClick={onParent}>Parent area</button>
+      <button type="button" className="btn btn-ghost parent-link" onClick={onParent}>Grown-ups area</button>
     </div>
   );
 }

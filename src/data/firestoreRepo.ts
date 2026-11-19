@@ -76,7 +76,11 @@ export class FirestoreRepo implements Repo {
   }
 
   async saveFamily(family: Family): Promise<void> {
-    await setDoc(this.family(), family);
+    await setDoc(this.family(), family, { merge: true });
+  }
+
+  async markTourSeen(): Promise<void> {
+    await setDoc(this.family(), { tourSeen: true }, { merge: true });
   }
 
   async listKids(): Promise<Kid[]> {

@@ -188,7 +188,7 @@ test('equipping an owned hero changes the home sprite', async ({ page }) => {
 test('parent area shows XP, gems and hero, follows a second client without a reload, lists gem history, and has no edit field', async ({ page }) => {
   await seed(page, { xp: 250, gems: 40, heroes: ['knight', 'wizard'], hero: 'wizard' });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Parent area' }).click();
+  await page.getByRole('button', { name: 'Grown-ups area' }).click();
   await enterPin(page, PARENT_PIN);
   const row = page.locator('.summary-row');
   await expect(row).toContainText('250');
