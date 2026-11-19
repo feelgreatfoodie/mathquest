@@ -323,7 +323,7 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault }: { 
     onStart(mode);
   };
   return (
-    <div className="screen center">
+    <div className="screen center home-fit">
       <div className="panel home px-home">
         <PixelFrame className="stats px-topbar">
           <Stat icon="flame" label="day streak" value={displayStreak(kid.game.streakDays, playedAll, today)} />
