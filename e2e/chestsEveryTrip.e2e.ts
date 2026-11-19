@@ -20,10 +20,10 @@ function allSeen(now: number) {
   );
 }
 
-async function seed(page: Page, world: object = {}) {
+async function seed(page: Page, world: object = {}, tripId?: string) {
   const now = Date.now();
   await page.addInitScript(
-    ({ kid, settings, cards, world }) => {
+    ({ kid, settings, cards, world, tripId }) => {
       let a = 99;
       Math.random = () => {
         a = (a + 0x6d2b79f5) | 0;
@@ -36,9 +36,15 @@ async function seed(page: Page, world: object = {}) {
         localStorage.setItem('mathquest:v1:kids', JSON.stringify([{ id: kid, name: 'Ada', createdAt: 1, settings, game: { xp: 0, gems: 5, streakDays: 2, lastPlayedDay: null, bestCombo: 0, heroes: ['knight'], hero: 'knight' } }]));
         localStorage.setItem(`mathquest:v1:cards:${kid}`, JSON.stringify(cards));
         localStorage.setItem(`mathquest:v1:world:${kid}`, JSON.stringify({ region: 'meadow', x: 3, y: 14, facing: 'right', openedChests: [], bossesDefeated: [], keys: 0, version: 1, updatedAt: 1, ...world }));
+        // A stored open trip under 24 h old resumes, so its id, and with it the chest spots, is fixed.
+        if (tripId) {
+          const t = Date.now();
+          const totals = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0, xp: 0, bestCombo: 0, medianMs: 0, missed: [] };
+          localStorage.setItem(`mathquest:v1:trip:${kid}`, JSON.stringify({ tripId, startedAt: t, seq: 0, updatedAt: t, finished: false, totals, chests: { opened: [] } }));
+        }
       }
     },
-    { kid: KID, settings: SETTINGS, cards: allSeen(now), world },
+    { kid: KID, settings: SETTINGS, cards: allSeen(now), world, tripId: tripId ?? null },
   );
 }
 
@@ -97,7 +103,8 @@ test('all-seen-forest and all-seen-castle: each land has its own 3 to 5 chests',
 });
 
 test('key chest: a riddle pays 1 or 2 gems and a key, stays open, survives a reopen, and the key opens the Meadow door; a new trip refills', async ({ page }) => {
-  await seed(page);
+  // Fixed trip id: a chest on the walk to the door would open its own question and stop the hero.
+  await seed(page, {}, 'trip-key-chest');
   await openAdventure(page);
   const s0 = await state(page);
   const total = chestsOf(s0).length;
