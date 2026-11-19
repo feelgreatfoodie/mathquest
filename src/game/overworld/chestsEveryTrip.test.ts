@@ -219,7 +219,7 @@ describe('the chest ledger in world/main.openedChests', () => {
 });
 
 describe('keys', () => {
-  const DOORS: Record<RegionId, number> = { meadow: 1, forest: 0, castle: 1 };
+  const DOORS: Record<RegionId, number> = { meadow: 2, forest: 1, castle: 1 };
   it('keys open doors: the key item opened a door before, and now a key from a chest or a boss does too', () => {
     for (const region of REGION_IDS) expect(findTiles(MAPS[region], 'door').length, region).toBe(DOORS[region]);
   });

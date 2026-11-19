@@ -9,7 +9,7 @@ import type { Facing } from './worldState';
 
 export const TILE = 12;
 const VARIANTS = 3;
-const ORDER: Tile[] = ['grass', 'path', 'tree', 'water', 'rock', 'bridge', 'gate', 'back', 'chest', 'spawn', 'boss', 'camp', 'start', 'door', 'span', 'wall', 'torch', 'exit', 'rdoor'];
+const ORDER: Tile[] = ['grass', 'path', 'tree', 'water', 'rock', 'bridge', 'gate', 'back', 'chest', 'spawn', 'boss', 'camp', 'start', 'door', 'span', 'wall', 'torch', 'exit', 'rdoor', 'vault'];
 
 type G = CanvasRenderingContext2D;
 const px = (g: G, c: string, x: number, y: number, w = 1, h = 1) => {
@@ -44,6 +44,7 @@ function paintForest(g: G, tile: Tile, v: number): boolean {
   switch (tile) {
     case 'grass':
     case 'chest':
+    case 'vault':
       moss(g, v);
       return true;
     case 'spawn':
@@ -93,6 +94,7 @@ function paintCastle(g: G, tile: Tile, v: number): boolean {
   switch (tile) {
     case 'grass':
     case 'chest':
+    case 'vault':
       flagstone(g, v);
       return true;
     case 'spawn':
@@ -156,6 +158,7 @@ function paint(g: G, tile: Tile, v: number, region: RegionId = 'meadow') {
   switch (tile) {
     case 'grass':
     case 'chest':
+    case 'vault':
       grass(g, v);
       break;
     case 'spawn':
