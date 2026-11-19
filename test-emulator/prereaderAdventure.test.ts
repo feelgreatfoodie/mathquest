@@ -42,7 +42,7 @@ describe('a pre-reader Adventure trip under the kid token', () => {
     expect(kid.settings.modes).toBeUndefined();
     expect(learnerOf(kid.settings)).toBe('prereader');
     expect(modesOnOf(kid.settings).overworld).toBe(true);
-    expect(enabledModes(kid).map((m) => m.name)).toEqual(['Picture Run', 'Adventure']);
+    expect(enabledModes(kid).map((m) => m.name)).toEqual(['Picture Run', 'Adventure', 'Lightning Round']);
   });
 
   it('saves world/main, then the round: session log, cards, and game xp and gems up', async () => {

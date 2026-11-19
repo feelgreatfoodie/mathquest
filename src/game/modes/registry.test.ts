@@ -12,12 +12,12 @@ const kid = (settings: object): Kid => ({
 
 describe('game mode registry', () => {
   it('enabledModes for a pre-reader with no modes lists Picture Run and Adventure', () => {
-    expect(enabledModes(kid({ learner: 'prereader' })).map((m) => m.name)).toEqual(['Picture Run', 'Adventure']);
+    expect(enabledModes(kid({ learner: 'prereader' })).map((m) => m.name)).toEqual(['Picture Run', 'Adventure', 'Lightning Round']);
   });
 
-  it('registers the two runs that exist and the Adventure, which is beta', () => {
-    expect(MODES.map((m) => m.id)).toEqual(['dungeon', 'prereader', 'overworld']);
-    expect(MODES.filter((m) => m.status === 'live').map((m) => m.id)).toEqual(['dungeon', 'prereader']);
+  it('registers the two runs that exist, the Adventure (beta) and Lightning Round', () => {
+    expect(MODES.map((m) => m.id)).toEqual(['dungeon', 'prereader', 'overworld', 'lightning']);
+    expect(MODES.filter((m) => m.status === 'live').map((m) => m.id)).toEqual(['dungeon', 'prereader', 'lightning']);
   });
 
   it('a reader defaults to the Dungeon and a pre-reader to the picture run', () => {
@@ -27,8 +27,9 @@ describe('game mode registry', () => {
   });
 
   it('each mode is offered only to the learner it was built for, with a component', () => {
-    expect(modesFor('reader').map((m) => m.id)).toEqual(['dungeon', 'overworld']);
-    expect(modesFor('prereader').map((m) => m.id)).toEqual(['prereader', 'overworld']);
+    expect(modesFor('reader').map((m) => m.id)).toEqual(['dungeon', 'overworld', 'lightning']);
+    expect(modesFor('prereader').map((m) => m.id)).toEqual(['prereader', 'overworld', 'lightning']);
+    expect(getMode('lightning')).toMatchObject({ name: 'Lightning Round', learners: ['reader', 'prereader'], inputs: ['keypad', 'choices'] });
     expect(getMode('overworld').inputs).toEqual(['keypad', 'fraction', 'choices']);
     expect(MODES.every((m) => typeof m.Component === 'function')).toBe(true);
     expect(getMode('dungeon').inputs).toEqual(['keypad', 'fraction']);

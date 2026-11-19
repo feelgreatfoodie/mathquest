@@ -12,7 +12,7 @@ import type { GameModeId } from '../../game/modes/types';
 import type { Repo } from '../../data/repo';
 import { readerMapLine } from '../../engine/summaryView';
 import { summaryCounts } from '../../engine/runLabel';
-import { avatarOf, learnerOf, shop2On, type CardMap, type Kid, type KidGame } from '../../engine/models';
+import { avatarOf, learnerOf, shop2On, type CardMap, type Kid, type KidGame, modesOnOf } from '../../engine/models';
 import { PrereaderHome } from '../early/PrereaderScreens';
 import { PrereaderSummary } from '../early/PrereaderSummary';
 import type { RunInfo } from '../runShared';
@@ -280,7 +280,7 @@ function WeekStars({ days, streak }: { days: ReturnType<typeof weekDays>; streak
 
 export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; onBack: () => void; vault?: VaultApi }) {
   return learnerOf(props.kid.settings) === 'prereader'
-    ? <PrereaderHome kid={props.kid} repo={props.repo} onStart={(mode) => { writeLastMode(props.kid.id, mode); void props.repo.setWorldLastMode(props.kid.id, mode).catch(() => undefined); props.onStart(mode); }} onBack={props.onBack} onGame={props.onGame} onTipGame={props.onTipGame} vault={props.vault} />
+    ? <PrereaderHome kid={props.kid} repo={props.repo} onStart={(mode) => { if (mode !== 'lightning') { writeLastMode(props.kid.id, mode); void props.repo.setWorldLastMode(props.kid.id, mode).catch(() => undefined); } props.onStart(mode); }} onBack={props.onBack} onGame={props.onGame} onTipGame={props.onTipGame} vault={props.vault} />
     : <ReaderHome {...props} />;
 }
 
@@ -292,7 +292,9 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault }: { 
   const ready = hasVault && dep.deposits.some((d) => (d.status !== 'active' && owedOf(d) > 0) || looksReady(d, Date.now()));
   const [played, setPlayed] = useState<string[]>([]);
   const lv = levelFor(kid.game.xp);
-  const modes = enabledModes(kid);
+  // Lightning Round is a practice button of its own, not one of the quest cards, so Start Quest and the two cards read as before.
+  const modes = enabledModes(kid).filter((m) => m.id !== 'lightning');
+  const lightning = modesOnOf(kid.settings).lightning;
   const today = dayKey(Date.now());
   // The days played come from the session logs, so no stored field changes.
   useEffect(() => {
@@ -313,8 +315,11 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault }: { 
     };
   }, [repo, kid.id]);
   const start = (mode: GameModeId) => {
-    writeLastMode(kid.id, mode);
-    void repo.setWorldLastMode(kid.id, mode).catch(() => undefined);
+    // Lightning Round is a side practice, never the "last pick": Home keeps opening the Dungeon or Adventure.
+    if (mode !== 'lightning') {
+      writeLastMode(kid.id, mode);
+      void repo.setWorldLastMode(kid.id, mode).catch(() => undefined);
+    }
     onStart(mode);
   };
   return (
@@ -359,6 +364,11 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault }: { 
         ) : (
           <PixelButton tone="gold" size="big" className="btn btn-big btn-start" onClick={() => start(modes[0]?.id ?? 'dungeon')}>Start Quest</PixelButton>
         )}
+        {lightning ? (
+          <PixelButton tone="lightning" size="big" data-testid="home-lightning" data-mode="lightning" onClick={() => start('lightning')}>
+            <PixelIcon name="bolt" size={32} /> Lightning Round
+          </PixelButton>
+        ) : null}
         <div className="row">
           <PixelButton tone="gold" className="btn" onClick={() => { setShopVault(false); setShop(true); }}>{shop2On(kid.settings) ? 'Shop' : 'Hero shop'}</PixelButton>
           <PixelButton className="btn" onClick={onBack}>Switch player</PixelButton>

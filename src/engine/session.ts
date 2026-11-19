@@ -37,6 +37,8 @@ export interface PlanInput {
 
 /** Slots at the start of a run with no preview: pre-readers 3, readers 2. */
 export const PREVIEW_FLOOR = { prereader: 3, reader: 2 } as const;
+/** Most previews of locked groups in one run (Lightning Round reads the same limit). */
+export const PREVIEW_MAX = { prereader: 1, reader: 2 } as const;
 
 /** Most new skill (procedure) cards per run; the rest of the new budget goes to facts. */
 const MAX_NEW_SKILLS = 2;
@@ -169,7 +171,7 @@ export function buildPlan({ cards, settings, now, rng }: BuildPlanInput): PlanIt
     maxNew: settings.maxNew,
     rng,
     locked: previewPool(cards, settings).filter(ok),
-    previewMax: prereader ? 1 : 2,
+    previewMax: prereader ? PREVIEW_MAX.prereader : PREVIEW_MAX.reader,
     previewFloor: prereader ? PREVIEW_FLOOR.prereader : PREVIEW_FLOOR.reader,
   });
 }

@@ -6,14 +6,14 @@ const kid = (settings: Partial<KidSettings>): Kid => ({ id: 'k1', name: 'Pip', c
 
 describe('KidSettings.modes: Adventure is on for every kid unless a parent turns it off', () => {
   it('a reader doc with no modes field has the Dungeon and Adventure on', () => {
-    expect(modesOnOf(DEFAULT_SETTINGS)).toEqual({ dungeon: true, prereader: false, overworld: true });
+    expect(modesOnOf(DEFAULT_SETTINGS)).toEqual({ dungeon: true, prereader: false, overworld: true, lightning: true });
   });
   it('a pre-reader doc with no modes field has the picture run and Adventure on, and no Dungeon', () => {
-    expect(modesOnOf(PRESETS.prereader)).toEqual({ dungeon: false, prereader: true, overworld: true });
+    expect(modesOnOf(PRESETS.prereader)).toEqual({ dungeon: false, prereader: true, overworld: true, lightning: true });
   });
   it('an explicit false keeps Adventure off for a reader and for a pre-reader', () => {
-    expect(modesOnOf({ ...DEFAULT_SETTINGS, modes: { overworld: false } })).toEqual({ dungeon: true, prereader: false, overworld: false });
-    expect(modesOnOf({ ...PRESETS.prereader, modes: { overworld: false } })).toEqual({ dungeon: false, prereader: true, overworld: false });
+    expect(modesOnOf({ ...DEFAULT_SETTINGS, modes: { overworld: false } })).toEqual({ dungeon: true, prereader: false, overworld: false, lightning: true });
+    expect(modesOnOf({ ...PRESETS.prereader, modes: { overworld: false } })).toEqual({ dungeon: false, prereader: true, overworld: false, lightning: true });
   });
   it('the Dungeon is on unless modes.dungeon is false and Adventure is on; a reader always has at least one mode', () => {
     expect(modesOnOf({ ...DEFAULT_SETTINGS, modes: { overworld: true } })).toMatchObject({ dungeon: true, overworld: true });
@@ -26,10 +26,14 @@ describe('KidSettings.modes: Adventure is on for every kid unless a parent turns
     expect(modesOnOf({ ...PRESETS.prereader, modes: { overworld: 0 as never } }).overworld).toBe(true);
   });
   it('the home picker lists the Dungeon and Adventure for a reader, the picture run and Adventure for a pre-reader', () => {
-    expect(enabledModes(kid({})).map((m) => m.id)).toEqual(['dungeon', 'overworld']);
-    expect(enabledModes(kid({ modes: { overworld: false } })).map((m) => m.id)).toEqual(['dungeon']);
-    expect(enabledModes(kid({ learner: 'prereader' })).map((m) => m.id)).toEqual(['prereader', 'overworld']);
-    expect(enabledModes(kid({ learner: 'prereader', modes: { overworld: false } })).map((m) => m.id)).toEqual(['prereader']);
+    expect(enabledModes(kid({})).map((m) => m.id)).toEqual(['dungeon', 'overworld', 'lightning']);
+    expect(enabledModes(kid({ modes: { overworld: false } })).map((m) => m.id)).toEqual(['dungeon', 'lightning']);
+    expect(enabledModes(kid({ learner: 'prereader' })).map((m) => m.id)).toEqual(['prereader', 'overworld', 'lightning']);
+    expect(enabledModes(kid({ learner: 'prereader', modes: { overworld: false } })).map((m) => m.id)).toEqual(['prereader', 'lightning']);
+    // Lightning Round is on unless modes.lightning is exactly false, for both learners.
+    expect(enabledModes(kid({ modes: { lightning: false } })).map((m) => m.id)).toEqual(['dungeon', 'overworld']);
+    expect(enabledModes(kid({ learner: 'prereader', modes: { lightning: false } })).map((m) => m.id)).toEqual(['prereader', 'overworld']);
+    expect(modesOnOf({ ...DEFAULT_SETTINGS, modes: { lightning: 'no' as never } }).lightning).toBe(true);
   });
   it('modeFor honours the last choice only while that mode is still on', () => {
     const on = kid({});

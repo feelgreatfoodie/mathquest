@@ -4,7 +4,7 @@ import { sessionModeOf, type Learner, type SessionLog, type SessionMode } from '
 
 // How the parent area names a run: the mode, for Adventure the region and whether the trip is still open.
 
-export const MODE_NAMES: Record<SessionMode, string> = { dungeon: 'Dungeon run', prereader: 'Picture run', overworld: 'Adventure' };
+export const MODE_NAMES: Record<SessionMode, string> = { dungeon: 'Dungeon run', prereader: 'Picture run', overworld: 'Adventure', lightning: 'Lightning Round' };
 
 export interface RunLabel {
   mode: SessionMode;

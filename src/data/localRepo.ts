@@ -86,6 +86,13 @@ export class LocalRepo implements Repo {
     }));
   }
 
+  async setKidLightningFloor(kidId: string, ms: number | null): Promise<void> {
+    this.patchKid(kidId, (k) => {
+      const { lightningFloorMs: _old, ...rest } = k.settings;
+      return { ...k, settings: ms === null ? rest : { ...rest, lightningFloorMs: ms } };
+    });
+  }
+
   async setKidFlags(kidId: string, flags: { hasPin?: boolean; avatar?: KidAvatar }): Promise<void> {
     this.patchKid(kidId, (k) => ({ ...k, ...(flags.hasPin !== undefined ? { hasPin: flags.hasPin } : {}), ...(flags.avatar !== undefined ? { avatar: flags.avatar } : {}) }));
   }

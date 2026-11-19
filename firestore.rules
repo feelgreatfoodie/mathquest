@@ -24,6 +24,16 @@ service cloud.firestore {
       return request.resource == null || request.resource.data.size() < 20;
     }
 
+    // A card's Lightning Round delay (lightningDelayMs), when present, is a whole number of ms from 1000 to 4000. A card written by an
+    // older bundle has no such field and passes. A card has at most 15 fields (id, fsrs, attempts, correct, recentMs, lastRating,
+    // updatedAt, day, dayGraded, lastResults, missDay, supportLevel, supportRun, supportHold, lightningDelayMs), under smallDoc's 20.
+    function lightningDelayOk() {
+      return !('lightningDelayMs' in request.resource.data)
+        || (request.resource.data.lightningDelayMs is int
+          && request.resource.data.lightningDelayMs >= 1000
+          && request.resource.data.lightningDelayMs <= 4000);
+    }
+
     // The parent: signed in as this family's Google account, and registered.
     function isParent(uid) {
       return signedInAs(uid) && allowedAccount();
@@ -454,7 +464,7 @@ service cloud.firestore {
           allow read: if isParent(uid) || isKid(uid, kidId);
           allow delete: if isParent(uid);
           allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc()
-            && request.resource.data.id == cardId;
+            && request.resource.data.id == cardId && lightningDelayOk();
         }
 
         // Purchases log: the parent reads it, nobody edits or deletes it. A kid token (or the parent device
