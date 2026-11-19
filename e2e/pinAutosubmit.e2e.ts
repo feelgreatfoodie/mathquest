@@ -145,13 +145,13 @@ test.describe('parent PIN screens (real app, local data)', () => {
   test('parent PIN signs in on the 4th digit, wrong PIN clears and retries', async ({ page }) => {
     await seedParent(page, false);
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Parent PIN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Grown-up PIN' })).toBeVisible();
     await noGo(page);
     await tap(page, WRONG_PIN);
     await expect(page.locator('.error')).toContainText('Wrong PIN');
     await expect.poll(() => dotsOn(page)).toBe(0);
     await tap(page, PARENT_PIN);
-    await expect(page.getByRole('heading', { name: 'Parent area' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Grown-ups area' })).toBeVisible();
     await shot(page, 'pin-parent');
   });
 

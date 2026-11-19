@@ -8,7 +8,10 @@ import type { CardMap, CardState, Family, Kid, KidAvatar, KidGame, KidSettings, 
 export interface Repo {
   readonly mode: 'firestore' | 'local';
   getFamily(): Promise<Family | null>;
+  /** Merges the given fields into the family doc, so a field this code does not know (tourSeen) is kept. */
   saveFamily(family: Family): Promise<void>;
+  /** Writes the single field tourSeen: true on the parent's own family doc and nothing else. */
+  markTourSeen(): Promise<void>;
   listKids(): Promise<Kid[]>;
   getKid(kidId: string): Promise<Kid | null>;
   /** Creates a kid. Fails when the id exists, so a stale copy can never replace a stored kid. */

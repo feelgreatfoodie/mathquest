@@ -207,6 +207,8 @@ export function avatarOf(kid: Pick<Kid, 'id' | 'avatar' | 'game'>): KidAvatar {
 export interface Family {
   pinHash: string | null;
   createdAt: number;
+  /** The Grown-ups tour was offered on this account. Written alone by Repo.markTourSeen, kept when the PIN changes. */
+  tourSeen?: boolean;
 }
 
 export interface SessionLog {

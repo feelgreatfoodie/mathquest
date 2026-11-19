@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type Page } from '@playwright/test';
@@ -16,8 +17,11 @@ const SIZES = [
   { tag: '393x852', width: 393, height: 852 },
 ];
 
+const PIN = '2468'; // made up
+const PIN_HASH = createHash('sha256').update(`mathquest:local:${PIN}`).digest('hex');
+
 async function seedDemoFamily(page: Page) {
-  await page.addInitScript(() => {
+  await page.addInitScript((pinHash) => {
     let a = 1234567;
     Math.random = () => {
       a = (a + 0x6d2b79f5) | 0;
@@ -29,7 +33,7 @@ async function seedDemoFamily(page: Page) {
     const game = (hero: string) => ({ xp: 240, gems: 31, streakDays: 3, lastPlayedDay: null, bestCombo: 5, heroes: [hero], hero });
     const reader = { modes: { overworld: false }, tracks: { facts: true, multidigit: false, fractions: false }, sessionSize: 12, maxNew: 6, factGroupsUnlocked: 1, paceMultiplier: 3 };
     const pre = { learner: 'prereader', modules: { add10: true }, tracks: { facts: false, multidigit: false, fractions: false }, sessionSize: 10, maxNew: 4, factGroupsUnlocked: 1, paceMultiplier: 3 };
-    localStorage.setItem('mathquest:v1:family', JSON.stringify({ pinHash: 'x', createdAt: 1 }));
+    localStorage.setItem('mathquest:v1:family', JSON.stringify({ pinHash, createdAt: 1, tourSeen: true }));
     localStorage.setItem(
       'mathquest:v1:kids',
       JSON.stringify([
@@ -37,7 +41,7 @@ async function seedDemoFamily(page: Page) {
         { id: 'kidshots0000000002', name: 'Wren', createdAt: 2, settings: pre, game: game('knight') },
       ]),
     );
-  });
+  }, PIN_HASH);
 }
 
 async function shot(page: Page, tag: string, name: string) {
@@ -56,6 +60,20 @@ for (const s of SIZES) {
       await page.goto(`http://localhost:${LANDING_PORT}/`);
       await page.waitForSelector('.landing-tab, [data-testid="title-screen"]');
       await shot(page, s.tag, 'landing');
+      if (await page.getByTestId('title-intro').count()) {
+        await page.getByTestId('title-intro').click();
+        await page.locator('.intro-card img').first().waitFor();
+        await page.waitForTimeout(600);
+        await shot(page, s.tag, 'intro-1');
+        for (let i = 0; i < 3; i++) await page.getByTestId('intro-next').click();
+        await page.waitForTimeout(1200);
+        await shot(page, s.tag, 'intro-4');
+        await page.getByTestId('intro-back').click();
+        for (let i = 0; i < 3; i++) await page.getByTestId('intro-back').click().catch(() => undefined);
+        await page.goto(`http://localhost:${LANDING_PORT}/`);
+        await page.getByTestId('title-play').click();
+        await shot(page, s.tag, 'landing-kid');
+      }
       const tab = page.locator('#landing-tab-parent');
       if (await tab.count()) {
         await tab.click();
@@ -73,6 +91,23 @@ for (const s of SIZES) {
       await page.getByRole('button', { name: 'Start Quest' }).click();
       await page.locator('.keypad').waitFor();
       await shot(page, s.tag, 'question-pip');
+      await page.goto('/');
+      await page.getByRole('button', { name: /(grown-ups|parent) area/i }).click();
+      for (const d of PIN) await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
+      await page.locator('.parent').waitFor();
+      await page.waitForTimeout(600);
+      await shot(page, s.tag, 'grownups-area');
+      if (await page.getByTestId('tour-button').count()) {
+        await page.getByTestId('tour-button').click();
+        await page.waitForTimeout(700);
+        await shot(page, s.tag, 'tour-1-players');
+        for (let i = 0; i < 2; i++) await page.getByTestId('tour-next').click();
+        await page.waitForTimeout(900);
+        await shot(page, s.tag, 'tour-3-pause');
+        await page.getByTestId('tour-next').click();
+        await page.waitForTimeout(900);
+        await shot(page, s.tag, 'tour-4-progress');
+      }
       await page.goto('/');
       await page.locator('.kid-card', { hasText: 'Wren' }).click();
       await shot(page, s.tag, 'home-wren');

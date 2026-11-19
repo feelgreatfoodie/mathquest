@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Hills, Moon, SkyBands, Stars, Tree } from '../pixel';
+import { Hills, Moon, PixelButton, SkyBands, Stars, Tree } from '../pixel';
 import { Sprite } from '../sprites';
 
 /** The title screen scene: night sky, stars, a moon, layered hills with the hero, a slime, a bat and 2 trees. Decoration only. */
@@ -34,6 +34,24 @@ export function TitleScreen({ children }: { children: ReactNode }) {
         <p className="px-tagline pixel">EVERY MONSTER IS A MATH FACT</p>
       </header>
       <div className="title-body">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * The title menu: a big gold PLAY (420 by 120, a pre-reader target), a neutral GROWN-UPS (420 by 72) and the
+ * "What is Math Quest?" link. PLAY opens the kid sign-in, GROWN-UPS the grown-up sign-in.
+ */
+export function TitleMenu({ onPlay, onGrownUps, onIntro }: { onPlay: () => void; onGrownUps: () => void; onIntro: () => void }) {
+  return (
+    <div className="screen center title-menu" data-testid="title-menu">
+      <PixelButton tone="gold" className="title-play" data-testid="title-play" onClick={onPlay}>
+        <span className="pixel-label">PLAY</span>
+      </PixelButton>
+      <PixelButton tone="neutral" className="title-grownups" data-testid="title-grownups" onClick={onGrownUps}>
+        <span className="pixel-label">GROWN-UPS</span>
+      </PixelButton>
+      <button type="button" className="title-link" data-testid="title-intro" onClick={onIntro}>What is Math Quest?</button>
     </div>
   );
 }

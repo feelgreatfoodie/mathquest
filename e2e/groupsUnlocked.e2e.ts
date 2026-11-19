@@ -22,7 +22,7 @@ const stored = (page: Page) => page.evaluate((id) => JSON.parse(localStorage.get
 test('the parent picks a start group per module and saves it', async ({ page }) => {
   await seed(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Parent area' }).click();
+  await page.getByRole('button', { name: 'Grown-ups area' }).click();
   for (const d of PARENT_PIN) await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
   const add = page.getByLabel('Start Addition within 10 at');
   const sub = page.getByLabel('Start Subtraction within 10 at');
@@ -44,7 +44,7 @@ test('the parent picks a start group per module and saves it', async ({ page }) 
 test('a module that is off has no picker; a kid with no floor saves no groupsUnlocked key', async ({ page }) => {
   await seed(page);
   await page.goto('/');
-  await page.getByRole('button', { name: 'Parent area' }).click();
+  await page.getByRole('button', { name: 'Grown-ups area' }).click();
   for (const d of PARENT_PIN) await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
   await page.getByLabel('Subtraction within 10', { exact: true }).uncheck();
   await expect(page.getByLabel('Start Subtraction within 10 at')).toHaveCount(0);

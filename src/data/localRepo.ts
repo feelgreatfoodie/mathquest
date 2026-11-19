@@ -31,7 +31,12 @@ export class LocalRepo implements Repo {
   }
 
   async saveFamily(family: Family): Promise<void> {
-    write('family', family);
+    write('family', { ...read<Family | null>('family', null), ...family });
+  }
+
+  async markTourSeen(): Promise<void> {
+    const f = read<Family | null>('family', null);
+    if (f) write('family', { ...f, tourSeen: true });
   }
 
   async listKids(): Promise<Kid[]> {

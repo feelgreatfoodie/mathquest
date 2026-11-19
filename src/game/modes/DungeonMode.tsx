@@ -110,7 +110,7 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
     return (
       <div className="screen center">
         <div className="panel">
-          <p>{kid.game.lastPlayedDay ? 'That is everything for today. Come back tomorrow for more.' : 'Nothing to practice yet. Ask a parent to turn on a math track.'}</p>
+          <p>{kid.game.lastPlayedDay ? 'That is everything for today. Come back tomorrow for more.' : 'Nothing to practice yet. Ask a grown-up to turn on a math track.'}</p>
           <button type="button" className="btn" onClick={onExit}>Back</button>
         </div>
       </div>

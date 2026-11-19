@@ -1,4 +1,4 @@
-import { useEffect, useState, type FocusEvent } from 'react';
+import { useEffect, useRef, useState, type FocusEvent } from 'react';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { HEROES, levelFor } from '../../engine/game';
 import { itemById } from '../../game/shop/catalog';
@@ -27,6 +27,7 @@ import { BUILD } from '../../version';
 import { UiIcon } from '../sprites';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
+import { Tour, TourOffer } from '../tour/Tour';
 
 export { makeKid };
 
@@ -38,7 +39,7 @@ export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone
   const [family, setFamily] = useState<Family | null>(null);
 
   if (step === 'pin')
-    return <PinPad title="Make a parent PIN" subtitle="4 digits. It keeps kids out of the parent area." onComplete={(p) => { setFirst(p); setErr(null); setStep('confirm'); }} />;
+    return <PinPad title="Make a Grown-up PIN" subtitle="4 digits. It keeps kids out of the Grown-ups area." onComplete={(p) => { setFirst(p); setErr(null); setStep('confirm'); }} />;
   if (step === 'confirm')
     return (
       <PinPad
@@ -187,6 +188,26 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
   const [selected, setSelected] = useState<string | 'add'>(kids[0]?.id ?? 'add');
   const [changingPin, setChangingPin] = useState(false);
   const kid = kids.find((k) => k.id === selected);
+  // The Grown-ups tour: offered once on this account (tourSeen on the family doc), replayed by the Tour button.
+  const [tour, setTour] = useState<'off' | 'offer' | 'on'>('off');
+  const tourButton = useRef<HTMLButtonElement>(null);
+  const hasKids = kids.length > 0;
+  useEffect(() => {
+    if (afterPause || !hasKids) return;
+    let live = true;
+    void repo.getFamily().then((f) => {
+      if (!live || !f || f.tourSeen) return;
+      setTour('offer');
+      void repo.markTourSeen().catch(() => undefined);
+    }).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [repo, afterPause, hasKids]);
+  const closeTour = () => {
+    setTour('off');
+    window.setTimeout(() => tourButton.current?.focus(), 0);
+  };
   // The learning-progress reads are kept while the parent area is open and dropped when it closes.
   useEffect(() => clearInsightsCache, []);
   // Learning progress reads fresh when the area opens and whenever the kid tab changes, so a trip checkpointed since is never missing.
@@ -197,7 +218,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
   if (changingPin)
     return (
       <PinPad
-        title="New parent PIN"
+        title="New Grown-up PIN"
         onCancel={() => setChangingPin(false)}
         onComplete={async (p) => {
           const f: Family = { pinHash: await hashPin(salt, p), createdAt: Date.now() };
@@ -216,8 +237,9 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
   return (
     <div className="screen parent" onFocus={keepFocusVisible}>
       <header className="parent-head">
-        <h1 className="pixel">Parent area</h1>
+        <h1 className="pixel">Grown-ups area</h1>
         <div className="row">
+          <button type="button" ref={tourButton} className="btn btn-ghost btn-small tour-button" data-testid="tour-button" onClick={() => setTour('on')}><span className="tour-q" aria-hidden="true">?</span> Tour</button>
           <PauseEveryone repo={repo} kids={kids} {...(resumed ? { onResumed: resumed } : {})} />
           <button type="button" className="btn btn-ghost btn-small" onClick={() => setChangingPin(true)}>Change PIN</button>
           {onSignOut ? <button type="button" className="btn btn-ghost btn-small" onClick={onSignOut}>Sign out</button> : null}
@@ -228,10 +250,12 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
           )}
         </div>
       </header>
+      {tour === 'offer' && kid ? <TourOffer onStart={() => setTour('on')} onDismiss={closeTour} /> : null}
+      {tour === 'on' ? <Tour onClose={closeTour} /> : null}
       {askSignOut && onSignOut ? <SignOutAsk onYes={onSignOut} onStay={() => setAskSignOut(false)} /> : null}
       <LockBanner />
       <ParkedRounds kids={kids} />
-      <nav className="tabs" aria-label="Players">
+      <nav className="tabs" aria-label="Players" data-tour="kids">
         {kids.map((k) => (
           <button key={k.id} type="button" className={`tab ${selected === k.id ? 'is-active' : ''}`} onClick={() => setSelected(k.id)}>
             {k.name}
@@ -401,7 +425,7 @@ function KidPinPanel({ kid, onSet }: { kid: Kid; onSet: () => Promise<void> }) {
       <h2>Sign-in PIN for {kid.name}</h2>
       <p className="muted">
         {kid.name} signs in on any device with the name "{nameKey(kid.name)}" (capitalization does not matter) and this 4-digit PIN.
-        {kid.hasPin ? ' A PIN is set.' : ' No PIN yet, so this player cannot sign in on their own.'} It must differ from the parent PIN.
+        {kid.hasPin ? ' A PIN is set.' : ' No PIN yet, so this player cannot sign in on their own.'} It must differ from the Grown-up PIN.
       </p>
       <form
         className="pin-set"
@@ -663,7 +687,7 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
   return (
     <div className="detail">
       <PauseCard repo={repo} kid={kid} {...(onResumed ? { onResumed } : {})} />
-      <section className="panel summary-row">
+      <section className="panel summary-row" data-tour="stats">
         <div className="stat stat-xp">
           <span className="stat-value">{kid.game.xp}</span>
           <span className="stat-label">xp</span>
@@ -786,7 +810,7 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
         </table>
       </section>
 
-      <section className="panel">
+      <section className="panel" data-tour="runs">
         <h2>Recent runs</h2>
         {adventureLine(world as never) ? <p className="muted" data-testid="adventure-line">{adventureLine(world as never)}</p> : null}
         {sessions.length ? (
@@ -820,7 +844,7 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
       <KidPinPanel kid={kid} onSet={onPinSet} />
       <KidPicturePinPanel kid={kid} onSet={onPicturePinSet} />
 
-      <section className="panel settings">
+      <section className="panel settings" data-tour="settings">
         <h2>Settings for {kid.name}</h2>
         <label>
           Player type

@@ -122,9 +122,9 @@ test('a pre-reader preview shows the pictures, one per run', async ({ page }) =>
 test('the parent area shows a coverage line', async ({ page }) => {
   await seed(page, 'reader');
   await page.goto('/');
-  await page.getByRole('button', { name: 'Parent area' }).click();
+  await page.getByRole('button', { name: 'Grown-ups area' }).click();
   for (const d of PARENT_PIN) await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
-  await expect(page.getByRole('heading', { name: 'Parent area' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Grown-ups area' })).toBeVisible();
   await page.locator('.kid-card, .kid-row, button', { hasText: 'Pip' }).first().click().catch(() => undefined);
   const line = page.locator('[data-coverage="facts"]');
   await expect(line).toBeVisible();

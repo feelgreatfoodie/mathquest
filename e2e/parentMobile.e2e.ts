@@ -99,7 +99,7 @@ async function enterPin(page: Page, pin: string) {
 }
 async function openParent(page: Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: /parent/i }).first().click();
+  await page.getByRole('button', { name: /grown-ups/i }).first().click();
   await enterPin(page, PARENT_PIN);
   await expect(page.locator('.parent')).toBeVisible();
 }
@@ -156,7 +156,7 @@ for (const { w, h } of PHONES) {
     test('parent PIN: whole keypad visible, no scroll at all', async ({ page }) => {
       await seed(page);
       await page.goto('/');
-      await page.getByRole('button', { name: /parent/i }).first().click();
+      await page.getByRole('button', { name: /grown-ups/i }).first().click();
       await expect(page.locator('.keypad')).toBeVisible();
       await expectFits(page, 'pin');
       const r = await page.evaluate(() => ({
@@ -334,12 +334,16 @@ const LANDING_PORT = Number(process.env.E2E_LANDING_PORT) || 5198;
 for (const { w, h } of PHONES) {
   test.describe(`landing at ${w}x${h}`, () => {
     test.use({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 3, userAgent: IPHONE_UA, baseURL: `http://localhost:${LANDING_PORT}` });
-    test('kid tab and parent tab fit', async ({ page }) => {
+    test('title menu, kid tab and grown-ups tab fit', async ({ page }) => {
       await page.goto('/');
+      await expect(page.getByTestId('title-menu')).toBeVisible();
+      await expectFits(page, 'title menu');
+      await shot(page, w, 'title-menu', false);
+      await page.getByTestId('title-play').click();
       await expect(page.locator('.landing-tab').first()).toBeVisible();
       await expectFits(page, 'landing kid');
       await shot(page, w, 'landing-kid', false);
-      await page.locator('.landing-tab', { hasText: /parent/i }).click();
+      await page.locator('.landing-tab', { hasText: /grown-ups/i }).click();
       await expect(page.getByRole('button', { name: /sign in with google/i })).toBeVisible();
       await expectFits(page, 'landing parent');
       await shot(page, w, 'landing-parent', false);

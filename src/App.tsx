@@ -1,5 +1,5 @@
 import { onAuthStateChanged } from 'firebase/auth';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FirestoreRepo } from './data/firestoreRepo';
 import { LocalRepo } from './data/localRepo';
 import { hashPin, type Repo } from './data/repo';
@@ -19,6 +19,7 @@ import { rememberKids } from './data/deviceKids';
 import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
 import { applyCrt, readCrt } from './ui/pixel';
+import { mayHaveAuthSession } from './authHint';
 import { ParentArea, Setup } from './ui/screens/Parent';
 import { PauseScreen } from './ui/screens/PauseScreen';
 import { PauseContext, usePause } from './ui/usePause';
@@ -43,7 +44,7 @@ type Screen =
  * only the dev server (the e2e run) gets a gate, fed by one localStorage key; a production build has none.
  */
 function makeGuard(): VersionGuard | null {
-  if (dataMode === 'firestore') return guardFor(getFirebase().db);
+  if (dataMode === 'firestore') return null;
   if (import.meta.env.DEV) {
     return new VersionGuard(null, {
       build: 100,
@@ -57,7 +58,9 @@ function makeGuard(): VersionGuard | null {
 }
 
 export function App() {
-  const guard = useMemo(makeGuard, []);
+  // Firestore mode: the gate reads config/app, which needs a signed-in account, so it starts with Auth (attach below). A signed-out
+  // title makes no Firebase call at all.
+  const [guard, setGuard] = useState<VersionGuard | null>(() => (dataMode === 'firestore' ? null : makeGuard()));
   const [stale, setStale] = useState(false);
   const [screen, setScreen] = useState<Screen>({ name: 'boot' });
   const [repo, setRepo] = useState<Repo | null>(null);
@@ -87,6 +90,8 @@ export function App() {
     }
   }, []);
 
+  /** Starts the auth listener. Null until the effect below runs; called before a sign-in so the result is seen. */
+  const authStart = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (dataMode === 'local') {
       const r = new LocalRepo();
@@ -94,53 +99,71 @@ export function App() {
       void load(r);
       return;
     }
-    const { auth, db } = getFirebase();
-    return onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        setRepo(null);
-        setKids([]);
-        setFamily(null);
-        setKidSession(false);
-        if (pauseFlow.current === 'active') pauseFlow.current = 'off';
-        // No session: the kid PIN pad. The Parent link moves to the Google screen and stays there.
-        setScreen((s) => (s.name === 'signin' ? s : { name: 'kidsignin' }));
-        return;
-      }
-      void (async () => {
-        const claims = await kidClaims();
-        if (claims) {
-          pauseFlow.current = 'off';
-          const r = new FirestoreRepo(db, claims.familyUid);
-          try {
-            const k = await r.getKid(claims.kidId);
-            if (!k) throw new Error('That player was removed.');
-            setRepo(r);
-            setKids([k]);
-            setKidSession(true);
-            setScreen({ name: 'home', kidId: k.id });
-          } catch (e) {
-            setError((e as Error).message);
-            void signOutParent();
+    // Signed out on this device: show the title with no Auth or Firestore call. Auth starts when someone signs in.
+    let stop: (() => void) | null = null;
+    let live = true;
+    const attach = () => {
+      if (stop || !live) return;
+      const { auth, db } = getFirebase();
+      setGuard(guardFor(db));
+      stop = onAuthStateChanged(auth, (user) => {
+        if (!user) {
+          setRepo(null);
+          setKids([]);
+          setFamily(null);
+          setKidSession(false);
+          if (pauseFlow.current === 'active') pauseFlow.current = 'off';
+          // No session: the kid PIN pad. The Parent link moves to the Google screen and stays there.
+          setScreen((s) => (s.name === 'signin' ? s : { name: 'kidsignin' }));
+          return;
+        }
+        void (async () => {
+          const claims = await kidClaims();
+          if (claims) {
+            pauseFlow.current = 'off';
+            const r = new FirestoreRepo(db, claims.familyUid);
+            try {
+              const k = await r.getKid(claims.kidId);
+              if (!k) throw new Error('That player was removed.');
+              setRepo(r);
+              setKids([k]);
+              setKidSession(true);
+              setScreen({ name: 'home', kidId: k.id });
+            } catch (e) {
+              setError((e as Error).message);
+              void signOutParent();
+            }
+            return;
           }
-          return;
-        }
-        setKidSession(false);
-        if (pauseFlow.current === 'armed') pauseFlow.current = 'active';
-        // Join the parent registry first. At the cap the message is shown and the account signs out.
-        try {
-          await registerParent();
-        } catch (e) {
-          setError((e as Error).message || 'Could not sign in. Try again.');
-          setScreen({ name: 'signin' });
-          void signOutParent();
-          return;
-        }
-        const r = new FirestoreRepo(db, user.uid);
-        setRepo(r);
-        setSalt(user.uid);
-        void load(r);
-      })();
+          setKidSession(false);
+          if (pauseFlow.current === 'armed') pauseFlow.current = 'active';
+          // Join the parent registry first. At the cap the message is shown and the account signs out.
+          try {
+            await registerParent();
+          } catch (e) {
+            setError((e as Error).message || 'Could not sign in. Try again.');
+            setScreen({ name: 'signin' });
+            void signOutParent();
+            return;
+          }
+          const r = new FirestoreRepo(db, user.uid);
+          setRepo(r);
+          setSalt(user.uid);
+          void load(r);
+        })();
+      });
+    };
+    authStart.current = attach;
+    void mayHaveAuthSession().then((has) => {
+      if (!live) return;
+      if (has) attach();
+      else setScreen((sc) => (sc.name === 'boot' ? { name: 'kidsignin' } : sc));
     });
+    return () => {
+      live = false;
+      authStart.current = null;
+      stop?.();
+    };
   }, [load]);
 
   // The Kid-tab faces. Written only here, and only while a parent or a kid is signed in on this device (repo is set by a
@@ -321,6 +344,7 @@ export function App() {
         onKidSubmit={(name, pin) => {
           setPinError(null);
           setError(null);
+          authStart.current?.();
           return signInKid(name, pin).then(
             () => true,
             (e: { message?: string }) => {
@@ -331,6 +355,7 @@ export function App() {
         }}
         onParentSignIn={() => {
           setError(null);
+          authStart.current?.();
           signInParent().catch((e: Error) => setError(e.message));
         }}
       />
@@ -424,7 +449,7 @@ export function App() {
     case 'pin':
       return (
         <PinPad
-          title="Parent PIN"
+          title="Grown-up PIN"
           error={pinError}
           onCancel={pauseFlow.current === 'active' ? () => { setPinError(null); void signOutParent(); } : kids.length ? () => { setPinError(null); setScreen({ name: 'picker' }); } : undefined}
           onComplete={async (p) => {

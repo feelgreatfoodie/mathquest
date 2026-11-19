@@ -54,7 +54,7 @@ async function seed(page: Page) {
 
 async function openKid(page: Page, name: string) {
   await page.goto('/');
-  await page.getByRole('button', { name: /parent/i }).first().click();
+  await page.getByRole('button', { name: /grown-ups/i }).first().click();
   for (const d of PIN) await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
   await expect(page.locator('.parent')).toBeVisible();
   await page.locator('.tabs .tab', { hasText: name }).click();
