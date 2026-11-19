@@ -121,3 +121,27 @@ export function claimPetGrant(kidId: string, trip: TripState, id: string, base: 
   saveTrip(kidId, trip);
   return { paid: true, gems: base };
 }
+
+// ---- Tap target ----
+
+/** A pet's spot is a target this many CSS pixels across: a tap within half of it from the center counts as a tap on the spot. */
+export const PET_TARGET_PX = 120;
+
+/**
+ * The spot a tap hits, or null. `view` is the canvas view in canvas pixels (`t` per tile, `left` and `top` of the scroll) and
+ * `canvasPx` is the canvas width in canvas pixels, so the distance is measured in the CSS pixels the finger covers at any zoom
+ * and any device pixel ratio.
+ */
+export function snapPetTap(click: Point, rect: { left: number; top: number; width: number }, canvasPx: number, view: { t: number; left: number; top: number }, spots: readonly Point[]): Point | null {
+  const ratio = canvasPx / rect.width;
+  let best: Point | null = null;
+  let bestD = PET_TARGET_PX / 2;
+  for (const p of spots) {
+    const d = Math.hypot(rect.left + ((p.x + 0.5) * view.t - view.left) / ratio - click.x, rect.top + ((p.y + 0.5) * view.t - view.top) / ratio - click.y);
+    if (d <= bestD) {
+      best = p;
+      bestD = d;
+    }
+  }
+  return best;
+}

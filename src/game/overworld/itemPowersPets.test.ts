@@ -10,7 +10,7 @@ import { mulberry32 } from '../../engine/problems';
 import { SessionRunner, buildPlan } from '../../engine/session';
 import { chestSpots, reachableWithoutItems, tripChestSpots } from './chests';
 import { MAPS, REGION_IDS, heroStart, tileAt, type WalkCtx } from './maps';
-import { BEETLE_GEMS, DOG_CHEST_GEMS, DOG_SNIFF_RANGE, activePet, beetleId, beetleTile, claimPetGrant, lairRingFill, pupCheer, withDogSpot } from './pets';
+import { BEETLE_GEMS, DOG_CHEST_GEMS, DOG_SNIFF_RANGE, activePet, beetleId, beetleTile, claimPetGrant, lairRingFill, pupCheer, snapPetTap, withDogSpot } from './pets';
 import { bossReady } from './boss';
 import { claimChest, loadTrip, openedSpots, resolveTrip } from './trip';
 import { planRegion } from './tripPlan';
@@ -254,5 +254,24 @@ describe('no pet writes world/main or adds a field to it', () => {
     expect(noComments(readFileSync(new URL('./pets.ts', import.meta.url), 'utf8'))).not.toMatch(/worldState|touchWorld|world\//);
     const src = readFileSync(new URL('./worldState.ts', import.meta.url), 'utf8');
     expect(src).not.toMatch(/beetle|dog|pet/i);
+  });
+});
+
+describe('tap target: 120 CSS px on the screen at any canvas width and pixel ratio', () => {
+  // Tile size in CSS px as Overworld sets it: 12 * min(want, fit), want = round(width / 168) clamped to 2..6.
+  const cases = [393, 820, 1024].flatMap((w) => [1, 2].map((dpr) => ({ w, dpr, css: 12 * Math.max(2, Math.min(6, Math.round(w / 168))) })));
+  it.each(cases)('width $w, ratio $dpr: a tap within 60 px of the center hits, 61 px does not', ({ w, dpr, css }) => {
+    const rect = { left: 7, top: 11, width: w };
+    const view = { t: css * dpr, left: 5 * css * dpr, top: 3 * css * dpr };
+    const spot = { x: 9, y: 6 };
+    const cx = rect.left + ((spot.x + 0.5) * view.t - view.left) / dpr;
+    const cy = rect.top + ((spot.y + 0.5) * view.t - view.top) / dpr;
+    for (const [dx, dy] of [[59, 0], [-59, 0], [0, 59], [0, -59], [41, 41]]) expect(snapPetTap({ x: cx + dx!, y: cy + dy! }, rect, w * dpr, view, [spot])).toEqual(spot);
+    for (const [dx, dy] of [[61, 0], [-61, 0], [0, 61], [0, -61]]) expect(snapPetTap({ x: cx + dx!, y: cy + dy! }, rect, w * dpr, view, [spot])).toBeNull();
+  });
+  it('picks the nearer of two spots', () => {
+    const rect = { left: 0, top: 0, width: 393 };
+    const view = { t: 24, left: 0, top: 0 };
+    expect(snapPetTap({ x: 12 + 24 * 4 + 5, y: 12 }, rect, 393, view, [{ x: 4, y: 0 }, { x: 5, y: 0 }])).toEqual({ x: 4, y: 0 });
   });
 });

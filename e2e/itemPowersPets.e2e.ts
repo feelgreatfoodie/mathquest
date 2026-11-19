@@ -2,8 +2,8 @@ import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { FACTS } from '../src/engine/modules/facts';
 import { DEFAULT_SETTINGS } from '../src/engine/models';
-import { chestCountFor } from '../src/game/overworld/chests';
-import { MAPS, findTiles, heroStart, type RegionId } from '../src/game/overworld/maps';
+import { chestCountFor, reachableWithoutItems } from '../src/game/overworld/chests';
+import { MAPS, findTiles, heroStart, tileAt, type RegionId } from '../src/game/overworld/maps';
 import { ladderCards } from '../src/game/overworld/regions';
 
 /**
@@ -104,6 +104,17 @@ async function answer(page: Page, who: Who) {
   }
 }
 
+/** A tile the hero reaches with no item, `d` tiles from the spot by Manhattan distance, so a teleport never lands on a tree or in the water. */
+function standList(spot: { x: number; y: number }, d: number, region: RegionId = 'meadow') {
+  const reach = reachableWithoutItems(MAPS[region]);
+  const all = [...reach].map((k) => k.split(',').map(Number) as [number, number]);
+  const at = all.filter(([x, y]) => Math.abs(x - spot.x) + Math.abs(y - spot.y) === d && tileAt(MAPS[region], x, y) !== 'chest').sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  return at.map(([x, y]) => ({ x, y }));
+}
+function standAt(spot: { x: number; y: number }, d: number, region: RegionId = 'meadow') {
+  return standList(spot, d, region)[0]!;
+}
+
 const shot = async (page: Page, who: Who, vp: { w: number; h: number }, name: string) => {
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/${who}-${vp.w}x${vp.h}-${name}.png` });
 };
@@ -134,12 +145,20 @@ for (const vp of VIEWPORTS) {
         await shot(page, who, vp, 'beetle-mound');
         const m = s.mound;
         const before = await gems(page);
-        await teleport(page, m.x, m.y - 2);
-        await tap(page, m.x, m.y);
-        await expect.poll(() => gems(page), { timeout: 15_000 }).toBe(before + 1);
+        { const at = standAt(m, 2); await teleport(page, at.x, at.y); }
+        // The walk can cross a monster: answer its question, then tap the mound again.
+        for (let i = 0; i < 6 && (await gems(page)) === before; i++) {
+          await tap(page, m.x, m.y);
+          await page.waitForTimeout(900);
+          if (await page.locator('.question-modal').isVisible()) {
+            await answer(page, who);
+            await expect(page.locator('.question-modal')).toHaveCount(0, { timeout: 12_000 });
+          }
+        }
+        await expect.poll(() => gems(page), { timeout: 15_000 }).toBeGreaterThan(before);
         await shot(page, who, vp, 'beetle-dug');
         expect((await state(page)).mound).toBeNull();
-        await teleport(page, m.x, m.y - 2);
+        { const at = standAt(m, 2); await teleport(page, at.x, at.y); }
         await tap(page, m.x, m.y);
         await page.waitForTimeout(1200);
         expect(await gems(page)).toBe(before + 1);
@@ -149,11 +168,23 @@ for (const vp of VIEWPORTS) {
         await seed(page, who, ['p-beetle'], 'p-beetle');
         await openAdventure(page, who);
         const m = (await state(page)).mound;
-        await teleport(page, m.x, m.y - 2);
-        await page.waitForTimeout(200);
-        const c = await page.evaluate(([x, y]) => (window as unknown as { __ow: { clientOf(x: number, y: number): { x: number; y: number } } }).__ow.clientOf(x!, y!), [m.x, m.y]);
         const before = await gems(page);
-        await page.mouse.click(c.x + 50, c.y);
+        // A tap 50 px from the center, from a stand tile where the canvas (not the walk pad or the top bar) is under the finger.
+        const offsets = [[50, 0], [-50, 0], [0, 50], [0, -50], [35, 35], [-35, -35], [35, -35], [-35, 35]];
+        let found: { dx: number; dy: number; x: number; y: number } | null = null;
+        for (let d = 2; d <= 8 && !found; d++) {
+          for (const at of standList(m, d)) {
+            if (found) break;
+            await teleport(page, at.x, at.y);
+            await page.waitForTimeout(100);
+            const c = await page.evaluate(([x, y]) => (window as unknown as { __ow: { clientOf(x: number, y: number): { x: number; y: number } } }).__ow.clientOf(x!, y!), [m.x, m.y]);
+            const hits = await page.evaluate(([x, y, list]) => (list as number[][]).map(([dx, dy]) => (document.elementFromPoint(x! + dx!, y! + dy!) as HTMLElement | null)?.tagName ?? ''), [c.x, c.y, offsets] as [number, number, number[][]]);
+            const i = hits.findIndex((t) => t === 'CANVAS');
+            if (i >= 0) found = { dx: offsets[i]![0]!, dy: offsets[i]![1]!, x: c.x, y: c.y };
+          }
+        }
+        expect(found, 'the canvas is under the finger at some distance from the mound').toBeTruthy();
+        await page.mouse.click(found!.x + found!.dx, found!.y + found!.dy);
         await expect.poll(() => gems(page), { timeout: 15_000 }).toBe(before + 1);
       });
 
@@ -167,16 +198,20 @@ for (const vp of VIEWPORTS) {
         expect(spot).toBeTruthy();
         const ent = s.entities.find((e: St) => e.spotId === spot.id);
         expect(ent.shown).toBe(false);
-        await teleport(page, spot.x, spot.y - 6);
+        { const at = standAt(spot, 6); await teleport(page, at.x, at.y); }
         await page.waitForTimeout(400);
         expect((await state(page)).entities.find((e: St) => e.spotId === spot.id).shown).toBe(false);
-        await teleport(page, spot.x, spot.y - 3);
+        { const at = standAt(spot, 3); await teleport(page, at.x, at.y); }
         await expect.poll(async () => (await state(page)).entities.find((e: St) => e.spotId === spot.id).shown, { timeout: 5000 }).toBe(true);
         await shot(page, who, vp, 'dog-found');
         const before = await gems(page);
-        await tap(page, spot.x, spot.y);
-        await expect(page.locator('.question-modal')).toBeVisible({ timeout: 25_000 });
-        await answer(page, who);
+        // The walk to the chest can cross a monster: its question comes first. Answer what shows and tap the chest again until it opens.
+        for (let i = 0; i < 6 && !(await state(page)).trip.opened.includes(spot.id); i++) {
+          await tap(page, spot.x, spot.y);
+          await expect(page.locator('.question-modal')).toBeVisible({ timeout: 25_000 });
+          await answer(page, who);
+          await expect(page.locator('.question-modal')).toHaveCount(0, { timeout: 12_000 });
+        }
         await expect.poll(async () => (await state(page)).trip.opened, { timeout: 15_000 }).toContain(spot.id);
         await expect.poll(() => gems(page), { timeout: 15_000 }).toBeGreaterThan(before);
         await expect(page.locator('.question-modal')).toHaveCount(0, { timeout: 12_000 });

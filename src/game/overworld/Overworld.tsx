@@ -29,7 +29,7 @@ import {
 } from './lair';
 import { BossBar, DoorLabel, LairHud } from './LairHud';
 import { walkSpeed } from './speed';
-import { BEETLE_GEMS, DOG_CHEST_GEMS, DOG_SNIFF_RANGE, activePet, beetleId, beetleTile, claimPetGrant, lairRingFill, pupCheer } from './pets';
+import { BEETLE_GEMS, DOG_CHEST_GEMS, DOG_SNIFF_RANGE, activePet, beetleId, beetleTile, claimPetGrant, lairRingFill, pupCheer, snapPetTap } from './pets';
 import { doorLabel, lairRetryEntity, miniMap, openedLairSpots } from './lairView';
 import { LAIRS, MAPS, findTiles, heroStart, isWalkable, tileAt, type LairDef, type Point, type RegionId, type TileMap, type WalkCtx } from './maps';
 import { approach } from './pathfind';
@@ -1327,8 +1327,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     }
     // A pet's spot (the Beetle's mound, the Dog's shown chest) is a 120 px target: a tap within 60 px of its center counts as a tap on it.
     const spots: Point[] = [...(beetleAt() ? [beetleAt()!] : []), ...entsRef.current.filter((x) => x.dog && x.shown)];
-    const css = (p: Point) => ({ x: rect.left + ((p.x + 0.5) * t - left) / ratio, y: rect.top + ((p.y + 0.5) * t - top) / ratio });
-    const snap = spots.find((p) => Math.hypot(css(p).x - e.clientX, css(p).y - e.clientY) <= 60);
+    const snap = snapPetTap({ x: e.clientX, y: e.clientY }, rect, canvas.width, { t, left, top }, spots);
     tapTile(snap ? { x: snap.x, y: snap.y } : tile);
     bump((n) => n + 1);
   };
