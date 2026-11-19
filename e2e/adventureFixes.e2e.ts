@@ -200,7 +200,9 @@ test('Camp is lit: no guide is drawn, the voice says it once, and the campfire s
   for (let guard = 0; guard < 8; guard++) {
     const left = (await ow(page, (o) => o.state())).entities.filter((e) => e.shown);
     if (!left.length) break;
-    await page.evaluate(([x, y]) => (window as unknown as { __ow: Ow }).__ow.tapTile(x!, y!), [left[0]!.x, left[0]!.y]);
+    // Walking to each monster takes 8 to 20 s of real time, so 3 fights ran 37 to 90 s against the 90 s test timeout.
+    // The hero starts one tile below the monster, so the tap opens the fight at once.
+    await page.evaluate(([x, y]) => { const o = (window as unknown as { __ow: Ow }).__ow; o.teleport(x!, y! + 1); o.tapTile(x!, y!); }, [left[0]!.x, left[0]!.y]);
     await expect(page.locator('.question-modal')).toBeVisible({ timeout: 25_000 });
     const teach = page.getByRole('button', { name: 'Let me try one!' });
     if (await teach.isVisible()) await teach.click();
