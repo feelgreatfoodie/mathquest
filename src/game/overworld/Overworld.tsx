@@ -20,7 +20,7 @@ import { TILE, drawScene, viewFor, type Scene } from './draw';
 import { MAX_VISIBLE, planEntities, retryEntity, type Entity } from './encounters';
 import { MAPS, findTiles, heroStart, isWalkable, tileAt, type Point, type RegionId, type WalkCtx } from './maps';
 import { approach } from './pathfind';
-import { NEXT_REGION, PREV_REGION, REGION_NAMES, gateInfo, lairMessage, regionProgress } from './regions';
+import { NEXT_REGION, PREV_REGION, REGION_NAMES, furthestRegion, gateInfo, lairMessage, lairPicture, regionProgress } from './regions';
 import { fromDoc, settleHero, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
 
 const SPEED = 4; // tiles a second
@@ -45,7 +45,7 @@ interface Msg {
   text: string;
   progress?: number;
   /** A pre-reader's lair message: a dragon icon and one dot per card, filled for the ready ones. No sentence. */
-  dots?: { done: number; total: number };
+  dots?: { tokens: number; lit: number; count: string };
 }
 
 /** The voice. `speak` stays silent while the kid is muted or a parent set voice off. */
@@ -55,7 +55,7 @@ function voice(text: string) {
 
 export const CAMP_VOICE = 'Walk to the campfire to finish your trip!';
 export const COMING_SOON_VOICE = 'More lands are coming soon!';
-export const LAIR_VOICE = 'Wake the dragon! Answer the facts.';
+export const LAIR_VOICE = 'The dragon is sleeping. Answer more to wake it!';
 
 type Intent = 'boss' | 'gate' | null;
 
@@ -77,6 +77,13 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const cardsRef = useRef<CardMap>({});
   const startedAt = useRef(Date.now());
   const worldRef = useRef<WorldState | null>(null);
+  /** The furthest land the kid has stood in or beaten. Gates up to it stay open, so a change to the ladder never moves a kid back. */
+  const reachedRef = useRef<RegionId>('meadow');
+  const reached = useCallback((): RegionId => {
+    const w = worldRef.current;
+    if (w) reachedRef.current = furthestRegion(reachedRef.current, w.region, ...w.bossesDefeated);
+    return reachedRef.current;
+  }, []);
   const entsRef = useRef<Entity[]>([]);
   const known = useRef(new Set<string>());
   const bossIds = useRef(new Set<string>());
@@ -136,8 +143,8 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const walkCtx = useCallback((): WalkCtx => {
     const w = worldRef.current!;
     const next = NEXT_REGION[w.region];
-    return { gateOpen: next ? gateInfo(next, liveCards(), kidRef.current.settings).open : false, hasKey: gearRef.current.key, hasBridgeKit: gearRef.current.bridge };
-  }, [liveCards]);
+    return { gateOpen: next ? gateInfo(next, liveCards(), kidRef.current.settings, reached()).open : false, hasKey: gearRef.current.key, hasBridgeKit: gearRef.current.bridge };
+  }, [liveCards, reached]);
 
   const refreshHud = useCallback(() => {
     const r = runnerRef.current;
@@ -227,6 +234,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         cardsRef.current = cards;
         startedAt.current = at;
         worldRef.current = w;
+        reachedRef.current = furthestRegion(w.region, ...w.bossesDefeated);
         hero.current = { ...hero.current, x: w.x, y: w.y, fx: w.x, fy: w.y, facing: w.facing };
         setRegion(w.region);
         setKeys(w.keys);
@@ -369,16 +377,16 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     const w = worldRef.current!;
     const cards = liveCards();
     if (w.bossesDefeated.includes(w.region)) return say({ text: 'The lair is quiet. You already won here.' });
-    if (!bossReady(w.region, cards)) {
-      const p = regionProgress(w.region, cards);
+    if (!bossReady(w.region, cards, kidRef.current.settings)) {
+      const p = regionProgress(w.region, cards, kidRef.current.settings);
       // N and the bar use the larger of the two counts (reviewing, steady). A pre-reader gets the icon, the dots and the voice.
       if (learner === 'prereader') {
         voice(LAIR_VOICE);
-        return say({ text: '', dots: { done: p.done, total: p.total } });
+        return say({ text: '', dots: lairPicture(p.done, p.total) });
       }
-      return say({ text: lairMessage(w.region, p.done, p.total), progress: p.share });
+      return say({ text: lairMessage(w.region, p.done, p.total, kidRef.current.settings), progress: p.share });
     }
-    const plan = bossPlan({ region: w.region, cards, now: Date.now(), rng: Math.random });
+    const plan = bossPlan({ region: w.region, cards, now: Date.now(), rng: Math.random, settings: kidRef.current.settings });
     if (!plan.length) return say({ text: 'Nothing to fight yet.' });
     const entries = r.append(plan).filter((e) => e.kind !== 'teach');
     for (const e of entries) {
@@ -402,9 +410,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       voice(COMING_SOON_VOICE);
       return say({ text: learner === 'prereader' ? 'Coming soon' : 'More lands coming soon' });
     }
-    const info = gateInfo(next, liveCards(), kidRef.current.settings);
+    const info = gateInfo(next, liveCards(), kidRef.current.settings, reached());
     say({ text: `The gate to the ${REGION_NAMES[next]} is locked: ${info.label}`, progress: info.total ? info.learned / info.total : 0 });
-  }, [liveCards, say, learner]);
+  }, [liveCards, say, learner, reached]);
 
   const onArrive = useCallback(() => {
     const w = worldRef.current!;
@@ -805,11 +813,12 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         {msg ? (
           <div className="ow-msg" role="status" data-testid="ow-msg">
             {msg.dots ? (
-              <div className="ow-lair" data-testid="ow-lair-dots" role="img" aria-label={`${msg.dots.done} of ${msg.dots.total} ready`}>
+              <div className="ow-lair" data-testid="ow-lair-dots" role="img" aria-label={msg.dots.count.replace('/', ' of ')}>
                 <Sprite name="boss" size={44} />
                 <span className="ow-dots">
-                  {Array.from({ length: msg.dots.total }, (_, i) => <i key={i} className={i < msg.dots!.done ? 'on' : ''} />)}
+                  {Array.from({ length: msg.dots.tokens }, (_, i) => <i key={i} className={i < msg.dots!.lit ? 'on' : ''} />)}
                 </span>
+                <b className="ow-count" data-testid="ow-lair-count">{msg.dots.count}</b>
               </div>
             ) : null}
             {msg.text ? <p>{msg.text}</p> : null}
