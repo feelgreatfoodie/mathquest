@@ -41,6 +41,10 @@ const BATCH_MAX = 450;
 export class FirestoreRepo implements Repo {
   readonly mode = 'firestore' as const;
 
+  get parentKey(): string {
+    return this.uid;
+  }
+
   constructor(
     private db: Firestore,
     private uid: string,

@@ -25,6 +25,7 @@ function write(key: string, value: unknown): void {
 /** Single-device storage. Used when Firebase isn't configured or VITE_DATA_MODE=local. */
 export class LocalRepo implements Repo {
   readonly mode = 'local' as const;
+  readonly parentKey = 'local';
 
   async getFamily(): Promise<Family | null> {
     return read<Family | null>('family', null);

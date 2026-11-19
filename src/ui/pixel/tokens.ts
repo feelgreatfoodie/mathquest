@@ -37,6 +37,33 @@ export const TITLE = {
   tagline: '#fde68a',
 } as const;
 
+/**
+ * style-3, the Grown-ups area. Color has meaning: green is strong, amber needs work, grey is not started. Each level has a fill
+ * and the text on it. The five levels follow the mastery levels 0 to 4 of the grids (lv0 to lv4 in styles.css).
+ */
+export const STATUS = {
+  notStarted: { fill: '#3a3d4d', text: '#e5e7f0' },
+  needsWork: { fill: '#d97706', text: '#1a1300' },
+  needsWorkNear: { fill: '#fbbf24', text: '#1a1300' },
+  strong: { fill: '#4ade80', text: '#052e16' },
+  strongest: { fill: '#22c55e', text: '#052e16' },
+} as const;
+
+/** The Grown-ups light theme. It only recolors the Grown-ups area; kid screens stay on the dark pixel look. */
+export const GROWNUPS_LIGHT = {
+  bg: '#f4f5fb',
+  bg2: '#e8eaf5',
+  panel: '#ffffff',
+  panel2: '#eceefa',
+  line: '#9aa1c2',
+  text: '#141726',
+  muted: '#4a5070',
+  gold: '#8a4b00',
+  good: '#166534',
+  bad: '#b91c1c',
+  info: '#1d4ed8',
+} as const;
+
 export const FONTS = {
   display: "'Press Start 2P', ui-monospace, monospace",
   body: "'Atkinson Hyperlegible', system-ui, -apple-system, sans-serif",
@@ -83,4 +110,17 @@ export const PAIRS: readonly Pair[] = [
   { name: 'tagline on sky top', fg: TITLE.tagline, bg: SKY[0] },
   { name: 'tagline on sky band 2', fg: TITLE.tagline, bg: SKY[1] },
   { name: 'white on sky band 3', fg: '#f8fafc', bg: SKY[2] },
+  // style-3: status colors and the Grown-ups light theme
+  ...Object.entries(STATUS).map(([k, s]) => ({ name: `status ${k} text on fill`, fg: s.text, bg: s.fill })),
+  { name: 'light theme text on panel', fg: GROWNUPS_LIGHT.text, bg: GROWNUPS_LIGHT.panel },
+  { name: 'light theme text on page', fg: GROWNUPS_LIGHT.text, bg: GROWNUPS_LIGHT.bg },
+  { name: 'light theme text on inset', fg: GROWNUPS_LIGHT.text, bg: GROWNUPS_LIGHT.bg2 },
+  { name: 'light theme muted on panel', fg: GROWNUPS_LIGHT.muted, bg: GROWNUPS_LIGHT.panel },
+  { name: 'light theme muted on page', fg: GROWNUPS_LIGHT.muted, bg: GROWNUPS_LIGHT.bg },
+  { name: 'light theme muted on inset', fg: GROWNUPS_LIGHT.muted, bg: GROWNUPS_LIGHT.bg2 },
+  { name: 'light theme gold on panel', fg: GROWNUPS_LIGHT.gold, bg: GROWNUPS_LIGHT.panel },
+  { name: 'light theme good on panel', fg: GROWNUPS_LIGHT.good, bg: GROWNUPS_LIGHT.panel },
+  { name: 'light theme bad on panel', fg: GROWNUPS_LIGHT.bad, bg: GROWNUPS_LIGHT.panel },
+  { name: 'light theme info on panel', fg: GROWNUPS_LIGHT.info, bg: GROWNUPS_LIGHT.panel },
+  { name: 'dark theme muted on panel', fg: '#b6bdd8', bg: '#232842' },
 ];

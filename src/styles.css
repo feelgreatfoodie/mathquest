@@ -1274,3 +1274,109 @@ html[data-crt='on'] body::after {
 .intro-buttons { justify-content: space-between; }
 .intro-buttons .btn { min-width: 140px; }
 @media (prefers-reduced-motion: reduce) { .intro-track { scroll-behavior: auto; } }
+
+/* ===== style-3: Grown-ups area. Clean, number first, color with a meaning; pixel art only as small accents. Values mirror tokens.ts (STATUS, GROWNUPS_LIGHT). ===== */
+:root {
+  --st-none: #3a3d4d; --st-none-text: #e5e7f0;
+  --st-work: #d97706; --st-work-text: #1a1300;
+  --st-work-near: #fbbf24; --st-work-near-text: #1a1300;
+  --st-strong: #4ade80; --st-strong-text: #052e16;
+  --st-strongest: #22c55e; --st-strongest-text: #052e16;
+}
+/* Mastery levels: grey is not started, amber needs work, green is strong. */
+.lv0 { background: var(--st-none); color: var(--st-none-text); }
+.lv1 { background: var(--st-work); color: var(--st-work-text); }
+.lv2 { background: var(--st-work-near); color: var(--st-work-near-text); }
+.lv3 { background: var(--st-strong); color: var(--st-strong-text); }
+.lv4 { background: var(--st-strongest); color: var(--st-strongest-text); }
+.ins-state.locked { color: #fbbf24; }
+.ins-state.open { color: #4ade80; }
+.parent .head-icon { vertical-align: -3px; margin-right: 4px; image-rendering: pixelated; }
+.gem-history .gain .gem-delta { color: #4ade80; }
+.gem-history .spend .gem-delta { color: #fbbf24; }
+.gem-history .free .gem-delta { color: var(--muted); }
+.gem-history .gem-delta { font-weight: 700; font-variant-numeric: tabular-nums; }
+.theme-toggle { min-height: 48px; }
+
+/* The light theme: the Grown-ups area only. Parent choice, kept on this device. */
+.screen.parent[data-theme='light'] {
+  --bg: #f4f5fb; --bg-2: #e8eaf5; --panel: #ffffff; --panel-2: #eceefa; --line: #9aa1c2;
+  --text: #141726; --muted: #4a5070; --gold: #8a4b00; --gold-dark: #8a4b00; --good: #166534; --bad: #b91c1c; --info: #1d4ed8;
+  background: var(--bg);
+  color: var(--text);
+  color-scheme: light;
+}
+html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
+.screen.parent[data-theme='light'] .panel { box-shadow: 0 4px 0 #c9cde3; }
+.screen.parent[data-theme='light'] .btn { background: #fbbf24; color: #1a1300; }
+.screen.parent[data-theme='light'] .btn-ghost { background: transparent; color: var(--text); border-color: var(--line); }
+.screen.parent[data-theme='light'] .tab { color: var(--text); }
+.screen.parent[data-theme='light'] .ins-alerts li { background: var(--bg-2); }
+.screen.parent[data-theme='light'] .gem-history .gain .gem-delta { color: var(--good); }
+.screen.parent[data-theme='light'] .gem-history .spend .gem-delta { color: #9a3412; }
+.screen.parent[data-theme='light'] .ins-state.locked { color: #9a3412; }
+.screen.parent[data-theme='light'] .ins-state.open { color: var(--good); }
+.screen.parent[data-theme='light'] .stat-value { color: var(--text); }
+.screen.parent[data-theme='light'] .tab.is-active { background: #fbbf24; color: #1a1300; border-color: #8a4b00; }
+
+/* ===== style-3: Adventure polish. A slimmer top bar, pixel hearts, a see-through walk pad. ===== */
+.ow-hud { padding: 4px 10px; gap: 10px; }
+.ow-hud .icon-btn, .ow-hud .hold-btn { width: 56px; height: 56px; margin: 4px; }
+.ow-stat { font-size: 20px; }
+.ow-hearts { display: inline-flex; gap: 2px; letter-spacing: 0; }
+.ow-hearts i { display: inline-flex; font-style: normal; }
+.ow-hearts svg, .ow-stat svg { image-rendering: pixelated; }
+.ow-dir { border: 0; border-radius: 0; margin: 4px; background: rgba(44, 51, 84, 0.58); color: var(--px-neutral-text); box-shadow: -4px 0 0 rgba(13, 16, 32, 0.7), 4px 0 0 rgba(13, 16, 32, 0.7), 0 -4px 0 rgba(13, 16, 32, 0.7), 0 4px 0 rgba(13, 16, 32, 0.7), inset 0 4px 0 rgba(255, 255, 255, 0.14), inset 0 -6px 0 rgba(28, 32, 54, 0.7); }
+.ow-dir:active { background: var(--px-neutral); }
+.ow-pre .ow-dir { margin: 0; }
+.ow-msg { border-radius: 0; border: 0; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); }
+
+/* ===== style-3: the shop stall and the vault door. ===== */
+.px-stall { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: stretch; flex: none; }
+.px-awning { height: 28px; background: repeating-linear-gradient(to right, #dc2626 0 28px, #fef3c7 28px 56px); box-shadow: 0 4px 0 var(--px-edge), inset 0 -8px 0 rgba(0, 0, 0, 0.2); }
+.px-stall-posts { display: flex; align-items: flex-end; justify-content: space-between; gap: 6px; padding: 0 6px; background: var(--px-neutral-dark); min-height: 56px; }
+.px-post { flex: none; width: 8px; align-self: stretch; background: #7a4a22; box-shadow: inset -2px 0 0 #5e3a1a; }
+.px-stall-goods { display: flex; align-items: flex-end; justify-content: center; gap: 12px; padding: 8px 0 2px; }
+.px-counter { height: 12px; background: #7a4a22; box-shadow: inset 0 3px 0 #9a6a3a, 0 4px 0 var(--px-edge); }
+.px-vault-scene { display: flex; align-items: flex-end; justify-content: center; gap: 18px; padding: 8px 12px 6px; width: 100%; max-width: 420px; background: var(--px-neutral-dark); box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); flex: none; }
+.px-vault-door { image-rendering: pixelated; }
+.px-gem-pile { display: inline-flex; align-items: flex-end; gap: 2px; }
+.px-gem-pile svg { image-rendering: pixelated; }
+/* Items sit on shelves: a wooden plank under each card. */
+.shop-item, .pshop-card { position: relative; border-radius: 0; margin-bottom: 14px; }
+.shop-item::after, .pshop-card::after { content: ''; position: absolute; left: -4px; right: -4px; bottom: -12px; height: 8px; background: #7a4a22; box-shadow: inset 0 3px 0 #9a6a3a, 0 3px 0 var(--px-edge); pointer-events: none; }
+.shop-grid { row-gap: 22px; }
+.pshop-grid { row-gap: 34px; }
+@media (max-height: 800px) { .pshop > .px-stall, .pshop > .px-vault-scene { display: none; } }
+@media (prefers-reduced-motion: reduce) { .ow-dir:active { transform: none; } }
+
+/* ===== style-3: Adventure polish. A slimmer top bar, pixel hearts, a see-through walk pad. ===== */
+.ow-hud { padding: 4px 10px; gap: 10px; }
+.ow-hud .icon-btn, .ow-hud .hold-btn { width: 56px; height: 56px; margin: 4px; }
+.ow-stat { font-size: 20px; }
+.ow-hearts { display: inline-flex; gap: 2px; letter-spacing: 0; }
+.ow-hearts i { display: inline-flex; font-style: normal; }
+.ow-hearts svg, .ow-stat svg { image-rendering: pixelated; }
+.ow-dir { border: 0; border-radius: 0; margin: 4px; background: rgba(44, 51, 84, 0.58); color: var(--px-neutral-text); box-shadow: -4px 0 0 rgba(13, 16, 32, 0.7), 4px 0 0 rgba(13, 16, 32, 0.7), 0 -4px 0 rgba(13, 16, 32, 0.7), 0 4px 0 rgba(13, 16, 32, 0.7), inset 0 4px 0 rgba(255, 255, 255, 0.14), inset 0 -6px 0 rgba(28, 32, 54, 0.7); }
+.ow-dir:active { background: var(--px-neutral); }
+.ow-pre .ow-dir { margin: 0; }
+.ow-msg { border-radius: 0; border: 0; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); }
+
+/* ===== style-3: the shop stall and the vault door. ===== */
+.px-stall { width: 100%; max-width: 420px; display: flex; flex-direction: column; align-items: stretch; flex: none; }
+.px-awning { height: 28px; background: repeating-linear-gradient(to right, #dc2626 0 28px, #fef3c7 28px 56px); box-shadow: 0 4px 0 var(--px-edge), inset 0 -8px 0 rgba(0, 0, 0, 0.2); }
+.px-stall-posts { display: flex; align-items: flex-end; justify-content: space-between; gap: 6px; padding: 0 6px; background: var(--px-neutral-dark); min-height: 56px; }
+.px-post { flex: none; width: 8px; align-self: stretch; background: #7a4a22; box-shadow: inset -2px 0 0 #5e3a1a; }
+.px-stall-goods { display: flex; align-items: flex-end; justify-content: center; gap: 12px; padding: 8px 0 2px; }
+.px-counter { height: 12px; background: #7a4a22; box-shadow: inset 0 3px 0 #9a6a3a, 0 4px 0 var(--px-edge); }
+.px-vault-scene { display: flex; align-items: flex-end; justify-content: center; gap: 18px; padding: 8px 12px 6px; width: 100%; max-width: 420px; background: var(--px-neutral-dark); box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); flex: none; }
+.px-vault-door { image-rendering: pixelated; }
+.px-gem-pile { display: inline-flex; align-items: flex-end; gap: 2px; }
+.px-gem-pile svg { image-rendering: pixelated; }
+/* Items sit on shelves: a wooden plank under each card. */
+.shop-item, .pshop-card { position: relative; border-radius: 0; margin-bottom: 14px; }
+.shop-item::after, .pshop-card::after { content: ''; position: absolute; left: -4px; right: -4px; bottom: -12px; height: 8px; background: #7a4a22; box-shadow: inset 0 3px 0 #9a6a3a, 0 3px 0 var(--px-edge); pointer-events: none; }
+.shop-grid { row-gap: 22px; }
+.pshop-grid { row-gap: 34px; }
+@media (max-height: 800px) { .pshop > .px-stall, .pshop > .px-vault-scene { display: none; } }
+@media (prefers-reduced-motion: reduce) { .ow-dir:active { transform: none; } }

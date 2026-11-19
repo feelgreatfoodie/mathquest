@@ -15,6 +15,7 @@ import { chest as chestSound, defeat, unlockSounds } from '../../ui/early/sounds
 import { speak, unlockSpeech } from '../../ui/early/useSpeech';
 import { MuteButton, useMute } from '../../ui/MuteButton';
 import { Sprite, UiIcon } from '../../ui/sprites';
+import { PixelHeart, PixelIcon } from '../../ui/pixel';
 import { QuestionPanel } from '../QuestionPanel';
 import { ownedItems } from '../shop/shopState';
 import type { GameModeProps } from '../modes/types';
@@ -677,6 +678,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       draw(time);
       raf = requestAnimationFrame(loop);
     };
+    const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const draw = (time: number) => {
       const canvas = canvasRef.current;
       const w = worldRef.current;
@@ -708,6 +710,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         lantern: gearRef.current.lantern,
         time,
         marker: markerRef.current,
+        still: reducedMotion,
       };
       drawScene(g, canvas.width, canvas.height, scale, scene);
       viewScale.current = scale;
@@ -864,16 +867,16 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     <div className={`screen overworld${learner === 'prereader' ? ' ow-pre' : ''}`} data-testid="overworld" data-region={region}>
       <div className="ow-hud">
         <HoldButton onHold={() => void finishTrip()} ms={CAMP_HOLD_MS} label="Hold to go to camp">
-          <UiIcon name="house" size={44} />
+          <PixelIcon name="house" size={44} />
         </HoldButton>
-        <span className="ow-hearts" aria-hidden="true">{[0, 1, 2].map((i) => <i key={i}>♥</i>)}</span>
-        <span className="ow-stat" aria-label={`${kid.game.gems} gems`}><UiIcon name="gem" size={30} /><b>{kid.game.gems}</b></span>
+        <span className="ow-hearts" aria-hidden="true">{[0, 1, 2].map((i) => <i key={i}><PixelHeart size={24} /></i>)}</span>
+        <span className="ow-stat" aria-label={`${kid.game.gems} gems`}><PixelIcon name="gem" size={30} /><b>{kid.game.gems}</b></span>
         <span className="ow-stat" aria-label={`${keys} keys`} data-testid="ow-keys"><KeyIcon /><b>{keys}</b></span>
-        <span className="ow-stat ow-chests" aria-label={`${chestHud.open} of ${chestHud.total} chests opened`} data-testid="ow-chests"><UiIcon name="chest" size={30} /><b>{learner === 'prereader' ? `${chestHud.open}/${chestHud.total}` : `${chestHud.open} of ${chestHud.total}`}</b></span>
+        <span className="ow-stat ow-chests" aria-label={`${chestHud.open} of ${chestHud.total} chests opened`} data-testid="ow-chests"><PixelIcon name="chest" size={30} /><b>{learner === 'prereader' ? `${chestHud.open}/${chestHud.total}` : `${chestHud.open} of ${chestHud.total}`}</b></span>
         <span className="ow-remaining" role="status" aria-label={`${waiting.length} questions left`} data-testid="ow-left">
           {waiting.slice(0, 8).map((e) => <Sprite key={e.id} name={entsRef.current.find((x) => x.id === e.id)?.look ?? 'slime'} size={26} />)}
           {waiting.length > 8 ? <b>+{waiting.length - 8}</b> : null}
-          {waiting.length === 0 ? <span className="ow-camp-lit" data-testid="camp-lit"><UiIcon name="flame" size={30} /> Camp is lit!</span> : null}
+          {waiting.length === 0 ? <span className="ow-camp-lit" data-testid="camp-lit"><PixelIcon name="flame" size={30} /> Camp is lit!</span> : null}
         </span>
         {adventureItems.map((id) => <Sprite key={id} name={id} size={28} className="ow-item" />)}
         <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} chimesOnly={mute.chimesOnly} />
@@ -952,11 +955,6 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
 }
 
 function KeyIcon() {
-  return (
-    <svg width="30" height="30" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="8" cy="12" r="4.5" fill="#facc15" stroke="#a16207" strokeWidth="1.5" />
-      <path d="M12 12h10v4M18 12v3" fill="none" stroke="#a16207" strokeWidth="2.4" strokeLinecap="round" />
-    </svg>
-  );
+  return <PixelIcon name="key" size={30} />;
 }
 
