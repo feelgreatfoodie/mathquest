@@ -5,3 +5,5 @@ export { PixelIcon, PIXEL_ICONS, PIXEL_ICON_NAMES, type PixelIconName } from './
 export { PixelFrame, PixelButton, type PixelTone } from './parts';
 export { SkyBands, Stars, Moon, Tree, Hills, HillLayer } from './scene';
 export { readCrt, writeCrt, applyCrt, crtKey } from './crt';
+export { TorchRow, DungeonWalls, HpBar } from './dungeon';
+export { PixelPlay, PixelMap } from './art';

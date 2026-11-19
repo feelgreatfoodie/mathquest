@@ -10,20 +10,11 @@ import { finishRun } from '../../ui/finishRun';
 import { usePauseStop } from '../../ui/usePause';
 import { loadRunner } from '../../ui/runShared';
 import { MONSTERS, Sprite, UiIcon } from '../../ui/sprites';
+import { DungeonWalls, HpBar, PixelIcon, TorchRow } from '../../ui/pixel';
 import { QuestionPanel, type QuestionPanelHandle } from '../QuestionPanel';
 import type { GameModeProps } from './types';
 
 const PATH_DOTS = 10;
-
-function PathDots({ done }: { done: number }) {
-  return (
-    <div className="path-dots" role="img" aria-label={`${done} of ${PATH_DOTS}`}>
-      {Array.from({ length: PATH_DOTS }, (_, i) => (
-        <span key={i} className={`path-dot ${i < done ? 'is-done' : i === done ? 'is-here' : ''}`} />
-      ))}
-    </div>
-  );
-}
 
 /** The run for kids who cannot read yet: pictures, a voice, big buttons. Questions come from QuestionPanel. */
 export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeProps) {
@@ -142,20 +133,21 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
   return (
     <div className="screen run early-run">
       <div className="run-top early-top">
-        <HoldButton onHold={() => void finish()}><UiIcon name="house" size={44} /></HoldButton>
+        <HoldButton onHold={() => void finish()}><PixelIcon name="house" size={44} /></HoldButton>
         {saved ? <div className="saved-toast" role="status"><UiIcon name="check" size={32} /> Saved!</div> : null}
-        <PathDots done={done} />
+        <TorchRow done={done} total={PATH_DOTS} label={`${done} of ${PATH_DOTS}`} />
         <div className="early-top-right">
           <HearButton text={entry.problem.speech ?? ''} muted={mute.voiceMuted} disabled={solved} big />
           <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big chimesOnly={mute.chimesOnly} />
         </div>
       </div>
 
-      <div className="arena early-arena">
+      <div className="arena early-arena px-arena">
+        <DungeonWalls />
         <HeroFigure game={kid.game} size={96} className={`hero-sprite ${solved ? 'hop' : ''}`} strike={solved} cheer={false} />
         <div className={`monster ${shake ? 'shake' : ''} ${solved ? 'hit' : ''}`}>
           {solved ? <span className="star-burst" key={`b${entry.id}`} aria-hidden="true">{[0, 1, 2, 3, 4, 5].map((i) => <i key={i} style={{ ['--a' as string]: `${i * 60}deg` }} />)}</span> : null}
-          <div className="hp"><div className="hp-fill" style={{ width: `${hp * 100}%` }} /></div>
+          <HpBar fraction={hp} />
           <Sprite name={monster} size={monster === 'boss' ? 120 : 96} />
         </div>
       </div>

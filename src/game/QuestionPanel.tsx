@@ -17,6 +17,7 @@ import { speak, stopSpeaking } from '../ui/early/useSpeech';
 import { SpeakButton } from '../ui/SpeakButton';
 import { goAction, wholeAllowed } from '../engine/fractionInput';
 import { UiIcon } from '../ui/sprites';
+import { PixelIcon } from '../ui/pixel';
 import { reportFailure } from '../ui/failures';
 
 /**
@@ -139,7 +140,7 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
   if (entry.kind === 'teach') {
     const def = getCardDef(entry.cardId)!;
     return (
-      <div className="panel teach">
+      <div className="panel teach px-frame px-stone">
         <p className="pixel tag">New skill!</p>
         <h2>
           {cardLabel(entry.cardId)}
@@ -153,7 +154,7 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
         </div>
         <button
           type="button"
-          className="btn btn-big"
+          className="btn btn-big px-frame px-btn px-big px-gold"
           onClick={() => {
             runner.acknowledge();
             resolve(null);
@@ -191,7 +192,7 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
 
   return (
     <>
-      <div className={`panel question ${entry.kind === 'practice' && !entry.fill && !entry.riddle ? 'is-practice' : ''}`} data-preview={entry.preview ? 'true' : undefined}>
+      <div className={`panel question px-frame px-stone ${entry.kind === 'practice' && !entry.fill && !entry.riddle ? 'is-practice' : ''}`} data-preview={entry.preview ? 'true' : undefined}>
         {entry.kind === 'practice' && !entry.fill && !entry.riddle ? <p className="pixel tag">Try again!</p> : null}
         {entry.riddle ? <p className="pixel tag" data-testid="riddle-tag">A riddle!</p> : null}
         {entry.problem.story ? <p className="story" data-testid="riddle-story">{entry.problem.story}</p> : null}
@@ -235,11 +236,7 @@ function AnswerView({ problem }: { problem: Problem }) {
 }
 
 function Bolt() {
-  return (
-    <svg width="44" height="44" viewBox="0 0 24 24" fill="#fde047" stroke="#a16207" strokeWidth="1.5" aria-hidden="true">
-      <path d="M13 2L4 14h7l-1 8 9-12h-7z" />
-    </svg>
-  );
+  return <PixelIcon name="bolt" size={44} />;
 }
 
 function FeedbackView({ fb, onContinue }: { fb: Feedback; onContinue: () => void }) {
@@ -262,7 +259,7 @@ function FeedbackView({ fb, onContinue }: { fb: Feedback; onContinue: () => void
         <span>{fb.hint}</span>
         <SpeakButton text={fb.hint} className="hint-speaker" />
       </p>
-      <button type="button" className="btn btn-big" onClick={onContinue} autoFocus>
+      <button type="button" className="btn btn-big px-frame px-btn px-big px-go" onClick={onContinue} autoFocus>
         Got it
       </button>
     </div>

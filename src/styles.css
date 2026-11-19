@@ -1274,3 +1274,172 @@ html[data-crt='on'] body::after {
 .intro-buttons { justify-content: space-between; }
 .intro-buttons .btn { min-width: 140px; }
 @media (prefers-reduced-motion: reduce) { .intro-track { scroll-behavior: auto; } }
+/* ===== style-2: Dungeon question, Picture Run, miss, teach, Home, end screens. Tokens come from tokens.ts (DUNGEON, INSET). ===== */
+:root {
+  --px-wall: #3b1d6e; --px-wall-dark: #2e1658; --px-floor: #4b5563; --px-floor-dark: #374151;
+  --px-inset: #141726; --px-inset-text: #f8fafc; --px-inset-muted: #b6bdd8; --px-inset-gold: #fbbf24; --px-inset-good: #4ade80; --px-inset-info: #60a5fa; --px-inset-bad: #fca5a5;
+  /* Scene height: 400 px on a tall iPad, shrinking so the question and keypad still fit on a short screen. */
+  --scene-h: clamp(150px, calc(100vh - 710px), 400px);
+}
+@supports (height: 100dvh) { :root { --scene-h: clamp(150px, calc(100dvh - 710px), 400px); } }
+@media (orientation: portrait) and (min-height: 1000px) { :root { --scene-h: clamp(150px, calc(100vh - 830px), 400px); } }
+@supports (height: 100dvh) { @media (orientation: portrait) and (min-height: 1000px) { :root { --scene-h: clamp(150px, calc(100dvh - 830px), 400px); } } }
+
+/* Frame look for older parts that keep their class names (tests and other screens use them). */
+.choice, .numpad-key, .play-btn, .shop-btn, .sum-btn, .icon-btn, .hold-btn, .help-btn, .peek-btn, .field-btn.px-frame, .kid-card, .face-btn, .px-home .btn-ghost {
+  --f: var(--px-neutral); --d: var(--px-neutral-dark); --t: var(--px-neutral-text); --e: var(--px-edge);
+  background: var(--f);
+  color: var(--t);
+  border: 0;
+  border-radius: 0;
+  box-shadow: -4px 0 0 var(--e), 4px 0 0 var(--e), 0 -4px 0 var(--e), 0 4px 0 var(--e), inset 0 4px 0 rgba(255, 255, 255, 0.18), inset 0 -6px 0 var(--d);
+}
+.choice:active, .numpad-key:active, .play-btn:active, .shop-btn:active, .sum-btn:active, .icon-btn:active { transform: translateY(2px); border-bottom-width: 0; box-shadow: -4px 0 0 var(--e), 4px 0 0 var(--e), 0 -4px 0 var(--e), 0 4px 0 var(--e), inset 0 6px 0 var(--d), inset 0 -4px 0 rgba(255, 255, 255, 0.18); }
+.play-btn, .sum-btn.sum-play { --f: var(--px-go); --d: var(--px-go-dark); --t: var(--px-go-text); }
+.shop-btn { --f: var(--px-gold); --d: var(--px-gold-dark); --t: var(--px-gold-text); }
+.hold-ring { border-radius: 0; }
+.hear-btn { --f: var(--px-lightning); --d: var(--px-lightning-dark); }
+.px-star { opacity: 0.3; }
+.px-star.on { opacity: 1; }
+.hold-hint { border-radius: 0; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); }
+.hold-hint::before { display: none; }
+.speak-btn { width: 52px; height: 52px; margin: 4px 8px; }
+.mute-btn .px-speaker { display: inline-flex; position: relative; }
+.mute-btn .px-speaker.is-muted svg { opacity: 0.45; }
+.mute-btn .px-speaker.is-muted::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top right, transparent calc(50% - 4px), #f87171 calc(50% - 4px) calc(50% + 4px), transparent calc(50% + 4px)); }
+
+/* Top bar: Home (hold), 10 torches, the speaker. */
+.run-top { align-items: center; }
+.px-torches { flex: 1; display: flex; gap: 4px; align-items: center; justify-content: center; padding: 8px 10px; min-width: 0; background: var(--px-neutral-dark); margin: 4px; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge), inset 0 4px 0 rgba(0, 0, 0, 0.35); }
+.px-torch { flex: 0 1 32px; min-width: 0; width: 32px; height: auto; aspect-ratio: 1; image-rendering: pixelated; }
+.px-torch:not(.is-lit) { opacity: 0.8; }
+
+/* The Dungeon scene: purple brick wall, 2 wall torches, a stone floor; hero left, monster right. */
+.arena.px-arena { position: relative; overflow: hidden; height: var(--scene-h); min-height: 0; padding: 0 6% 5%; border-radius: 0; background: var(--px-wall); margin: 4px; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); }
+.px-arena > :not(.px-dungeon-scene) { position: relative; z-index: 1; }
+.px-dungeon-scene { position: absolute; inset: 0; pointer-events: none; background-image: url('/pixel/wall.svg'); background-size: 64px 32px; image-rendering: pixelated; }
+.px-dungeon-scene::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 30%; border-top: 6px solid var(--px-wall-dark); background-color: var(--px-floor); background-image: url('/pixel/floor.svg'); background-size: 48px 24px; }
+.px-dungeon-torch { position: absolute; top: 14%; }
+.px-dungeon-torch.is-left { left: 26%; }
+.px-dungeon-torch.is-right { right: 26%; }
+.px-flicker { animation: px-flicker 0.8s steps(2) infinite; }
+@keyframes px-flicker { 50% { transform: translateY(-3px); } }
+.px-arena .hero-sprite, .px-arena .hero-fig { image-rendering: pixelated; }
+.px-arena .monster svg { image-rendering: pixelated; }
+.px-hp, .hp.px-hp { width: 130px; height: 20px; border: 0; border-radius: 0; background: var(--px-inset); box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); margin: 4px 0; }
+.px-hp .hp-fill { background: repeating-linear-gradient(to right, #ef4444 0 20px, #b91c1c 20px 24px); transition: none; }
+.px-arena .combo-badge { top: -26px; right: -50px; border-radius: 0; margin: 0; min-width: 0; padding: 8px 12px; font-size: 16px; white-space: nowrap; border: 0; }
+
+/* The question on a stone tablet; the answer slot is a dark inset. */
+.panel.question.px-stone, .panel.teach.px-stone { max-width: 720px; }
+.px-stone .tag, .px-stone .muted, .px-stone .hint { color: var(--px-stone-text); }
+.px-stone .math-op { color: var(--px-stone-text); }
+.px-stone .frac-line { background: var(--px-stone-text); }
+.px-stone .int-entry { background: var(--px-inset); color: var(--px-inset-gold); border-bottom: 0; padding: 8px 14px; box-shadow: inset 0 4px 0 #0a0c16, inset 0 -4px 0 rgba(255, 255, 255, 0.08); }
+.px-stone .int-entry.is-empty { color: var(--px-inset-muted); }
+.px-stone .math-answer { color: var(--px-stone-text); }
+.px-stone .entry-box { border-radius: 0; background: var(--px-inset); border: 0; box-shadow: inset 0 4px 0 #0a0c16; }
+.px-stone .entry-box.is-active { box-shadow: inset 0 0 0 4px var(--px-inset-gold); animation: none; }
+.px-stone .answer-fixed, .px-stone .answer-fixed .answer-check { color: #14532d; }
+.px-stone .answer-fixed .answer-was { color: var(--px-stone-text); }
+.px-stone .example { background: var(--px-inset); border-radius: 0; color: var(--px-inset-text); }
+.px-stone .example .muted, .px-stone .example .hint { color: var(--px-inset-muted); }
+.px-stone .example .math-op { color: var(--px-inset-muted); }
+.px-stone .strategy { color: var(--px-stone-text); }
+
+/* Feedback and the miss screen sit in a dark inset on the tablet, with a colored bar at the left. */
+.px-stone .feedback { border-radius: 0; border: 0; background: var(--px-inset); color: var(--px-inset-text); box-shadow: inset 0 4px 0 #0a0c16; }
+.px-stone .feedback.good { color: var(--px-inset-good); }
+.px-stone .feedback.bad { border-left: 10px solid #f87171; }
+.px-stone .feedback.almost { border-left: 10px solid var(--px-inset-info); }
+.px-stone .feedback .hint { color: var(--px-inset-text); }
+.px-stone .feedback .xp { color: var(--px-inset-info); }
+.px-stone .feedback .fast { border-radius: 0; color: #fde047; }
+.px-stone .feedback-title { color: var(--px-inset-text); }
+.px-stone .feedback .hint-speaker { margin: 4px 8px; }
+
+/* Keypad: pixel frames, 96 px tall on a tall screen, DEL and a green GO. */
+.keypad { gap: 12px; }
+.key { --f: var(--px-neutral); --d: var(--px-neutral-dark); --t: var(--px-neutral-text); --e: var(--px-edge); font-family: var(--pixel); font-weight: 400; font-size: 28px; border: 0; border-radius: 0; margin: 4px; min-height: 72px; box-shadow: -4px 0 0 var(--e), 4px 0 0 var(--e), 0 -4px 0 var(--e), 0 4px 0 var(--e), inset 0 4px 0 rgba(255, 255, 255, 0.18), inset 0 -6px 0 var(--d); background: var(--f); color: var(--t); }
+.key:active { border-bottom-width: 0; background: var(--f); transform: translateY(2px); box-shadow: -4px 0 0 var(--e), 4px 0 0 var(--e), 0 -4px 0 var(--e), 0 4px 0 var(--e), inset 0 6px 0 var(--d), inset 0 -4px 0 rgba(255, 255, 255, 0.18); }
+.key-go { background: var(--px-go); color: var(--px-go-text); font-size: 24px; }
+.key-back { color: var(--px-neutral-text); font-size: 20px; }
+@media (orientation: portrait) and (min-height: 1000px) { .key { min-height: 96px; } }
+.field-btn.px-frame { font-family: var(--body); margin: 4px; }
+.field-btn.is-active { background: var(--px-gold); color: var(--px-gold-text); }
+
+/* Picture Run: bigger dots, chunkier answer buttons, square pixel dots. */
+.choice { width: 168px; height: 176px; }
+@media (max-width: 719px) { .choice { width: 100%; height: 130px; } }
+.choice-dot { width: 22px; height: 22px; border-radius: 0; box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.35); }
+.choice.is-guide { border: 0; box-shadow: -4px 0 0 var(--px-gold), 4px 0 0 var(--px-gold), 0 -4px 0 var(--px-gold), 0 4px 0 var(--px-gold), inset 0 4px 0 rgba(255, 255, 255, 0.18), inset 0 -6px 0 var(--d); }
+.choice.is-missed { opacity: 0.6; }
+.choice-num { font-family: var(--pixel); font-weight: 400; font-size: 56px; }
+.numpad-key { font-family: var(--pixel); font-weight: 400; }
+.early-numerals { font-family: var(--pixel); font-weight: 400; font-size: 72px; }
+.early-pictures { background: var(--px-neutral-dark); box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge), inset 0 4px 0 rgba(0, 0, 0, 0.35); padding: 10px 16px; margin: 4px; }
+.og-num { border-radius: 0; }
+.og-item.is-counted { filter: none; outline: 4px solid var(--px-gold); }
+.early-run .arena.early-arena { --scene-h: clamp(110px, calc(100dvh - 960px), 300px); }
+
+/* Home: stats in a pixel top bar, a camp scene, mode cards in area colors. */
+.px-home { background: none; border: 0; box-shadow: none; padding: 0; max-width: 760px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.px-topbar.px-frame { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 6px 14px; padding: 10px 14px; width: calc(100% - 8px); }
+.px-topbar .stat { display: flex; flex-direction: row; align-items: center; gap: 8px; min-width: 0; }
+.px-topbar .stat-value { font-family: var(--pixel); font-size: 22px; }
+.px-topbar .stat-label { font-size: 16px; color: var(--px-neutral-text); }
+.px-camp { position: relative; width: calc(100% - 8px); height: clamp(220px, 28vh, 300px); overflow: hidden; margin: 4px; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); background: var(--px-sky-1); }
+.px-camp .px-stars { inset: 0 0 50% 0; }
+.px-camp .px-hills { height: 42%; }
+.px-camp-cast { position: absolute; left: 0; right: 0; bottom: 3%; display: flex; justify-content: center; align-items: flex-end; gap: 18px; }
+.px-camp-tree { opacity: 0.95; }
+.px-camp-name { position: absolute; left: 12px; top: 10px; padding: 8px 12px; background: rgba(13, 16, 32, 0.86); color: var(--px-inset-text); box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); }
+.px-camp-name h1 { margin: 0 0 8px; font-size: 18px; }
+.px-camp-name .level { display: flex; align-items: center; gap: 10px; }
+.px-camp-name .progress.px-bar { width: 120px; height: 14px; border: 0; border-radius: 0; background: var(--px-inset); }
+.px-camp-name .progress-fill { background: var(--px-inset-info); }
+.px-home .week-day svg { image-rendering: pixelated; }
+.px-home .week-day:not(.is-played) svg { opacity: 0.3; }
+.px-home .week-day.is-today { outline-offset: 4px; border-radius: 0; }
+.mode-cards { gap: 22px; }
+.mode-card.px-frame { margin: 4px; min-height: 170px; cursor: pointer; font-family: var(--body); }
+.mode-card.px-frame .mode-name { font-size: 16px; }
+.mode-card .mode-status { font-size: 16px; text-align: center; padding: 0 10px; }
+.mode-card.is-last { box-shadow: -4px 0 0 var(--px-gold), 4px 0 0 var(--px-gold), 0 -4px 0 var(--px-gold), 0 4px 0 var(--px-gold), inset 0 4px 0 rgba(255, 255, 255, 0.18), inset 0 -6px 0 var(--d); }
+.mode-card.px-frame:active { transform: translateY(2px); border-bottom-width: 0; }
+.px-home > * { flex-shrink: 0; }
+.px-home .btn-start { width: 100%; }
+.px-home .vault-ready { margin: 4px; }
+.px-home .scanline-toggle { margin: 4px; }
+
+/* End screens: a treasure room. */
+.px-treasure-screen { position: relative; background: var(--px-wall); background-image: url('/pixel/wall.svg'); background-size: 64px 32px; }
+.px-treasure { display: flex; align-items: flex-end; justify-content: center; gap: 14px; padding: 8px 0 0; }
+.px-treasure-screen .panel.summary { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.px-treasure-screen .stats { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 26px; }
+.px-treasure-screen .stat { animation: px-count-in 0.5s steps(4) both; }
+.px-treasure-screen .stat:nth-child(2) { animation-delay: 0.15s; }
+.px-treasure-screen .stat:nth-child(3) { animation-delay: 0.3s; }
+.px-treasure-screen .stat:nth-child(4) { animation-delay: 0.45s; }
+@keyframes px-count-in { from { opacity: 0; transform: translateY(12px) scale(0.8); } }
+.px-treasure-screen .stat-value { font-family: var(--pixel); font-size: 22px; }
+.px-treasure-screen .stat-label { color: var(--px-neutral-text); }
+.px-treasure-screen .muted, .px-treasure-screen .chips .muted { color: var(--px-inset-muted); }
+.px-treasure-screen .panel.summary { background: var(--px-neutral); }
+.sum { background-image: url('/pixel/wall.svg'); background-size: 64px 32px; }
+.sum-panel { border-radius: 0; }
+
+/* All style-2 motion sits behind the reduced-motion setting. */
+@media (prefers-reduced-motion: reduce) {
+  .px-flicker, .px-treasure-screen .stat { animation: none; }
+  .px-arena .monster.hit svg, .px-arena .monster.shake, .px-arena .hero-sprite.lunge, .px-arena .combo-badge { animation: none; }
+  .key:active, .choice:active, .numpad-key:active, .mode-card.px-frame:active { transform: none; }
+}
+
+/* Picture Run home: the camp scene is wide, the hero is bigger. */
+.px-camp.px-camp-wide { width: min(760px, calc(100% - 8px)); height: clamp(240px, 30vh, 340px); }
+.early-home .flames .px-flame, .flames svg { image-rendering: pixelated; }
+
+@media (max-width: 480px) { .early-numerals { font-size: 44px; gap: 10px; min-height: 64px; } }
+@media (max-width: 480px) { .px-torches { gap: 2px; padding: 6px; } }
+@media (max-height: 720px) { .keypad { gap: 6px; } }

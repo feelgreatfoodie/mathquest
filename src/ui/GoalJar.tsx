@@ -1,8 +1,9 @@
+import { PixelIcon } from './pixel';
 import { itemById } from '../game/shop/catalog';
 import { goalProgress } from '../game/shop/shopState';
 import { HEROES } from '../engine/game';
 import type { KidGame } from '../engine/models';
-import { Sprite, UiIcon } from './sprites';
+import { Sprite } from './sprites';
 
 interface Props {
   game: Pick<KidGame, 'goal' | 'gems' | 'items' | 'heroes'>;
@@ -29,7 +30,7 @@ export function GoalJar({ game, learner, onClick }: Props) {
         <Sprite name={g.id} size={learner === 'prereader' ? 64 : 44} className="jar-item" />
       </span>
       <span className="jar-nums">
-        <UiIcon name="gem" size={learner === 'prereader' ? 36 : 22} />
+        <PixelIcon name="gem" size={learner === 'prereader' ? 36 : 22} />
         <span className="tally-num">{g.have}</span>
         <span className="jar-of">/{g.cost}</span>
       </span>

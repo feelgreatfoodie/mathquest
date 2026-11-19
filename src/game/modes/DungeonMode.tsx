@@ -8,7 +8,8 @@ import { loadRunner } from '../../ui/runShared';
 import { HoldButton } from '../../ui/early/HoldButton';
 import { defeat } from '../../ui/early/sounds';
 import { MuteButton, useMute } from '../../ui/MuteButton';
-import { MONSTERS, Sprite, UiIcon } from '../../ui/sprites';
+import { MONSTERS, Sprite } from '../../ui/sprites';
+import { DungeonWalls, HpBar, PixelIcon, TorchRow } from '../../ui/pixel';
 import { QuestionPanel } from '../QuestionPanel';
 import type { GameModeProps } from './types';
 
@@ -148,13 +149,14 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
   return (
     <div className="screen run">
       <RunTop progress={progress} mute={mute} onQuit={finish} />
-      <div className="arena">
-        <HeroFigure game={kid.game} size={110} className={`hero-sprite ${feedback?.verdict === 'correct' ? 'lunge' : ''}`} strike={feedback?.verdict === 'correct'} cheer={feedback?.verdict === 'correct' && (feedback?.combo ?? 0) >= 5} />
+      <div className="arena px-arena">
+        <DungeonWalls />
+        <HeroFigure game={kid.game} size={130} className={`hero-sprite ${feedback?.verdict === 'correct' ? 'lunge' : ''}`} strike={feedback?.verdict === 'correct'} cheer={feedback?.verdict === 'correct' && (feedback?.combo ?? 0) >= 5} />
         <div className={`monster ${shake ? 'shake' : ''} ${feedback?.verdict === 'correct' ? 'hit' : ''}`}>
-          {combo >= 3 ? <span className="combo-badge pixel" key={combo} aria-label={`Combo ${combo}`}>×{combo}</span> : null}
+          {combo >= 3 ? <span className="combo-badge pixel px-frame px-gold" key={combo} aria-label={`Combo ${combo}`}>COMBO ×{combo}</span> : null}
           {feedback?.verdict === 'correct' ? <span className="star-burst" key={`b${entry.id}`} aria-hidden="true">{[0, 1, 2, 3, 4, 5].map((i) => <i key={i} style={{ ['--a' as string]: `${i * 60}deg` }} />)}</span> : null}
-          <div className="hp"><div className="hp-fill" style={{ width: `${hp * 100}%` }} /></div>
-          <Sprite name={monster} size={monster === 'boss' ? 150 : 120} />
+          <HpBar fraction={hp} />
+          <Sprite name={monster} size={monster === 'boss' ? 170 : 130} />
         </div>
       </div>
       {panel}
@@ -165,10 +167,8 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
 function RunTop({ progress, mute, onQuit }: { progress: number; mute: ReturnType<typeof useMute>; onQuit: () => void }) {
   return (
     <div className="run-top">
-      <HoldButton onHold={onQuit}><UiIcon name="house" size={44} /></HoldButton>
-      <div className="progress" aria-label={`${Math.round(progress * 100)}% through the dungeon`}>
-        <div className="progress-fill" style={{ width: `${progress * 100}%` }} />
-      </div>
+      <HoldButton onHold={onQuit}><PixelIcon name="house" size={44} /></HoldButton>
+      <TorchRow done={Math.floor(progress * 10 + 1e-9)} label={`${Math.round(progress * 100)}% through the dungeon`} />
       <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} chimesOnly={mute.chimesOnly} />
     </div>
   );

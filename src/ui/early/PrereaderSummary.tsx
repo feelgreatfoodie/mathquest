@@ -1,3 +1,4 @@
+import { PixelIcon, PixelPlay } from '../pixel';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { HeroFigure } from '../HeroFigure';
 import type { GameDelta } from '../../engine/game';
@@ -67,7 +68,7 @@ function DotCard({ id, faster }: { id: string; faster: boolean }) {
     <div className="sum-dotcard" aria-label={label}>
       <div className="sum-dotcard-n">{label}</div>
       <div className="sum-dotcard-d"><Dots n={def.a} /><Dots n={def.b} /></div>
-      {faster ? <span className="sum-bolt"><UiIcon name="bolt" size={44} /></span> : null}
+      {faster ? <span className="sum-bolt"><PixelIcon name="bolt" size={44} /></span> : null}
     </div>
   );
 }
@@ -180,9 +181,7 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
       <div className="early-sum-mute"><MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big chimesOnly={mute.chimesOnly} /></div>
       <div className="big-stars" role="img" aria-label={`${stars} of ${total} stars`}>
         {Array.from({ length: total }, (_, i) => (
-          <svg key={i} width="64" height="64" viewBox="0 0 24 24" aria-hidden="true" className={i < stars ? 'star on' : 'star'}>
-            <path d="M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21.1l1.4-7L2 9.3l7-.8z" />
-          </svg>
+          <PixelIcon key={i} name="star" size={64} className={i < stars ? 'px-star on' : 'px-star'} />
         ))}
       </div>
 
@@ -198,10 +197,10 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
       {saved && at >= 1 ? (
         <div className="sum-panel sum-gems" data-testid="sum-gems">
           <div className="sum-fly" aria-hidden="true">
-            {Array.from({ length: Math.min(6, summary.gems) }, (_, i) => <span key={i} style={{ animationDelay: `${i * 120}ms` }}><UiIcon name="gem" size={44} /></span>)}
+            {Array.from({ length: Math.min(6, summary.gems) }, (_, i) => <span key={i} style={{ animationDelay: `${i * 120}ms` }}><PixelIcon name="gem" size={44} /></span>)}
           </div>
-          <UiIcon name="chest" size={120} />
-          <span className="sum-total"><UiIcon name="gem" size={64} /><span className="tally-num" data-testid="sum-gem-total">{step === 'gems' ? gemsShown : gemsAfter}</span></span>
+          <PixelIcon name="chest" size={120} />
+          <span className="sum-total"><PixelIcon name="gem" size={64} /><span className="tally-num" data-testid="sum-gem-total">{step === 'gems' ? gemsShown : gemsAfter}</span></span>
         </div>
       ) : null}
 
@@ -252,7 +251,7 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
 
       {saved && at >= last && steps.includes('streak') ? (
         <div className="flames sum-streak" role="img" aria-label={`${kid.game.streakDays} day streak`}>
-          {Array.from({ length: flames }, (_, i) => <UiIcon key={i} name="flame" size={56} />)}
+          {Array.from({ length: flames }, (_, i) => <PixelIcon key={i} name="flame" size={56} />)}
           {kid.game.streakDays > MAX_FLAMES ? <span className="flame-count">{kid.game.streakDays}</span> : null}
         </div>
       ) : null}
@@ -260,12 +259,12 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
       {done ? (
         <div className="row sum-buttons" data-testid="sum-buttons">
           <button type="button" className="sum-btn sum-play" aria-label="Play again" onClick={() => { unlockSounds(); unlockSpeech(); onAgain(); }}>
-            <UiIcon name="play" size={80} />
+            <PixelPlay size={80} />
           </button>
           <button type="button" className="sum-btn" aria-label="Hero shop" onClick={() => { unlockSounds(); unlockSpeech(); setShop(true); }}>
-            <UiIcon name="chest" size={80} />
+            <PixelIcon name="chest" size={80} />
           </button>
-          <button type="button" className="sum-btn" aria-label="Home" onClick={onHome}><UiIcon name="house" size={80} /></button>
+          <button type="button" className="sum-btn" aria-label="Home" onClick={onHome}><PixelIcon name="house" size={80} /></button>
         </div>
       ) : null}
     </div>

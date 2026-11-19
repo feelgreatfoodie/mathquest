@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AVATAR_SWATCH } from '../AvatarPicker';
 import { GoalJar } from '../GoalJar';
 import { ShopMathEntry } from '../ShopMathCard';
-import { CampRow } from '../CampRow';
-import { HeroFigure } from '../HeroFigure';
+import { CampScene } from '../CampScene';
 import { cardLabel } from '../../engine/modules';
 import { dayKey, levelFor, type GameDelta } from '../../engine/game';
 import { displayStreak, weekDays } from '../../engine/habit';
@@ -23,12 +22,12 @@ import { TABS, readTab, tabForKey, writeTab, type LandingTab } from '../landingT
 import { PinPad } from '../PinPad';
 import { readDeviceKids, type DeviceKid } from '../../data/deviceKids';
 import { PicturePad } from '../early/PicturePad';
-import { Sprite, UiIcon } from '../sprites';
+import { Sprite } from '../sprites';
 import { looksReady, owedOf, vaultBalance, vaultOn } from '../../game/vault';
 import { useDeposits, type VaultApi } from '../vaultApi';
 import { TitleMenu, TitleScreen } from './TitleScreen';
 import { Intro } from './Intro';
-import { applyCrt, readCrt, writeCrt } from '../pixel';
+import { PixelButton, PixelFrame, PixelIcon, applyCrt, readCrt, writeCrt, type PixelIconName } from '../pixel';
 
 function LandingTabs({ tab, onTab }: { tab: LandingTab; onTab: (t: LandingTab, viaKeyboard?: boolean) => void }) {
   const labels: Record<LandingTab, string> = { kid: 'Kid', parent: 'Grown-ups' };
@@ -250,10 +249,10 @@ export function Picker({ kids, onPick, onParent }: { kids: Kid[]; onPick: (k: Ki
   );
 }
 
-function Stat({ label, value, icon }: { label: string; value: string | number; icon?: 'flame' | 'gem' | 'bolt' }) {
+function Stat({ label, value, icon }: { label: string; value: string | number; icon?: PixelIconName }) {
   return (
     <div className={`stat ${icon ? 'stat-icon' : ''}`}>
-      {icon ? <UiIcon name={icon} size={36} /> : null}
+      {icon ? <PixelIcon name={icon} size={36} /> : null}
       <span className="stat-value">{value}</span>
       <span className="stat-label">{label}</span>
     </div>
@@ -269,7 +268,7 @@ function WeekStars({ days, streak }: { days: ReturnType<typeof weekDays>; streak
       <div className="week-row">
         {days.map((d, i) => (
           <span key={d.day} className={`week-day ${d.played ? 'is-played' : ''} ${d.today ? 'is-today' : ''}`} data-played={d.played ? 'true' : 'false'}>
-            <svg width="40" height="40" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21.1l1.4-7L2 9.3l7-.8z" /></svg>
+            <PixelIcon name="star" size={40} />
             <span>{names[i]}</span>
           </span>
         ))}
@@ -320,46 +319,49 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault }: { 
   };
   return (
     <div className="screen center">
-      <div className="panel home">
-        <HeroFigure game={kid.game} size={150} className="bob" />
-        <h1 className="pixel">{kid.name}</h1>
-        <div className="level">
-          <span className="pixel small">LV {lv.level}</span>
-          <div className="progress"><div className="progress-fill xp" style={{ width: `${(lv.into / lv.span) * 100}%` }} /></div>
-        </div>
-        <WeekStars days={weekDays(playedAll, today)} streak={displayStreak(kid.game.streakDays, playedAll, today)} />
-        <ScanlineToggle kidId={kid.id} />
-        <div className="stats">
+      <div className="panel home px-home">
+        <PixelFrame className="stats px-topbar">
           <Stat icon="flame" label="day streak" value={displayStreak(kid.game.streakDays, playedAll, today)} />
           <Stat icon="gem" label="gems" value={kid.game.gems} />
+          {hasVault ? <Stat icon="vault" label="in the vault" value={vaultBalance(dep.deposits)} /> : null}
           <Stat icon="bolt" label="best combo" value={kid.game.bestCombo} />
-          {hasVault ? <Stat label="in the vault" value={vaultBalance(dep.deposits)} /> : null}
-        </div>
+        </PixelFrame>
+        <CampScene game={kid.game}>
+          <div className="px-camp-name">
+            <h1 className="pixel">{kid.name}</h1>
+            <div className="level">
+              <span className="pixel small">LV {lv.level}</span>
+              <div className="progress px-bar"><div className="progress-fill xp" style={{ width: `${(lv.into / lv.span) * 100}%` }} /></div>
+            </div>
+          </div>
+        </CampScene>
+        <WeekStars days={weekDays(playedAll, today)} streak={displayStreak(kid.game.streakDays, playedAll, today)} />
+        <ScanlineToggle kidId={kid.id} />
         {ready ? (
-          <button type="button" className="btn vault-ready" data-testid="home-vault-ready" onClick={() => { setShopVault(true); setShop(true); }}>
-            <UiIcon name="chest" size={28} /> Your vault is ready to collect
-          </button>
+          <PixelButton tone="gold" className="btn vault-ready" data-testid="home-vault-ready" onClick={() => { setShopVault(true); setShop(true); }}>
+            <PixelIcon name="chest" size={28} /> Your vault is ready to collect
+          </PixelButton>
         ) : null}
         <GoalJar game={kid.game} learner="reader" onClick={() => setShop(true)} />
         <ShopMathEntry kid={kid} repo={repo} onGame={onTipGame ?? (() => undefined)} />
-        <CampRow game={kid.game} />
         {modes.length >= 2 ? (
           <div className="mode-cards" role="group" aria-label="Pick how to play">
             {modes.map((m) => (
-              <button key={m.id} type="button" className={`mode-card ${modeFor(kid, worldMode ?? readLastMode(kid.id)) === m.id ? 'is-last' : ''}`} data-mode={m.id} onClick={() => start(m.id)}>
+              <button key={m.id} type="button" className={`mode-card px-frame ${m.id === 'overworld' ? 'px-adventure' : 'px-dungeon'} ${modeFor(kid, worldMode ?? readLastMode(kid.id)) === m.id ? 'is-last' : ''}`} data-mode={m.id} onClick={() => start(m.id)}>
                 <span className="mode-sprites">
                   {m.id === 'overworld' ? (<><Sprite name={kid.game.hero} size={64} /><Sprite name="slime" size={48} /></>) : (<><Sprite name={kid.game.hero} size={64} /><Sprite name="skeleton" size={64} /></>)}
                 </span>
                 <span className="pixel mode-name">{m.id === 'overworld' ? 'Adventure' : 'Dungeon Run'}</span>
+                <span className="mode-status">{m.id === 'overworld' ? 'Explore and find chests' : 'Fight monsters with math'}</span>
               </button>
             ))}
           </div>
         ) : (
-          <button type="button" className="btn btn-big btn-start" onClick={() => start(modes[0]?.id ?? 'dungeon')}>Start Quest</button>
+          <PixelButton tone="gold" size="big" className="btn btn-big btn-start" onClick={() => start(modes[0]?.id ?? 'dungeon')}>Start Quest</PixelButton>
         )}
         <div className="row">
-          <button type="button" className="btn btn-ghost" onClick={() => { setShopVault(false); setShop(true); }}>{shop2On(kid.settings) ? 'Shop' : 'Hero shop'}</button>
-          <button type="button" className="btn btn-ghost" onClick={onBack}>Switch player</button>
+          <PixelButton tone="gold" className="btn" onClick={() => { setShopVault(false); setShop(true); }}>{shop2On(kid.settings) ? 'Shop' : 'Hero shop'}</PixelButton>
+          <PixelButton className="btn" onClick={onBack}>Switch player</PixelButton>
         </div>
       </div>
       {shop ? <HeroShop kid={kid} learner="reader" onGame={onGame} vault={vault} openVault={shopVault} onClose={() => { setShop(false); setShopVault(false); }} /> : null}
@@ -397,14 +399,13 @@ function ReaderSummary({ kid, summary, info, loadCards, onAgain, onHome }: Summa
   const acc = counts.total ? counts.right / counts.total : 0;
   const stars = acc >= 0.9 ? 3 : acc >= 0.75 ? 2 : 1;
   return (
-    <div className="screen center">
-      <div className="panel summary">
+    <div className="screen center px-treasure-screen">
+      <div className="px-treasure" aria-hidden="true"><PixelIcon name="chest" size={96} /><PixelIcon name="gem" size={48} /><PixelIcon name="key" size={48} /><PixelIcon name="gem" size={36} /></div>
+      <div className="panel summary px-frame px-neutral">
         <p className="pixel tag">Quest complete!</p>
         <div className="stars" aria-label={`${stars} of 3 stars`}>
           {[1, 2, 3].map((i) => (
-            <svg key={i} width="54" height="54" viewBox="0 0 24 24" aria-hidden="true" className={i <= stars ? 'star on' : 'star'}>
-              <path d="M12 2l3 6.5 7 .8-5.2 4.8 1.4 7L12 17.6 5.8 21.1l1.4-7L2 9.3l7-.8z" />
-            </svg>
+            <PixelIcon key={i} name="star" size={54} className={i <= stars ? 'px-star on' : 'px-star'} />
           ))}
         </div>
         <Sprite name={kid.game.hero} size={96} className="bob" />
@@ -442,8 +443,8 @@ function ReaderSummary({ kid, summary, info, loadCards, onAgain, onHome }: Summa
           </div>
         ) : null}
         <div className="row">
-          <button type="button" className="btn btn-big" onClick={onAgain}>Play again</button>
-          <button type="button" className="btn btn-ghost" onClick={onHome}>Home</button>
+          <PixelButton tone="gold" size="big" className="btn btn-big" onClick={onAgain}>Play again</PixelButton>
+          <PixelButton className="btn" onClick={onHome}>Home</PixelButton>
         </div>
       </div>
     </div>
