@@ -313,6 +313,8 @@ export interface Scene {
   still?: boolean;
   /** Lair only: rooms cleared so far. A room door whose number is at most this draws open. */
   roomsCleared?: number;
+  /** A beaten lair leaves a gold cup at the camp. Cosmetic only: it is not an item. */
+  trophy?: boolean;
 }
 
 const variantOf = (x: number, y: number) => (x * 7 + y * 13) % VARIANTS;
@@ -372,6 +374,7 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
       else tile(k, x, y);
       if (k === 'boss' && !s.bossDefeated) sprite('boss', x, y, Math.sin(s.time * 2) * 0.6);
       if (k === 'camp' && x === firstCamp(s.map)?.x && y === firstCamp(s.map)?.y) campfire(g, x * t - left, y * t - top, t, s.campLit, s.time);
+      if (k === 'camp' && s.trophy && x === trophySpot(s.map)?.x && y === trophySpot(s.map)?.y) trophyCup(g, x * t - left, y * t - top, t);
       if (k === 'gate' && !s.gateOpen) lock(g, x * t - left, y * t - top, t);
       if (k === 'torch') flame(g, x * t - left, y * t - top, t, s.time + x * 0.7);
     }
@@ -444,6 +447,27 @@ function shadow(g: G, x: number, y: number, t: number) {
 function firstCamp(map: TileMap): Point | undefined {
   for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (tileAt(map, x, y) === 'camp') return { x, y };
   return undefined;
+}
+
+/** The tile that holds the cup: the second camp tile when the camp has two (the Meadow's), else the first. */
+function trophySpot(map: TileMap): Point | undefined {
+  const first = firstCamp(map);
+  if (!first) return undefined;
+  return tileAt(map, first.x + 1, first.y) === 'camp' ? { x: first.x + 1, y: first.y } : first;
+}
+
+/** A small gold cup on two handles, on a dark plinth. */
+function trophyCup(g: G, x: number, y: number, t: number) {
+  const u = t / TILE;
+  g.fillStyle = '#92400e';
+  g.fillRect(x + 3 * u, y + 9 * u, 6 * u, 2 * u);
+  g.fillRect(x + 5 * u, y + 7 * u, 2 * u, 2 * u);
+  g.fillStyle = '#fbbf24';
+  g.fillRect(x + 3 * u, y + 2 * u, 6 * u, 5 * u);
+  g.fillRect(x + 1.5 * u, y + 3 * u, 1.5 * u, 2 * u);
+  g.fillRect(x + 9 * u, y + 3 * u, 1.5 * u, 2 * u);
+  g.fillStyle = '#fef3c7';
+  g.fillRect(x + 4 * u, y + 3 * u, 1 * u, 3 * u);
 }
 
 function chestAt(g: G, x: number, y: number, t: number, open: boolean, sparkle: boolean, time: number) {
