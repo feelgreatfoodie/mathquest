@@ -1,6 +1,7 @@
 import type { RunSummary } from '../../engine/session';
 import type { SessionLog } from '../../engine/models';
 import { BUILD } from '../../version';
+import { chestGems } from './chests';
 
 // One Adventure trip = one session doc, sessions/{tripId}. The trip's identity and totals-so-far live on this device
 // (world/main holds exactly 10 fields by rule, so they cannot go there) and in the session doc itself. A trip under
@@ -129,4 +130,14 @@ export function openChest(kidId: string, trip: TripState, spot: string): boolean
   trip.chests = { opened: [...openedSpots(trip), spot] };
   saveTrip(kidId, trip);
   return true;
+}
+
+/**
+ * What opening a chest does: the spot is written to the trip first, then the gems it pays (base 1 or 2, before the throttle)
+ * follow only for a right answer. The spot id is the grant's id: a second open of the same spot, from a repeated tap or a
+ * re-render, returns `opened: false` and 0 gems. Every chest, power chests included, pays through here and then through gemGrant.
+ */
+export function claimChest(kidId: string, trip: TripState, spot: string, correct: boolean): { opened: boolean; gems: number } {
+  if (!openChest(kidId, trip, spot)) return { opened: false, gems: 0 };
+  return { opened: true, gems: correct ? chestGems(trip.tripId, spot) : 0 };
 }

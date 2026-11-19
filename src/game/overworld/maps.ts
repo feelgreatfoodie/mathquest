@@ -3,7 +3,7 @@
 //
 // Legend: . grass   , path   T tree   ~ water   # rock   = bridge   G gate to the next region   g gate back
 //         C chest spot   s spawn zone (grass where monsters appear)   B boss lair door   H camp   @ hero start
-//         D door (needs the key item)   b span (needs the bridge kit item)   W castle wall   i wall torch
+//         D door (needs the key item)   b span (needs the bridge kit item)   P power chest spot (a side room behind a D door, or an island behind b spans)   W castle wall   i wall torch
 //         Lair maps only: X exit back to the overworld   1 2 3 room door (opens when that many rooms are cleared)
 //         The same characters look different per region (see draw.ts): the Forest paints grass as moss and ~ as a stream,
 //         the Castle paints . as stone floor, ~ as a moat and = as a drawbridge.
@@ -11,11 +11,11 @@
 export type RegionId = 'meadow' | 'forest' | 'castle';
 export const REGION_IDS: readonly RegionId[] = ['meadow', 'forest', 'castle'];
 
-export type Tile = 'grass' | 'path' | 'tree' | 'water' | 'rock' | 'bridge' | 'gate' | 'back' | 'chest' | 'spawn' | 'boss' | 'camp' | 'start' | 'door' | 'span' | 'wall' | 'torch' | 'exit' | 'rdoor';
+export type Tile = 'grass' | 'path' | 'tree' | 'water' | 'rock' | 'bridge' | 'gate' | 'back' | 'chest' | 'spawn' | 'boss' | 'camp' | 'start' | 'door' | 'span' | 'wall' | 'torch' | 'exit' | 'rdoor' | 'vault';
 
 const LEGEND: Record<string, Tile> = {
   '.': 'grass', ',': 'path', T: 'tree', '~': 'water', '#': 'rock', '=': 'bridge', G: 'gate', g: 'back',
-  C: 'chest', s: 'spawn', B: 'boss', H: 'camp', '@': 'start', D: 'door', b: 'span', W: 'wall', i: 'torch', X: 'exit', 1: 'rdoor', 2: 'rdoor', 3: 'rdoor',
+  C: 'chest', s: 'spawn', B: 'boss', H: 'camp', '@': 'start', D: 'door', b: 'span', W: 'wall', i: 'torch', X: 'exit', 1: 'rdoor', 2: 'rdoor', 3: 'rdoor', P: 'vault',
 };
 
 export interface Point {
@@ -63,15 +63,15 @@ const ROWS: Record<RegionId, string[]> = {
     'T.......s....sT.............~~...T.....T',
     'T......sss..sss.............~~.........T',
     'T.....ssssssssss...........T~~.........T',
-    'T....sTsss..ss~~~~..#.T.....~~.........T',
-    'T...sssss....s~bb~..#.T.....~~#..C.....T',
-    'T..C.sss......~~~~.T#..T....~~........#T',
-    'T.T.ssT.s.....~~~~..D.T.....~~..T#.....T',
-    'T..sssTsss..........#.......~~.........T',
-    'T.sssssssss.........#.......~~.........T',
-    'TsssssCsss........C.#.......~~.......T.T',
-    'Tssss..Ts.T.................~~.........T',
-    'Tsss...#.TT.................~~.........T',
+    'T....sTsss..ss~~~~~.#.T.....~~.........T',
+    'T...sssss....s~~~~~.#.T.....~~#..C.....T',
+    'T..C.sss......bbP~~T#..T....~~........#T',
+    'T.T.ssT.s.....~~~~~.D.T.....~~..T#.....T',
+    'T..sssTsss....~~~~~.#.......~~.........T',
+    'T.sssssssss.........#.......~~...##D##.T',
+    'TsssssCsss........C.#.......~~...#...#.T',
+    'Tssss..Ts.T.................~~...#.P.#.T',
+    'Tsss...#.TT.................~~...#####.T',
     'TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT',
   ],
   forest: [
@@ -79,8 +79,8 @@ const ROWS: Record<RegionId, string[]> = {
     'TTTTTTTTTTTTT.TTTTTT~TTT..TTTT#########T',
     'TTTTTTT..TCT.....TTT~~T......T#########T',
     'TTTTTTTTsssT.........~.sss....#########T',
-    'TTTTTTTsssss.........~~ssss...####B####T',
-    'TTTTTTTssCss.....TTT..~sCss....T..,..TTT',
+    'TTP.PTTsssss.........~~ssss...####B####T',
+    'TTTDTTTssCss.....TTT..~sCss....T..,..TTT',
     'TTT....sssss.sss.TTT..~ssss...TT.....TTT',
     'TTTTTTT.sss.sssssTT...~sssTsss.TTTT.TTTT',
     'TT..TTT.....ssCss.....~..Tsssss.TTTsssTT',
@@ -97,7 +97,7 @@ const ROWS: Record<RegionId, string[]> = {
     'TTssCssTT,sssss.~....TTT..ssCss.TTTTTTTT',
     'TTsssssT.T.sssT.~.....T...sssss..TT..TTT',
     'TTTsss.~~~~~~.T.~..........sss........TT',
-    'TT...T.~~bb~~...~~.....sss......sss....T',
+    'TT...T.bb.P~~...~~.....sss......sss....T',
     'TT...T.~~~~~~....~TT..sssss....sssss...T',
     'TT..sss~~~~~~.sss~~T..ssCss....ssCss..TT',
     'TT.sssssTT...sssss~...sssssTTTTsssss.TTT',
@@ -128,14 +128,14 @@ const ROWS: Record<RegionId, string[]> = {
     'Wsssss~~..sssssssssssssss.W.sssssssssssW',
     'Wsssss~~.iWW..WWWiWWWiWWW.W..WWWDiWWW..W',
     'WssCss~~..................W..W......W..W',
-    'Wsssss~~..sCsssssssssssss.W..W......W..W',
-    'Wsssss~~..ssWsssWsssWssss.W..W......W..W',
+    'Wsssss~~..sCsssssssssssss.W..W....P.W..W',
+    'Wsssss~~..ssWsssWsssWssss.W..W.P....W..W',
     'Wsssss~~..ssssssssssssCss.W..W......W..W',
     'Wsssss~~..sssssssssssssss.W..iWWWiWWW..W',
     'WCssss~~..sssssssssssssss..............W',
-    'Wsssss~~..ssWsssssssWsssC...sssssssssssW',
-    'W.....~~..ssssssCssssssss...ssCssssssssW',
-    'W.....~~...............................W',
+    'Wsssss~~..ssWsssssssWsssC...ssss~~~~~~sW',
+    'W.....~~..ssssssCssssssss...ssCsbbP~~~sW',
+    'W.....~~........................~~~~~~.W',
     'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
   ],
 };
@@ -166,7 +166,7 @@ export function heroStart(map: TileMap): Point {
 /** True when the hero can stand on the tile. The boss lair and a closed gate never can; the hero walks up to them. */
 export function isWalkable(map: TileMap, x: number, y: number, ctx: WalkCtx): boolean {
   switch (tileAt(map, x, y)) {
-    case 'grass': case 'path': case 'bridge': case 'chest': case 'spawn': case 'camp': case 'start': case 'back':
+    case 'grass': case 'path': case 'bridge': case 'chest': case 'spawn': case 'camp': case 'start': case 'back': case 'vault':
       return true;
     case 'gate':
       return ctx.gateOpen;

@@ -6,8 +6,8 @@ import { usePauseState, usePauseStop } from '../../ui/usePause';
 import { reportFailure } from '../../ui/failures';
 import { loadRunner, type SaveExtra } from '../../ui/runShared';
 import { newId } from '../../data/repo';
-import { CHECKPOINT_EVERY, addRun, loadTrip, openChest, openedSpots, resolveTrip, saveTrip, type TripState, type TripTotals } from './trip';
-import { chestGems, type TripSpot } from './chests';
+import { CHECKPOINT_EVERY, addRun, claimChest, loadTrip, openedSpots, resolveTrip, saveTrip, type TripState, type TripTotals } from './trip';
+import type { TripSpot } from './chests';
 import { planRegion, spotsFor } from './tripPlan';
 import { queueCheckpoint, queueLairLog } from './tripWrite';
 import { HoldButton } from '../../ui/early/HoldButton';
@@ -28,6 +28,7 @@ import {
   roomsClearedOf, saveLair, showRooms, watchVisibility, type BossOutcome, type LairBuild, type LairState, type LairStats,
 } from './lair';
 import { BossBar, DoorLabel, LairHud } from './LairHud';
+import { walkSpeed } from './speed';
 import { doorLabel, lairRetryEntity, miniMap, openedLairSpots } from './lairView';
 import { LAIRS, MAPS, findTiles, heroStart, isWalkable, tileAt, type LairDef, type Point, type RegionId, type TileMap, type WalkCtx } from './maps';
 import { approach } from './pathfind';
@@ -35,8 +36,6 @@ import { NEXT_REGION, PREV_REGION, REGION_NAMES, furthestRegion, gateInfo, lairM
 import { fromDoc, settleHero, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
 import { lifetimeChests } from '../../engine/chestLedger';
 
-const SPEED = 4; // tiles a second
-const BOOT_SPEED = 6;
 const SAVE_MS = 5000;
 const CAMP_HOLD_MS = 1000;
 const DIRS: Record<Facing, Point> = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
@@ -253,7 +252,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     const w = worldRef.current;
     const trip = tripRef.current;
     const r = runnerRef.current;
-    return w && trip && r ? spotsFor(r, trip.tripId, w.region, learner, bossIds.current) : [];
+    return w && trip && r ? spotsFor(r, trip.tripId, w.region, learner, bossIds.current, { key: gearRef.current.key, bridge: gearRef.current.bridge }, openedSpots(trip)) : [];
   }, [learner]);
 
   /** The opened chests of this trip in this land, for the drawing. */
@@ -293,6 +292,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       learner,
       tripId: trip.tripId,
       opened: openedSpots(trip),
+      gear: { key: gearRef.current.key, bridge: gearRef.current.bridge },
       region: w.region,
       hero: { x: hero.current.x, y: hero.current.y },
       bossIds: bossIds.current,
@@ -802,13 +802,14 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         chestSound();
         // Each chest pays once on a trip: the spot is written to the trip first, so a second open of the same spot pays nothing.
         const trip = tripRef.current;
-        if (entity.spotId && trip && openChest(kidRef.current.id, trip, entity.spotId)) {
+        const claim = entity.spotId && trip ? claimChest(kidRef.current.id, trip, entity.spotId, fb.verdict === 'correct') : null;
+        if (claim?.opened) {
           touchWorld({ t: 'chest' });
           if (entity.key && worldRef.current!.keys === 0) {
             touchWorld({ t: 'key' });
             setKeys(worldRef.current!.keys);
           }
-          if (fb.verdict === 'correct') void grant(chestGems(trip.tripId, entity.spotId));
+          if (claim.gems > 0) void grant(claim.gems);
           refreshChestHud();
         }
       } else if (fb.verdict === 'correct') {
@@ -956,7 +957,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       const h = hero.current;
       if (!pausedRef.current && worldRef.current) {
         if (h.moving) {
-          const speed = gearRef.current.boots ? BOOT_SPEED : SPEED;
+          const speed = walkSpeed(gearRef.current.boots);
           h.moving.p += dt * speed;
           h.frame = Math.floor(h.moving.p * 2) % 2;
           if (h.moving.p >= 1) {
