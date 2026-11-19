@@ -84,6 +84,25 @@ describe('queueLairLog', () => {
     expect((await replayOutbox(repo, kid.id)).replayed).toBe(0);
     expect(await repo.listSessions(kid.id, 20)).toHaveLength(1);
   });
+  it('writing the same lair log id twice pays no gems and no XP: the log is not a pay path (first win 10, replay 3)', async () => {
+    const { repo, kid } = await setup();
+    const trip = newTrip();
+    const gemsBefore = (await repo.getKid(kid.id))!.game.gems;
+    const win = { region: 'castle', bossWon: true, bossCorrect: 6, bossMs: 30_000 };
+    await queueLairLog(repo, kid.id, trip, win); // lair1: the first win (10 gems go through grant(), not here)
+    await queueLairLog(repo, kid.id, trip, win); // lair2: a replay win (3 gems go through grant(), not here)
+    const logs = await repo.listSessions(kid.id, 20);
+    // The same log id again, as a stale outbox replay or a second device would send it.
+    for (const log of logs) {
+      await repo.applyGameDelta(kid.id, { xp: 0 }, { session: log });
+      await repo.applyGameDelta(kid.id, { xp: 0 }, { session: log });
+    }
+    expect(logs.every((l) => l.gems === 0 && l.xp === 0)).toBe(true);
+    expect(await repo.listSessions(kid.id, 20)).toHaveLength(2);
+    const after = (await repo.getKid(kid.id))!.game;
+    expect(after.gems).toBe(gemsBefore);
+    expect(after.xp).toBe(kid.game.xp);
+  });
 });
 
 describe('lair run label and mode', () => {
