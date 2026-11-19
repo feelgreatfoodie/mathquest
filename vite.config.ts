@@ -53,7 +53,7 @@ const config = {
     versionJson(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icons/apple-touch-icon.png'],
+      includeAssets: ['icons/apple-touch-icon.png', 'fonts/*.woff2'],
       manifest: {
         name: 'Math Quest',
         short_name: 'Math Quest',
@@ -73,17 +73,6 @@ const config = {
         navigateFallback: '/index.html',
         // Firebase auth helper pages must always hit the network.
         navigateFallbackDenylist: [/^\/__\//],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'google-fonts',
-              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              cacheableResponse: { statuses: [0, 200] },
-            },
-          },
-        ],
       },
     }),
   ],

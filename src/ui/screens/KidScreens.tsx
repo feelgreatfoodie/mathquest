@@ -26,6 +26,8 @@ import { PicturePad } from '../early/PicturePad';
 import { Sprite, UiIcon } from '../sprites';
 import { looksReady, owedOf, vaultBalance, vaultOn } from '../../game/vault';
 import { useDeposits, type VaultApi } from '../vaultApi';
+import { TitleScreen } from './TitleScreen';
+import { applyCrt, readCrt, writeCrt } from '../pixel';
 
 function LandingTabs({ tab, onTab }: { tab: LandingTab; onTab: (t: LandingTab, viaKeyboard?: boolean) => void }) {
   const labels: Record<LandingTab, string> = { kid: 'Kid', parent: 'Parent' };
@@ -60,20 +62,24 @@ function LandingTabs({ tab, onTab }: { tab: LandingTab; onTab: (t: LandingTab, v
  * The landing card: Kid and Parent are two equal tabs. Kid shows the first-name + PIN form,
  * Parent shows Google sign-in (which registers the parent, then opens setup). The last tab is remembered.
  */
-export function Landing({
-  initialTab,
-  error,
-  onKidSubmit,
-  onParentSignIn,
-  onTabChange,
-}: {
+export function Landing(props: LandingProps) {
+  return (
+    <TitleScreen>
+      <LandingCard {...props} />
+    </TitleScreen>
+  );
+}
+
+interface LandingProps {
   initialTab?: LandingTab;
   error: string | null;
   /** Resolve to false when the name and PIN were refused, so the dots shake and clear. */
   onKidSubmit: (name: string, pin: string) => void | boolean | Promise<void | boolean>;
   onParentSignIn: () => void;
   onTabChange?: () => void;
-}) {
+}
+
+function LandingCard({ initialTab, error, onKidSubmit, onParentSignIn, onTabChange }: LandingProps) {
   const [tab, setTab] = useState<LandingTab>(() => initialTab ?? readTab());
   const [name, setName] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
@@ -187,11 +193,6 @@ export function Landing({
     <div className="screen center">
       <div className="panel title-panel landing-parent" {...panelProps}>
         {tabs}
-        <div className="title-sprites">
-          <Sprite name="knight" size={84} />
-          <Sprite name="boss" size={110} />
-        </div>
-        <h1 className="pixel title">Math Quest</h1>
         {error ? <p className="error">{error}</p> : null}
         <button type="button" className="btn btn-big" onClick={onParentSignIn}>Sign in with Google</button>
         <p className="muted">New here? Sign in with Google to create your family.</p>
@@ -310,6 +311,7 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault }: { 
           <div className="progress"><div className="progress-fill xp" style={{ width: `${(lv.into / lv.span) * 100}%` }} /></div>
         </div>
         <WeekStars days={weekDays(playedAll, today)} streak={displayStreak(kid.game.streakDays, playedAll, today)} />
+        <ScanlineToggle kidId={kid.id} />
         <div className="stats">
           <Stat icon="flame" label="day streak" value={displayStreak(kid.game.streakDays, playedAll, today)} />
           <Stat icon="gem" label="gems" value={kid.game.gems} />
@@ -428,5 +430,26 @@ function ReaderSummary({ kid, summary, info, loadCards, onAgain, onHome }: Summa
         </div>
       </div>
     </div>
+  );
+}
+
+/** Per-kid CRT scanlines. Off by default, kept on this device only. */
+export function ScanlineToggle({ kidId }: { kidId: string }) {
+  const [on, setOn] = useState(() => readCrt(kidId));
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost scanline-toggle"
+      data-testid="scanline-toggle"
+      aria-pressed={on}
+      onClick={() => {
+        const next = !on;
+        setOn(next);
+        writeCrt(kidId, next);
+        applyCrt(next);
+      }}
+    >
+      Scanlines: {on ? 'On' : 'Off'}
+    </button>
   );
 }
