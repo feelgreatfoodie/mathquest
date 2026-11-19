@@ -1,4 +1,4 @@
-import { ICON_IDS, choicesFor, pick, type Problem, type Rng } from '../problemBase';
+import { CHOICE_MAX, ICON_IDS, closeChoices, pick, type Problem, type Rng } from '../problemBase';
 import type { FactCardDef, GroupDef, ModuleDef, ModuleId } from './types';
 
 /** Number words the voice reads. */
@@ -54,7 +54,8 @@ function addProblem(cardId: string, rng: Rng): Problem {
     hint: `Let's count them all. ${sum ? countWords(sum) : 'There are none.'} ${cap(speech)} is ${word(sum)}.`,
     speech,
     visual: { kind: 'groups', op: '+', a: x, b: y, icon },
-    choices: choicesFor(sum, 10, rng),
+    // Common error: say the bigger number and stop.
+    choices: closeChoices(sum, CHOICE_MAX, rng, Math.max(x, y)),
   };
 }
 
@@ -86,7 +87,8 @@ function subProblem(cardId: string, rng: Rng): Problem {
     hint: `Start with ${word(a)}. Take away ${word(b)}. ${left ? `Count what is left. ${countWords(left)}` : 'Nothing is left.'} ${cap(speech)} is ${word(left)}.`,
     speech,
     visual: { kind: 'groups', op: '−', a, b, icon },
-    choices: choicesFor(left, 10, rng),
+    // Common error: add instead of take away.
+    choices: closeChoices(left, CHOICE_MAX, rng, a + b),
   };
 }
 

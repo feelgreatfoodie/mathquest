@@ -85,3 +85,23 @@ export function choicesFor(answer: number, max: number, rng: Rng): number[] {
   }
   return shuffled(out, rng);
 }
+
+/** The most any pre-reader answer button or pad key shows. */
+export const CHOICE_MAX = 20;
+
+/**
+ * Four answer buttons for a pre-reader: the answer, one common error, and the nearest of answer±1 and answer±2.
+ * All four are distinct and in 0..max. The common error (the bigger addend for an addition, the sum for a
+ * subtraction) goes in when it is in range and not the answer; answer±1 and ±2 fill the rest, in random order.
+ * The positions are shuffled with `rng`, so the same seed always gives the same buttons.
+ */
+export function closeChoices(answer: number, max: number, rng: Rng, commonError?: number): number[] {
+  if (!Number.isInteger(answer) || answer < 0 || answer > max || max < 3) throw new Error(`closeChoices(${answer}, ${max})`);
+  const ok = (v: number) => Number.isInteger(v) && v >= 0 && v <= max && v !== answer;
+  const out = [answer];
+  if (commonError !== undefined && ok(commonError)) out.push(commonError);
+  for (const v of shuffled([answer - 1, answer + 1, answer - 2, answer + 2], rng)) if (out.length < 4 && ok(v) && !out.includes(v)) out.push(v);
+  // Answer 0 with the range cut short: widen outward until there are four.
+  for (let d = 3; out.length < 4 && d <= max; d++) for (const v of [answer - d, answer + d]) if (out.length < 4 && ok(v) && !out.includes(v)) out.push(v);
+  return shuffled(out, rng);
+}

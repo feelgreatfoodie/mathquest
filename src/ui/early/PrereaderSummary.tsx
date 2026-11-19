@@ -87,8 +87,11 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
   const gemsAfter = kid.game.gems;
   const gemsBefore = saved ? info.before.gems : gemsAfter;
   const lv = useMemo(() => levelStep(info.before.xp, kid.game.xp), [info.before.xp, kid.game.xp]);
-  const learned = info.newIds.filter((id) => getCardDef(id)?.kind === 'fact');
-  const faster = new Set(summary.faster);
+  const newFacts = info.newIds.filter((id) => getCardDef(id)?.kind === 'fact');
+  const quick = (info.quickIds ?? []).filter((id) => getCardDef(id)?.kind === 'fact');
+  // New facts first, then facts answered under 3 seconds. A bolt marks a fact that beat its own median or the 3 second target.
+  const learned = [...new Set([...newFacts, ...quick])];
+  const faster = new Set([...summary.faster, ...quick]);
 
   const loadRef = useRef(loadCards);
   loadRef.current = loadCards;
@@ -130,7 +133,7 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
       line = stars > 0 ? `Great job! You got ${word(stars)} ${stars === 1 ? 'star' : 'stars'}!` : "Nice try! Let's play again!";
     } else if (step === 'gems') line = `You have ${gemsAfter} gems!`;
     else if (step === 'xp') line = lv.levelUp ? `Level ${lv.levelAfter}!` : `Level ${lv.levelAfter}`;
-    else if (step === 'learned') line = `You learned ${learned.length} new ${learned.length === 1 ? 'one' : 'ones'}!`;
+    else if (step === 'learned') line = newFacts.length ? `You learned ${newFacts.length} new ${newFacts.length === 1 ? 'one' : 'ones'}!` : 'Lightning fast!';
     else if (step === 'map') line = 'Here is your map!';
     else if (step === 'streak') line = kid.game.streakDays > 0 ? `${kid.game.streakDays} ${kid.game.streakDays === 1 ? 'day' : 'days'} in a row!` : '';
     else if (step === 'fail') line = 'Oops! Tap the arrows.';

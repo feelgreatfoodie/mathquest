@@ -459,13 +459,13 @@ legend { padding: 0 6px; color: var(--muted); }
 .early-numerals .math-answer { min-width: 1.2em; text-align: center; }
 .early-check { color: var(--good); display: inline-flex; }
 
-.choices { display: flex; justify-content: center; gap: 28px; margin-top: auto; padding-top: 4px; }
+.choices { display: grid; grid-template-columns: repeat(4, 160px); justify-content: center; gap: 12px 24px; margin-top: auto; padding-top: 4px; }
 .choice-slot { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .choice-arrow { height: 56px; display: inline-flex; color: var(--gold); animation: bounce 0.8s ease-in-out infinite alternate; }
 .choice-arrow:empty { animation: none; }
 @keyframes bounce { to { transform: translateY(8px); } }
 .choice {
-  width: 160px; height: 170px; min-width: 140px; min-height: 140px;
+  width: 160px; height: 170px; min-width: 120px; min-height: 120px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
   font-family: var(--body);
   color: var(--text);
@@ -1030,7 +1030,7 @@ legend { padding: 0 6px; color: var(--muted); }
 .shopmath-dots { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; max-width: 320px; }
 .shopmath-dot { width: 24px; height: 24px; border-radius: 50%; border: 3px solid var(--gold); box-sizing: border-box; }
 .shopmath-dot.is-have { background: var(--gold); }
-.shopmath .choices { gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.shopmath .choices { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .shopmath .choice { width: 120px; min-width: 120px; min-height: 120px; height: 150px; }
 .shopmath .choice-num { font-size: 56px; }
 
@@ -1046,3 +1046,41 @@ legend { padding: 0 6px; color: var(--muted); }
   .early-top-right { gap: 6px; }
 }
 .hear-btn { color: var(--gold); border-color: var(--gold); }
+
+/* Four choices: a row on a tablet, 2 by 2 below 720 px. Every button stays at least 120 px square. */
+@media (max-width: 719px) {
+  .choices { grid-template-columns: repeat(2, minmax(120px, 1fr)); gap: 4px 12px; width: 100%; max-width: 420px; margin-inline: auto; padding-inline: 12px; box-sizing: border-box; }
+  .choice-slot { min-width: 0; }
+  .choice { width: 100%; height: 130px; }
+  .choice-arrow { height: 32px; }
+  .shopmath .choices { max-width: none; }
+}
+
+/* Fade: the number pad, the help button and the strategy cues. */
+.numpad { display: grid; grid-template-columns: repeat(5, 120px); gap: 10px; justify-content: center; margin-top: auto; padding-top: 4px; }
+.numpad-key {
+  width: 120px; height: 120px; min-width: 120px; min-height: 120px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--body); font-size: 64px; font-weight: 700; color: var(--text);
+  background: var(--panel-2); border: 4px solid var(--line); border-bottom-width: 8px; border-radius: 24px;
+  cursor: pointer; touch-action: manipulation;
+}
+.numpad-key:active { transform: translateY(4px); border-bottom-width: 4px; }
+.numpad-key.is-set { border-color: var(--gold); box-shadow: 0 0 0 6px rgba(251, 191, 36, 0.35); }
+.numpad-key:disabled { opacity: 0.4; cursor: default; }
+.numpad-ok:not(:disabled) { background: var(--good); color: #052e16; border-color: var(--good); }
+@media (max-width: 719px) { .numpad { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } }
+@media (max-height: 800px) and (min-width: 720px) { .numpad { gap: 6px; } .numpad-key { font-size: 56px; } }
+.help-btn { width: 120px; height: 120px; min-width: 120px; min-height: 120px; border-radius: 28px; background: var(--panel-2); color: var(--gold); border: 4px solid var(--line); border-bottom-width: 8px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; }
+.help-btn:active { transform: translateY(4px); border-bottom-width: 4px; }
+.tf-cell.is-gap { border-color: var(--gold); border-style: dashed; box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.45); }
+.cue { display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; }
+.cue-text { font-size: 44px; font-weight: 700; color: var(--gold); }
+.cue-text-big { font-size: 64px; }
+.cue-big { font-size: 120px; font-weight: 700; line-height: 1; }
+.cue-small { display: inline-flex; gap: 8px; }
+.early-pictures { gap: 24px; }
+/* A pad on a wide, short screen (iPad landscape): 7 keys a row, so 13 keys take 2 rows and the OK key stays on screen. */
+@media (min-width: 900px) { .numpad { grid-template-columns: repeat(7, 120px); } }
+/* A phone: the sum row shrinks so "7 + 3 = ?" fits 375 px wide. */
+@media (max-width: 480px) { .early-numerals { font-size: 56px; gap: 10px; min-height: 64px; } }

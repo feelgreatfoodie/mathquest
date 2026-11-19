@@ -1000,6 +1000,7 @@ const gemRateOptions = (current: number) => [...new Set([5, 10, 15, 20, 25, 30, 
 
 const PACE_OPTIONS = [
   { value: 3, label: '3x: most time (default)' },
+  { value: 2.5, label: '2.5x: a bit less time' },
   { value: 2, label: '2x: more time' },
   { value: 1.5, label: '1.5x: a little extra time' },
   { value: 1, label: '1x: original speed bars (strictest)' },

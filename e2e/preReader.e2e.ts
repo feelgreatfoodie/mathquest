@@ -111,7 +111,8 @@ test('a pre-reader plays a first run, misses one, finishes, and the parent grid 
   // Run: pictures, no keypad. The first question is spoken.
   await expect(page.locator('.early-numerals')).toBeVisible();
   await expect(page.locator('.keypad')).toHaveCount(0);
-  await expect(page.locator('.object-groups')).toBeVisible();
+  // Dots, or a strategy (a double, a ten-frame, count on) in their place: a fact on dots shows one of the two.
+  await expect(page.locator('.object-groups, .cue').first()).toBeVisible();
   await expect.poll(async () => (await spoken(page)).some((s) => / plus /.test(s))).toBe(true);
   const rec = await page.evaluate(() => (window as unknown as { __spoken: string[] }).__spoken.find((s) => / plus /.test(s)));
   expect(rec).toMatch(/\|en-US\|0\.85$/);
@@ -149,7 +150,7 @@ test('a pre-reader plays a first run, misses one, finishes, and the parent grid 
       await wrong.click();
       await expect(page.locator('.choice.is-guide')).toHaveCount(1);
       await expect(page.locator('.choice-arrow svg')).toHaveCount(1);
-      await expect(page.locator('.choice[aria-disabled="true"]')).toHaveCount(2);
+      await expect(page.locator('.choice[aria-disabled="true"]')).toHaveCount(3);
       // Another wrong tap does nothing.
       await page.locator('.choice[data-answer="false"]').last().click({ force: true });
       await expect(page.locator('.choice.is-guide')).toHaveCount(1);

@@ -5,8 +5,9 @@ import { factBaseline, gradeAnswer, thresholdsFor } from './grading';
 import { cardLevel, availableCards, previewPool } from './mastery';
 import { dayKey } from './game';
 import { gemsForRun } from './gems';
-import { learnerOf, learnerParams, paceOf, type CardMap, type CardState, type KidSettings, type Learner } from './models';
+import { learnerOf, learnerParams, paceOf, type CardMap, type CardState, type KidSettings, type Learner, type SupportLevel } from './models';
 import { answerText, checkAnswer, generateProblem, ICON_IDS, type AnswerInput, type IconId, type Problem, type Rng, type Verdict } from './problems';
+import { FLUENCY_TARGET_MS, fadeStep, supportOf } from './support';
 import { gradedToday, isDue, median, newCardState, noteGraded, practice, repeatAnswer, retrievability, review } from './scheduler';
 
 export interface PlanItem {
@@ -244,6 +245,7 @@ export class SessionRunner {
   private newIds: string[] = [];
   private missed = new Set<string>();
   private faster = new Set<string>();
+  private quick = new Set<string>();
   private nextId = 0;
   private resolved = new Set<string>();
 
@@ -339,10 +341,10 @@ export class SessionRunner {
   }
 
   /**
-   * Grades the entry at the current position. `peeked` is for pre-readers who hid the pictures and looked:
-   * a peek grades Hard at best.
+   * Grades the entry at the current position. `helped` is for pre-readers who asked for help (a strategy cue or the
+   * dots): the answer is right-with-help, graded Hard at best, and it never moves the fade up.
    */
-  answer(input: AnswerInput, ms: number, opts: { peeked?: boolean } = {}): Feedback {
+  answer(input: AnswerInput, ms: number, opts: { helped?: boolean } = {}): Feedback {
     const entry = this.current();
     if (!entry || entry.kind === 'teach') throw new Error('No question to answer');
     return this.grade(entry, this.index, input, ms, opts);
@@ -353,7 +355,7 @@ export class SessionRunner {
    * `answer()`, so card states do not depend on the order. Each entry can be answered once.
    * Retries land after the answered entry. Walk the queue with `pending()`, not `advance()`.
    */
-  answerEntry(entryId: string, input: AnswerInput, ms: number, opts: { peeked?: boolean } = {}): Feedback {
+  answerEntry(entryId: string, input: AnswerInput, ms: number, opts: { helped?: boolean } = {}): Feedback {
     const at = this.queue.findIndex((e) => e.id === entryId);
     const entry = this.queue[at];
     if (!entry) throw new Error(`No entry ${entryId}`);
@@ -367,7 +369,7 @@ export class SessionRunner {
     return this.queue.filter((e) => e.kind !== 'teach' && !this.resolved.has(e.id));
   }
 
-  private grade(entry: Entry, at: number, input: AnswerInput, ms: number, opts: { peeked?: boolean }): Feedback {
+  private grade(entry: Entry, at: number, input: AnswerInput, ms: number, opts: { helped?: boolean }): Feedback {
     this.resolved.add(entry.id);
     const def = getCardDef(entry.cardId)!;
     const mod = moduleOfCard(entry.cardId);
@@ -387,7 +389,7 @@ export class SessionRunner {
       if (entry.isNew && def.kind === 'skill' && rating === Rating.Easy) rating = Rating.Good;
       // With three buttons a first-time right answer may be a guess, so it can't be Easy.
       if (entry.isNew && correct && mod?.input === 'choices' && rating === Rating.Easy) rating = Rating.Good;
-      if (opts.peeked && correct && (rating === Rating.Easy || rating === Rating.Good)) rating = Rating.Hard;
+      if (opts.helped && correct && (rating === Rating.Easy || rating === Rating.Good)) rating = Rating.Hard;
       // Only a card's first answer of the day calls review(). Later ones count for the kid (lastResults, correct,
       // recentMs) but never touch the FSRS fields: same-day repeats must not inflate stability (a fluent look after
       // one evening) or crush it (one slip). A same-day miss after a reviewed answer sets lastResults and missDay, the
@@ -409,11 +411,17 @@ export class SessionRunner {
       // An in-run retry of a missed card is not a new answer: only timing stats change.
       next = practice(prev, ms, correct, now);
     }
+    // The pre-reader fade (support.ts): one step per counted answer, graded or in-run retry. A preview says nothing about recall.
+    if (mod?.input === 'choices') {
+      const solid = cardLevel(next, this.baseline, this.pace) >= 3;
+      next = { ...next, ...fadeStep(prev, { correct, helped: !!opts.helped, solid, preview: !!entry.preview }) };
+    }
     this.cards[entry.cardId] = next;
     this.changed.add(entry.cardId);
     this.stats.answered++;
     if (correct) this.times.push(ms);
     if (correct && def.kind === 'fact' && Number.isFinite(prevMedian) && ms < prevMedian) this.faster.add(entry.cardId);
+    if (correct && !opts.helped && !entry.preview && mod?.input === 'choices' && ms < FLUENCY_TARGET_MS) this.quick.add(entry.cardId);
 
     // Retry misses and slow answers a few questions later; extra reps for skills still being learned.
     const tries = this.retries.get(entry.cardId) ?? 0;
@@ -449,6 +457,11 @@ export class SessionRunner {
     };
   }
 
+  /** How much help the card shows now. A card with no value, or an unseen card, reads as 'dots'. */
+  supportLevelOf(cardId: string): SupportLevel {
+    return supportOf(this.cards[cardId]);
+  }
+
   getCard(id: string): CardState | undefined {
     return this.cards[id];
   }
@@ -461,6 +474,11 @@ export class SessionRunner {
   /** Cards first answered correctly this run, in answer order. Kept out of summary(): the golden profile pins that shape. */
   newlyLearned(): string[] {
     return [...this.newIds];
+  }
+
+  /** Pre-reader facts answered right, without help, in under FLUENCY_TARGET_MS this run. Kept out of summary(): the golden profile pins that shape. */
+  quickFacts(): string[] {
+    return [...this.quick];
   }
 
   summary(): RunSummary {

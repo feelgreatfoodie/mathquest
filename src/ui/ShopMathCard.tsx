@@ -142,6 +142,7 @@ function ShopMathCard({ kid, repo, onGame, prompt, onClose }: Props & { prompt: 
               guide={phase === 'wrong'}
               picked={picked}
               disabled={false}
+              dots
               onChoose={(v) => {
                 setPicked(v);
                 void answer(v);

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import type { Repo } from '../data/repo';
-import { cardLevel } from '../engine/mastery';
-import { paceOf, type Kid } from '../engine/models';
+import { type Kid } from '../engine/models';
 import { cardLabel, getCardDef } from '../engine/modules';
 import { word } from '../engine/modules/early';
 import type { AnswerInput, Problem, Visual } from '../engine/problems';
@@ -9,10 +8,11 @@ import type { Entry, Feedback, SessionRunner } from '../engine/session';
 import { Keypad, type Field } from '../ui/Keypad';
 import { FracView, MathView } from '../ui/MathView';
 import { ChoiceButtons } from '../ui/early/ChoiceButtons';
-import { displayModeFor, type DisplayMode } from '../ui/early/displayMode';
+import { NumberPad } from '../ui/early/NumberPad';
+import { StrategyCueView } from '../ui/early/StrategyCue';
+import { strategyCue } from '../engine/support';
 import { ObjectGroups } from '../ui/early/ObjectGroups';
 import { chime, hit, softTone, tick, unlockSounds } from '../ui/early/sounds';
-import { TenFrame } from '../ui/early/TenFrame';
 import { speak, stopSpeaking } from '../ui/early/useSpeech';
 import { SpeakButton } from '../ui/SpeakButton';
 import { goAction, wholeAllowed } from '../engine/fractionInput';
@@ -271,15 +271,12 @@ function FeedbackView({ fb, onContinue }: { fb: Feedback; onContinue: () => void
 // Pre-readers: pictures, a voice, big buttons
 
 const CORRECT_PAUSE_MS = 1200;
-/** Used only for card levels: pre-reader bars do not depend on the facts baseline. */
-const BASELINE = 3500;
 
 function numeral(t: Problem['tokens'][number]): string | number {
   return t.t === 'frac' ? '' : t.v;
 }
 
 function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleRef }: QuestionPanelProps) {
-  const pace = paceOf(kid.settings);
   const shownAt = useRef(0);
   const resolved = useRef(false);
   const countTurn = useRef(0);
@@ -287,10 +284,16 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
-  const [peeked, setPeeked] = useState(false);
+  const [typed, setTyped] = useState<number | null>(null);
   const [count, setCount] = useState(0);
-  // How the question is shown depends on the card's level when it appeared, so it cannot change mid-question.
-  const [mode] = useState<DisplayMode>(() => displayModeFor(cardLevel(runner.getCard(entry.cardId), BASELINE, pace), entry.kind));
+  // How much help the fact shows is fixed when the question appears: a fade step never changes a question in progress.
+  const [level] = useState(() => (entry.preview ? 'dots' : runner.supportLevelOf(entry.cardId)));
+  const cue = strategyCue(entry.problem);
+  // What the pictures area shows: 0 nothing (numerals), 1 the strategy, 2 the full dots. A fact at 'dots' starts on its strategy,
+  // or on the dots when none fits. Help moves one step on, strategy first. Going past the starting step makes the answer right-with-help.
+  const startStep = entry.preview || level === 'dots' ? (cue && !entry.preview ? 1 : 2) : 0;
+  const [viewStep, setViewStep] = useState(startStep);
+  const helped = viewStep > startStep;
 
   useImperativeHandle(
     handleRef,
@@ -362,7 +365,7 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
         return;
       }
       const ms = performance.now() - shownAt.current;
-      const fb = runner.answerEntry(entry.id, { kind: 'int', value }, ms, { peeked });
+      const fb = runner.answerEntry(entry.id, { kind: 'int', value }, ms, { helped });
       setFeedback(fb);
       setPicked(value);
       const card = runner.getCard(entry.cardId);
@@ -381,47 +384,67 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
         if (entry.problem.visual) void countUp(entry.problem.visual, speech, answer);
       }
     },
-    [feedback, peeked, runner, entry, repo, kid.id, next, countUp, onAnswered],
+    [feedback, helped, runner, entry, repo, kid.id, next, countUp, onAnswered],
   );
+
+  /** A pad key: shows the number and says it (the voice obeys mute). */
+  const onKey = useCallback((n: number) => {
+    if (resolved.current || feedback) return;
+    unlockSounds();
+    setTyped(n);
+    void speak(word(n));
+  }, [feedback]);
+
+  const onHelp = useCallback(() => {
+    if (feedback) return;
+    unlockSounds();
+    const to = viewStep === 0 && cue ? 1 : 2;
+    if (to === 1 && cue) void speak(cue.speech);
+    setViewStep(to);
+  }, [feedback, viewStep, cue]);
 
   const p = entry.problem;
   const visual = p.visual!;
   const answer = p.answer.kind === 'int' ? p.answer.value : 0;
   const missed = !!feedback && feedback.verdict !== 'correct';
   const solved = feedback?.verdict === 'correct';
-  const showPictures = mode === 'groups' || peeked || missed || !!entry.preview;
   const [a, op, b] = p.tokens;
+  const view = missed || viewStep === 2 ? 'groups' : viewStep === 1 ? 'cue' : 'numerals';
+  const usePad = level === 'pad' && !missed;
+  const choices = missed && level === 'pad' ? [answer] : p.choices!;
+  const showHelp = viewStep < 2 && !entry.preview && !feedback;
 
   return (
     <>
-      <div data-preview={entry.preview ? 'true' : undefined} className={`early-question ${entry.kind === 'practice' && !entry.fill ? 'is-practice' : ''}`} data-mode={showPictures ? (mode === 'frame' && !peeked && !missed ? 'frame' : 'groups') : 'numerals'}>
+      <div data-preview={entry.preview ? 'true' : undefined} data-support={level} className={`early-question ${entry.kind === 'practice' && !entry.fill ? 'is-practice' : ''}`} data-mode={view}>
         <div className="early-pictures">
-          {showPictures && mode === 'frame' && !peeked && !missed ? (
-            <div className="frame-row">
-              <TenFrame n={visual.a} shape="circle" label={`${visual.a}`} />
-              <span className="og-op" aria-hidden="true">{visual.op}</span>
-              <TenFrame n={visual.b} shape="square" label={`${visual.b}`} />
-            </div>
-          ) : showPictures ? (
-            <ObjectGroups visual={visual} count={missed ? count : 0} crossOut={missed} />
-          ) : (
-            <button type="button" className="peek-btn" aria-label="Look at the pictures" onClick={() => setPeeked(true)}>
-              <UiIcon name="eye" size={56} />
+          {view === 'cue' ? <StrategyCueView cue={cue!} visual={visual} icon={visual.icon} /> : null}
+          {view === 'groups' ? <ObjectGroups visual={visual} count={missed ? count : 0} crossOut={missed} /> : null}
+          {showHelp ? (
+            <button type="button" className="help-btn" aria-label="Help" data-testid="help" onClick={onHelp}>
+              <UiIcon name="eye" size={64} />
             </button>
-          )}
+          ) : null}
         </div>
         <div className="early-numerals" aria-live="polite">
           <span>{numeral(a!)}</span>
           <span className="math-op">{numeral(op!)}</span>
           <span>{numeral(b!)}</span>
           <span className="math-op">=</span>
-          <span className="math-answer">{solved ? answer : '?'}</span>
+          <span className="math-answer">{solved ? answer : usePad && typed !== null ? typed : '?'}</span>
           {solved ? <span className="early-check"><UiIcon name="check" size={72} /></span> : null}
           {solved ? <span className="sparkles" aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <i key={i} style={{ ['--i' as string]: i }}><UiIcon name="sparkle" size={36} /></i>)}</span> : null}
         </div>
       </div>
 
-      <ChoiceButtons choices={p.choices!} answer={answer} guide={missed} picked={picked} disabled={solved} onChoose={choose} />
+      {usePad ? (
+        <NumberPad max={CHOICE_MAX_PAD} value={typed} disabled={!!feedback} onKey={onKey} onClear={() => setTyped(null)} onOk={() => typed !== null && choose(typed)} />
+      ) : (
+        <ChoiceButtons choices={choices!} answer={answer} guide={missed} picked={picked} disabled={solved} dots={level === 'dots' || viewStep === 2 || missed} onChoose={choose} />
+      )}
     </>
   );
 }
+
+/** Pad keys run 0 to 10 until add20 exists. */
+const CHOICE_MAX_PAD = 10;
