@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { keypadReady } from './harness/keypadReady';
 
 /** style-2: the Dungeon question, Picture Run, Home and the end screen in the Modern pixel look. Made-up names and ids only. */
 async function seed(page: Page) {
@@ -37,9 +38,7 @@ async function startPip(page: Page) {
   await page.goto('/');
   await page.locator('.kid-card', { hasText: 'Pip' }).click();
   await page.getByRole('button', { name: 'Start Quest' }).click();
-  const teach = page.getByRole('button', { name: 'Let me try one!' });
-  if (await teach.isVisible().catch(() => false)) await teach.click();
-  await expect(page.locator('.keypad')).toBeVisible();
+  await keypadReady(page);
 }
 
 for (const vp of [

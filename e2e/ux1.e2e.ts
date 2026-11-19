@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { keypadReady } from './harness/keypadReady';
 
 /**
  * UX-1: leaving a run on an insecure origin, the picker with two heroes, and the miss screen.
@@ -48,7 +49,7 @@ test('quit on an http origin (no crypto.randomUUID): the hold leaves the run and
   await page.goto('/');
   await page.locator('.kid-card', { hasText: 'Cy' }).click();
   await page.getByRole('button', { name: 'Start Quest' }).click();
-  await expect(page.locator('.keypad')).toBeVisible();
+  await keypadReady(page);
   for (const d of '9999') await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
   await page.locator('.key-go').click();
   await expect(page.locator('.answer-fixed')).toBeVisible();

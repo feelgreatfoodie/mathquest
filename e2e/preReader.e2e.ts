@@ -1,6 +1,7 @@
 import { createHash, randomInt } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { keypadReady } from './harness/keypadReady';
 
 /**
  * Pre-reader flow at iPad size on a synthetic profile with only add10 on.
@@ -239,9 +240,6 @@ test('a reader profile still gets the keypad run and no pre-reader screen', asyn
   await page.locator('.kid-card', { hasText: KID_NAME }).click();
   await expect(page.getByRole('button', { name: 'Start Quest' })).toBeVisible();
   await page.getByRole('button', { name: 'Start Quest' }).click();
-  // The run may open on a new-skill teach card (the plan shuffles new cards in); go past it.
-  const teach = page.getByRole('button', { name: 'Let me try one!' });
-  if (await teach.count()) await teach.click();
-  await expect(page.locator('.keypad')).toBeVisible();
+  await keypadReady(page);
   await expect(page.locator('.choices')).toHaveCount(0);
 });

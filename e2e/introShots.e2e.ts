@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { test, type Page } from '@playwright/test';
 import { newCardState } from '../src/engine/scheduler';
 import { INTRO_CARDS, INTRO_IMAGE } from '../src/ui/screens/introCards';
+import { keypadReady } from './harness/keypadReady';
 
 /**
  * Makes public/intro/*.webp for the "What is Math Quest?" cards. Run it with `npm run intro-shots` (needs cwebp from libwebp).
@@ -96,7 +97,7 @@ test.describe('intro images', () => {
     await page.getByRole('button', { name: 'Start Quest' }).waitFor();
     await grab('02-memory');
     await page.getByRole('button', { name: 'Start Quest' }).click();
-    await page.locator('.keypad').waitFor();
+    await keypadReady(page);
     await grab('01-adventure');
 
     await reload();
