@@ -51,7 +51,7 @@ for (const vp of [
       await expect(list).toContainText('Bought Wizard (-25 gems)');
       const text = await list.innerText();
       expect(text).not.toMatch(/[-−]0(?!\d)/);
-      await expect(page.locator('.gem-history .spend .gem-delta')).toHaveText('-25');
+      await expect(page.locator('.gem-history .spend .gem-delta')).toHaveText('−25');
     });
 
     test('Grown-ups: light theme is off by default, kept per parent on this device, and leaves kid screens dark', async ({ page }) => {

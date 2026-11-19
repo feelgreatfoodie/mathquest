@@ -36,7 +36,7 @@ describe('gemHistory', () => {
   it('labels a paid purchase with its cost and a run with a plus', () => {
     const [c] = gemHistory([], [buy('p1', 10, 'wizard', 25)], 20);
     expect(gemChangeLabel(c!, 'Wizard')).toBe('Bought Wizard (-25 gems)');
-    expect(gemDeltaText(c!)).toBe('-25');
+    expect(gemDeltaText(c!)).toBe('−25');
     const [r] = gemHistory([run('s1', 20, 6)], [], 20);
     expect(gemDeltaText(r!)).toBe('+6');
     expect(gemChangeLabel(r!)).toBe('Quest finished');
