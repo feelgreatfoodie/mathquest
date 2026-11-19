@@ -31,6 +31,43 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  # Playwright e2e on Linux, chromium only, for every PR. The dev servers start from playwright.config.ts in
+  # local data mode and with fake public Firebase ids, so no secret and no production config is used.
+  # WebKit stays out: its specs (adventureFit.webkit.e2e.ts) are not verified on Linux yet.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Read the Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install chromium and its system libraries
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install system libraries only (browser cached)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - run: npx playwright test --project=chrome
+      - name: Upload the HTML report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   # A PR that changes src/ must add a line to src/whatsnew.ts, or carry the "no-whatsnew" label.
   whatsnew:
     if: github.event_name == 'pull_request'
