@@ -31,10 +31,12 @@ async function seed(page: Page, settings: object) {
   );
 }
 
+// .tap() and not .click(): on a Mac with several displays, Playwright WebKit 2388 delivers mouse events at shifted coordinates
+// (a click at 120,120 arrived at -1121,1244), so every .click() timed out with "html intercepts pointer events". Touch taps arrive in place.
 async function openAdventure(page: Page) {
   await page.goto('/');
-  await page.locator('.kid-card', { hasText: 'Pip' }).click();
-  await page.getByRole('button', { name: 'Adventure' }).click();
+  await page.locator('.kid-card', { hasText: 'Pip' }).tap();
+  await page.getByRole('button', { name: 'Adventure' }).tap();
   await expect(page.getByTestId('overworld')).toBeVisible();
   await expect.poll(() => page.evaluate(() => !!(window as unknown as { __ow?: unknown }).__ow)).toBe(true);
   await page.waitForTimeout(400);
@@ -111,8 +113,8 @@ test('a pre-reader Picture Run in landscape fits: no sideways scroll, top bar in
   await page.setViewportSize({ width: 1024, height: 768 });
   await seed(page, PRE);
   await page.goto('/');
-  await page.locator('.kid-card', { hasText: 'Pip' }).click();
-  await page.getByRole('button', { name: 'Play' }).click();
+  await page.locator('.kid-card', { hasText: 'Pip' }).tap();
+  await page.getByRole('button', { name: 'Play' }).tap();
   await expect(page.locator('.early-top')).toBeVisible();
   const r = await page.evaluate(() => ({
     sw: document.documentElement.scrollWidth, iw: window.innerWidth,
