@@ -11,7 +11,11 @@ export default defineConfig({
   testMatch: '**/*.e2e.ts',
   timeout: 90_000,
   workers: 1,
-  reporter: [['list']],
+  // CI: list plus an HTML report the workflow uploads when a spec fails.
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
+  // The visual.e2e.ts baselines are macOS system Chrome renders. A Linux render never matches them, so CI skips
+  // the toHaveScreenshot comparisons and runs every other assertion in those specs.
+  ignoreSnapshots: !!process.env.CI,
   // Visual baselines live beside the specs, one folder, no platform suffix (system Chrome on macOS).
   snapshotPathTemplate: '{testDir}/__baselines__/{arg}{ext}',
   expect: { toHaveScreenshot: { threshold: 0.1, maxDiffPixelRatio: 0.001, animations: 'disabled' } },
@@ -25,7 +29,8 @@ export default defineConfig({
   },
   // Two projects: system Chrome for every spec, and WebKit (the engine of Safari on iPad) for the specs that name it.
   projects: [
-    { name: 'chrome', use: { channel: 'chrome' }, testIgnore: '**/*.webkit.e2e.ts' },
+    // Locally: system Chrome. CI (ubuntu-latest) installs the Playwright chromium build only.
+    { name: 'chrome', use: process.env.CI ? {} : { channel: 'chrome' }, testIgnore: '**/*.webkit.e2e.ts' },
     { name: 'webkit', use: { browserName: 'webkit' }, testMatch: '**/*.webkit.e2e.ts' },
   ],
   webServer: [
