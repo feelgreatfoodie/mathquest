@@ -148,6 +148,11 @@ test.describe('the update screen', () => {
       await page.locator('.kid-card', { hasText: KID_NAME }).click();
       await setMin(page, v);
       await page.getByRole('button', { name: 'Start Quest' }).click();
+      // The plan shuffles new skills in, so the run opens on a teach card or on the keypad. Wait for whichever
+      // shows, go past the card, then require the keypad.
+      const teach = page.getByRole('button', { name: 'Let me try one!' });
+      await expect(page.locator('.keypad').or(teach)).toBeVisible();
+      if (await teach.isVisible()) await teach.click();
       await expect(page.locator('.keypad')).toBeVisible();
       await expect(page.getByTestId('update-screen')).toHaveCount(0);
     });
