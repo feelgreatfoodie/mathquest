@@ -1094,7 +1094,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         stats: stats,
         world: worldRef.current,
         trip: tripRef.current ? { tripId: tripRef.current.tripId, opened: openedSpots(tripRef.current) } : null,
-        spots: spotsHere().map((s) => ({ id: s.id, x: s.x, y: s.y, key: s.key })),
+        spots: spotsHere().map((s) => ({ id: s.id, x: s.x, y: s.y, key: s.key, ...(s.power ? { power: s.power } : {}) })),
         lifetime: lifetimeChests(worldRef.current!.openedChests),
         paused: pausedRef.current,
       }),
