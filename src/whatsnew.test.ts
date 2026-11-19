@@ -10,7 +10,9 @@ describe('whatsnew', () => {
     expect([...prs].sort((a, b) => b - a)).toEqual(prs);
     expect(WHATS_NEW.map((e) => e.pr)).toContain(10); // backfilled, kept beyond the shown 10
   });
-  it('covers every merged change from #35 to #45 (#38 was a tooling change, with no line) (the footer shows the newest 10)', () => {
+  it('covers every merged change from #36 to #46 (#38 was a tooling change, with no line) (the footer shows the newest 10)', () => {
+    const prs = recentChanges().map((e) => e.pr);
+    for (const n of [37, 39, 40, 41, 42, 43, 44, 45, 46]) expect(prs).toContain(n);
     const prs = recentChanges().map((e) => e.pr);
     for (const n of [35, 36, 37, 39, 40, 41, 42, 43, 44, 45]) expect(prs).toContain(n);
   });

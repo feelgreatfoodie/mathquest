@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import type { Repo } from '../data/repo';
 import { type Kid } from '../engine/models';
-import { cardLabel, getCardDef } from '../engine/modules';
+import { cardLabel, getCardDef, moduleOfCard } from '../engine/modules';
 import { word } from '../engine/modules/early';
 import type { AnswerInput, Problem, Visual } from '../engine/problems';
 import type { Entry, Feedback, SessionRunner } from '../engine/session';
@@ -9,7 +9,7 @@ import { Keypad, type Field } from '../ui/Keypad';
 import { FracView, MathView } from '../ui/MathView';
 import { ChoiceButtons } from '../ui/early/ChoiceButtons';
 import { NumberPad } from '../ui/early/NumberPad';
-import { StrategyCueView } from '../ui/early/StrategyCue';
+import { GapFrame, StrategyCueView } from '../ui/early/StrategyCue';
 import { strategyCue } from '../engine/support';
 import { ObjectGroups } from '../ui/early/ObjectGroups';
 import { chime, hit, softTone, tick, unlockSounds } from '../ui/early/sounds';
@@ -339,11 +339,11 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
     [onResolved],
   );
 
-  /** Counts the icons one by one, on screen and out loud, then says the whole sum. */
-  const countUp = useCallback(async (visual: Visual, speech: string, answer: number) => {
+  /** Counts the icons (or the missing squares of a ten-frame) one by one, on screen and out loud, then says the whole sum. */
+  const countUp = useCallback(async (visual: Visual, finalLine: string, answer: number, gap = false) => {
     const turn = ++countTurn.current;
     const stale = () => turn !== countTurn.current || !alive.current;
-    await speak(visual.op === '+' ? "Let's count them all." : "Let's take some away, then count what is left.");
+    await speak(gap ? "Let's count what is missing." : visual.op === '+' ? "Let's count them all." : "Let's take some away, then count what is left.");
     for (let i = 1; i <= answer; i++) {
       if (stale()) return;
       setCount(i);
@@ -351,7 +351,7 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
       await speak(word(i), { queue: true });
     }
     if (stale()) return;
-    await speak(`${speech} is ${word(answer)}.`, { queue: true });
+    await speak(finalLine, { queue: true });
   }, []);
 
   const choose = useCallback(
@@ -375,13 +375,14 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
       if (fb.verdict === 'correct') {
         chime();
         const t0 = performance.now();
-        void speak(`Yes! ${speech} is ${word(answer)}.`).then(() => {
+        void speak(`Yes! ${entry.problem.confirm ?? `${speech} is ${word(answer)}`}.`).then(() => {
           const wait = Math.max(0, CORRECT_PAUSE_MS - (performance.now() - t0));
           timers.current.push(setTimeout(() => alive.current && next(fb), wait));
         });
       } else {
         softTone();
-        if (entry.problem.visual) void countUp(entry.problem.visual, speech, answer);
+        const g = entry.problem.gap;
+        if (entry.problem.visual) void countUp(entry.problem.visual, `${entry.problem.confirm ?? `${speech} is ${word(answer)}`}.`, answer, !!g);
       }
     },
     [feedback, helped, runner, entry, repo, kid.id, next, countUp, onAnswered],
@@ -409,9 +410,12 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
   const missed = !!feedback && feedback.verdict !== 'correct';
   const solved = feedback?.verdict === 'correct';
   const [a, op, b] = p.tokens;
+  const padMax = moduleOfCard(entry.cardId)?.padMax ?? 10;
   const view = missed || viewStep === 2 ? 'groups' : viewStep === 1 ? 'cue' : 'numerals';
   const usePad = level === 'pad' && !missed;
   const choices = missed && level === 'pad' ? [answer] : p.choices!;
+  // The answer slot: the right answer once solved, the pad's number while typing, else a question mark.
+  const shown = solved ? answer : usePad && typed !== null ? typed : '?';
   const showHelp = viewStep < 2 && !entry.preview && !feedback;
 
   return (
@@ -419,7 +423,7 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
       <div data-preview={entry.preview ? 'true' : undefined} data-support={level} className={`early-question ${entry.kind === 'practice' && !entry.fill ? 'is-practice' : ''}`} data-mode={view}>
         <div className="early-pictures">
           {view === 'cue' ? <StrategyCueView cue={cue!} visual={visual} icon={visual.icon} /> : null}
-          {view === 'groups' ? <ObjectGroups visual={visual} count={missed ? count : 0} crossOut={missed} /> : null}
+          {view === 'groups' ? (p.gap ? <GapFrame a={p.gap.a} total={p.gap.total} count={missed ? count : 0} fill={missed && count >= answer} /> : <ObjectGroups visual={visual} count={missed ? count : 0} crossOut={missed} size={Math.max(visual.a, visual.b) > 5 ? 52 : 64} />) : null}
           {showHelp ? (
             <button type="button" className="help-btn" aria-label="Help" data-testid="help" onClick={onHelp}>
               <UiIcon name="eye" size={64} />
@@ -429,16 +433,16 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
         <div className="early-numerals" aria-live="polite">
           <span>{numeral(a!)}</span>
           <span className="math-op">{numeral(op!)}</span>
-          <span>{numeral(b!)}</span>
+          {p.gap ? <span className="math-answer">{shown}</span> : <span>{numeral(b!)}</span>}
           <span className="math-op">=</span>
-          <span className="math-answer">{solved ? answer : usePad && typed !== null ? typed : '?'}</span>
+          {p.gap ? <span>{p.gap.total}</span> : <span className="math-answer">{shown}</span>}
           {solved ? <span className="early-check"><UiIcon name="check" size={72} /></span> : null}
           {solved ? <span className="sparkles" aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <i key={i} style={{ ['--i' as string]: i }}><UiIcon name="sparkle" size={36} /></i>)}</span> : null}
         </div>
       </div>
 
       {usePad ? (
-        <NumberPad max={CHOICE_MAX_PAD} value={typed} disabled={!!feedback} onKey={onKey} onClear={() => setTyped(null)} onOk={() => typed !== null && choose(typed)} />
+        <NumberPad max={padMax} value={typed} disabled={!!feedback} onKey={onKey} onClear={() => setTyped(null)} onOk={() => typed !== null && choose(typed)} />
       ) : (
         <ChoiceButtons choices={choices!} answer={answer} guide={missed} picked={picked} disabled={solved} dots={level === 'dots' || viewStep === 2 || missed} onChoose={choose} />
       )}
@@ -446,5 +450,3 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
   );
 }
 
-/** Pad keys run 0 to 10 until add20 exists. */
-const CHOICE_MAX_PAD = 10;

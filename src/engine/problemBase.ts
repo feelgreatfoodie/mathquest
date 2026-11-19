@@ -35,6 +35,15 @@ export interface Problem {
   visual?: Visual;
   /** Answer buttons for choice input, in display order. */
   choices?: number[];
+  /**
+   * A missing addend ("4 + ? = 7"): the ten-frame shows `a` filled and the gap up to `total`. The tokens are the addend and
+   * the total, and the answer is the gap. Pre-reader modules bonds10 and missing10 only.
+   */
+  gap?: { a: number; total: number };
+  /** Which strategy cue fits this fact. Absent: the add10 rules in support.ts decide from the pictures. */
+  strategy?: 'double' | 'neardouble' | 'split10';
+  /** What the voice says after a right answer, instead of "<speech> is <answer>". */
+  confirm?: string;
 }
 
 export type MixedInput = { w: number | null; n: number | null; d: number | null };

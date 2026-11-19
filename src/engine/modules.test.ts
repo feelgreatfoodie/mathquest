@@ -25,7 +25,7 @@ const g2 = () => ADD10.groups![1]!.cardIds;
 
 describe('registry', () => {
   it('looks every card up by id prefix', () => {
-    expect(MODULES.map((m) => m.id)).toEqual(['add10', 'sub10', 'facts', 'multidigit', 'fractions']);
+    expect(MODULES.map((m) => m.id)).toEqual(['add10', 'sub10', 'bonds10', 'missing10', 'doubles', 'add20', 'facts', 'multidigit', 'fractions']);
     expect(moduleOfCard('mul:7x8')?.id).toBe('facts');
     expect(moduleOfCard('md:2x1')?.id).toBe('multidigit');
     expect(moduleOfCard('fr:add')?.id).toBe('fractions');

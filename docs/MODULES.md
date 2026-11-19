@@ -152,3 +152,19 @@ Manual check on Flynn's iPad in Safari: the voice plays after the first tap, the
 2. After deploy, Flynn creates a Pre-reader profile in his parent account, with only Addition within 10 on.
 3. Send a RESULT with the PR link, the URL, test counts, and iPad-size screenshots of the pre-reader run and the parent grid.
 4. Phase 2 (`count10`, `bonds10`) waits for Flynn's go-ahead after about a week of use.
+
+## 7. Pre-reader recall (prereader-fade and prereader-new-facts)
+- Every pre-reader fact has a support level on its card: `dots`, `numerals` or `pad` (`support.ts`). A missing value reads as dots.
+- Two right answers in a row without help move a fact from dots to numerals. A Solid fact answered right without help moves to the pad. A miss steps down one level. Help (strategy cue first, then dots) is right-with-help: rated Hard, never advances the fade, resets the fact to dots.
+- 4 choices (`closeChoices`): answer ±1 and ±2 plus one common error, in 0 to 20, positions shuffled.
+- New modules, all off until a parent turns them on (`settings.modules`):
+
+| Module | Cards | Card ids | Input | Groups |
+| --- | --- | --- | --- | --- |
+| `bonds10` | 11 | `bond:a` (a + ? = 10) | choices, pad to 10 | a of 5 or more, then 4 or less |
+| `missing10` | 45 | `miss:a+_=s` (a + ? = s, s up to 10) | choices, pad to 10 | totals to 5, then 6 to 10 |
+| `doubles` | 19 | `dbl:a`, `near:a` | choices, pad to 20 | doubles to 5 + 5, doubles to 10 + 10, near doubles |
+| `add20` | 30 | `a20:a+b` (sums 11 to 20) | choices, pad to 20 | sums 11 to 15, then 16 to 20 |
+
+- A missing addend shows one ten-frame with the gap lit (`Problem.gap`). Doubles, near doubles and add20 name their cue in `Problem.strategy` (`double`, `neardouble`, `split10`: "8 + 5 = 8 + 2 + 3").
+- Firestore rules are unchanged: card ids only need to match the doc id, and `settings.modules` is an ordinary settings field.

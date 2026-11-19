@@ -1084,3 +1084,17 @@ legend { padding: 0 6px; color: var(--muted); }
 @media (min-width: 900px) { .numpad { grid-template-columns: repeat(7, 120px); } }
 /* A phone: the sum row shrinks so "7 + 3 = ?" fits 375 px wide. */
 @media (max-width: 480px) { .early-numerals { font-size: 56px; gap: 10px; min-height: 64px; } }
+.tf-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; color: var(--gold); }
+.tf-cell.is-on .tf-num { color: var(--bg); }
+/* A pad that reaches 20 (doubles, add20) has 23 keys: 6 a row on a tall tablet, 8 a row on a wide short one. */
+.numpad[data-max="20"] { grid-template-columns: repeat(6, 120px); }
+@media (min-width: 1000px) { .numpad[data-max="20"] { grid-template-columns: repeat(8, 120px); gap: 4px; } }
+@media (max-width: 719px) { .numpad[data-max="20"] { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); } }
+/* A pad with only the Help button above it: the Help button sits beside the sum instead of above it, so the pad stays on screen. */
+.early-question[data-support="pad"][data-mode="numerals"] { flex-direction: row; justify-content: center; align-items: center; gap: 48px; }
+.early-question[data-support="pad"][data-mode="numerals"] .early-pictures { order: 2; min-height: 0; }
+@media (max-width: 719px) { .early-question[data-support="pad"][data-mode="numerals"] { flex-direction: column; gap: 4px; } .early-question[data-support="pad"][data-mode="numerals"] .early-pictures { order: 0; } }
+/* A pad to 20 on a short tablet (iPad landscape): 3 rows of keys need the room the monster scene takes, so the scene hides. */
+@media (max-height: 800px) and (min-width: 1000px) {
+  .early-run:has(.numpad[data-max="20"]) .arena.early-arena { display: none; }
+}
