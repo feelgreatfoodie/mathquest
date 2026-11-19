@@ -9,7 +9,7 @@ import { newId } from '../../data/repo';
 import { CHECKPOINT_EVERY, addRun, loadTrip, openChest, openedSpots, resolveTrip, saveTrip, type TripState, type TripTotals } from './trip';
 import { chestGems, type TripSpot } from './chests';
 import { planRegion, spotsFor } from './tripPlan';
-import { queueCheckpoint } from './tripWrite';
+import { queueCheckpoint, queueLairLog } from './tripWrite';
 import { HoldButton } from '../../ui/early/HoldButton';
 import { chest as chestSound, defeat, unlockSounds } from '../../ui/early/sounds';
 import { speak, unlockSpeech } from '../../ui/early/useSpeech';
@@ -17,12 +17,19 @@ import { MuteButton, useMute } from '../../ui/MuteButton';
 import { Sprite, UiIcon } from '../../ui/sprites';
 import { PixelHeart, PixelIcon } from '../../ui/pixel';
 import { QuestionPanel } from '../QuestionPanel';
+import { PixelButton, PixelFrame } from '../../ui/pixel';
 import { ownedItems } from '../shop/shopState';
 import type { GameModeProps } from '../modes/types';
-import { BOSS_WIN, bossPlan, bossReady, bossReward } from './boss';
+import { bossReady } from './boss';
 import { TILE, drawScene, viewFor, type Scene } from './draw';
 import { MAX_VISIBLE, retryEntity, type Entity } from './encounters';
-import { MAPS, findTiles, heroStart, isWalkable, tileAt, type Point, type RegionId, type WalkCtx } from './maps';
+import {
+  BossClock, bossBudgetMs, bossOutcome, bossTimerOn, enterLair as planLair, instantiateLair, lairProgress, lairReward, lairSpotId, lairStats, loadLair, planLairEntities,
+  roomsClearedOf, saveLair, showRooms, watchVisibility, type BossOutcome, type LairBuild, type LairState, type LairStats,
+} from './lair';
+import { BossBar, DoorLabel, LairHud } from './LairHud';
+import { doorLabel, lairRetryEntity, miniMap, openedLairSpots } from './lairView';
+import { LAIRS, MAPS, findTiles, heroStart, isWalkable, tileAt, type LairDef, type Point, type RegionId, type TileMap, type WalkCtx } from './maps';
 import { approach } from './pathfind';
 import { NEXT_REGION, PREV_REGION, REGION_NAMES, furthestRegion, gateInfo, lairMessage, lairPicture, regionProgress } from './regions';
 import { fromDoc, settleHero, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
@@ -45,6 +52,46 @@ interface ModalState {
   entity?: Entity;
   boss?: boolean;
 }
+
+/** One visit to a lair, held while the hero is inside. `back` is where the hero stands outside, `overEnts` the overworld's entities. */
+interface LairRun {
+  state: LairState;
+  def: LairDef;
+  build: LairBuild;
+  done: Set<string>;
+  cleared: number;
+  back: Point;
+  overEnts: Entity[];
+}
+
+interface BossFight {
+  entries: Entry[];
+  idx: number;
+  correct: number;
+  answered: number;
+  result: BossOutcome;
+  startedAt: number;
+  /** Clock time at the answer that ended the fight. */
+  ms: number | null;
+}
+
+interface FightTimer {
+  clock: BossClock | null;
+  budget: number;
+  stopVis: () => void;
+  timer: ReturnType<typeof setInterval> | null;
+}
+
+interface OverlayInfo {
+  kind: 'win' | 'lose';
+  first?: boolean;
+  gems?: number;
+  why?: 'timeout' | 'lose';
+}
+
+const NO_STATS: LairStats = { beaten: 0, bestMs: null, bestCorrect: 0 };
+/** The boss door of each land in the overworld: the door label stands above it. */
+const BOSS_DOOR: Record<RegionId, Point | undefined> = { meadow: findTiles(MAPS.meadow, 'boss')[0], forest: findTiles(MAPS.forest, 'boss')[0], castle: findTiles(MAPS.castle, 'boss')[0] };
 
 interface Msg {
   text: string;
@@ -92,7 +139,12 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const entsRef = useRef<Entity[]>([]);
   const known = useRef(new Set<string>());
   const bossIds = useRef(new Set<string>());
-  const bossRun = useRef<{ entries: Entry[]; idx: number; correct: number } | null>(null);
+  const bossRun = useRef<BossFight | null>(null);
+  const lairRef = useRef<LairRun | null>(null);
+  const fightRef = useRef<FightTimer | null>(null);
+  /** Dev only: the hook can push the boss clock forward. Always 0 in a build. */
+  const skew = useRef(0);
+  const doorRef = useRef<HTMLDivElement>(null);
   const pathRef = useRef<Point[]>([]);
   const heldRef = useRef<Facing | null>(null);
   const intent = useRef<Intent>(null);
@@ -112,7 +164,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const [region, setRegion] = useState<RegionId>('meadow');
   const [modal, setModal] = useState<ModalState | null>(null);
   const [msg, setMsg] = useState<Msg | null>(null);
-  const [overlay, setOverlay] = useState<null | 'win' | 'lose'>(null);
+  const [overlay, setOverlay] = useState<OverlayInfo | null>(null);
+  const [inLair, setInLair] = useState(false);
+  const [lairView, setLairView] = useState({ answered: 0, total: 0, cleared: 0, here: { x: 0, y: 0 } });
+  const [bossHud, setBossHud] = useState<{ remainingMs: number; budgetMs: number } | null>(null);
+  const [stats, setStats] = useState<Partial<Record<RegionId, LairStats>>>({});
   const [hud, setHud] = useState<Hud>({ left: 0, lit: false });
   const [keys, setKeys] = useState(0);
   const [chestHud, setChestHud] = useState({ open: 0, total: 0 });
@@ -149,8 +205,13 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   /** A key opens doors: the Key item from the shop, or a key from a chest or a boss (kept, not used up). */
   const hasKey = useCallback((): boolean => gearRef.current.key || (worldRef.current?.keys ?? 0) > 0, []);
 
+  /** The map the hero walks on: the lair's interior while inside one, else the land. */
+  const curMap = useCallback((): TileMap => lairRef.current?.def.map ?? MAPS[worldRef.current!.region], []);
+
   const walkCtx = useCallback((): WalkCtx => {
     const w = worldRef.current!;
+    const lair = lairRef.current;
+    if (lair) return { gateOpen: false, hasKey: hasKey(), hasBridgeKit: gearRef.current.bridge, roomsCleared: lair.cleared };
     const next = NEXT_REGION[w.region];
     return { gateOpen: next ? gateInfo(next, liveCards(), kidRef.current.settings, reached()).open : false, hasKey: hasKey(), hasBridgeKit: gearRef.current.bridge };
   }, [liveCards, reached, hasKey]);
@@ -211,6 +272,12 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const refreshChestHud = useCallback(() => {
     const trip = tripRef.current;
     if (!trip) return;
+    const lair = lairRef.current;
+    if (lair) {
+      const ids = lair.build.rooms.filter((e) => e.role === 'chest' && e.at).map((e) => lairSpotId(lair.def.region, lair.state.seq, e.at!));
+      setChestHud({ open: ids.filter((id) => openedSpots(trip).includes(id)).length, total: ids.length });
+      return;
+    }
     const spots = spotsHere();
     const open = spots.filter((s) => openedSpots(trip).includes(s.id)).length;
     setChestHud({ open, total: spots.length });
@@ -239,6 +306,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   }, [walkCtx, liveCards, learner, refreshChestHud]);
 
   const revealWaiting = useCallback(() => {
+    if (lairRef.current) return; // a lair's rooms show by the doors, not by a count
     const ents = entsRef.current;
     let shown = ents.filter((e) => e.kind === 'monster' && e.shown).length;
     for (const e of ents) {
@@ -284,6 +352,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         placeEntities();
         refreshHud();
         setLoaded(true);
+        void loadStats();
       } catch (e) {
         if (alive) setError((e as Error).message);
       }
@@ -430,12 +499,236 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     setModal({ entry: teach ?? graded, entity: e });
   }, []);
 
+  // ---- lairs ----
+  const refreshLair = useCallback(() => {
+    const l = lairRef.current;
+    if (!l) return;
+    const p = lairProgress(l.state.plan, l.done);
+    setLairView({ answered: p.answered, total: p.total, cleared: l.cleared, here: { x: hero.current.x, y: hero.current.y } });
+  }, []);
+
+  /** The kid's lair logs, for "Beaten N times" on each door. A read that fails leaves the door unlabelled. */
+  const loadStats = useCallback(async () => {
+    try {
+      const logs = await repo.listSessions(kidRef.current.id, 500);
+      setStats({ meadow: lairStats(logs, 'meadow'), forest: lairStats(logs, 'forest'), castle: lairStats(logs, 'castle') });
+    } catch {
+      // The door shows no label until the next read.
+    }
+  }, [repo]);
+
+  /** A question of the lair is answered: its slot is done, the next room's door opens when the rooms before it are clear. */
+  const markDone = useCallback(
+    (slot: string) => {
+      const l = lairRef.current;
+      if (!l || l.done.has(slot)) return;
+      l.done.add(slot);
+      const before = l.cleared;
+      l.cleared = roomsClearedOf(l.state.plan, l.done);
+      l.state = { ...l.state, done: [...l.done] };
+      saveLair(kidRef.current.id, l.state);
+      if (l.cleared !== before) {
+        entsRef.current = showRooms(entsRef.current, l.cleared);
+        if (l.cleared <= l.def.rooms.length - 1 && l.cleared > before) say({ text: l.cleared === l.def.rooms.length - 1 ? 'The boss door is open!' : 'A door opened!' });
+      }
+      refreshLair();
+    },
+    [refreshLair, say],
+  );
+
+  /**
+   * Builds (or resumes) the lair of the land the hero stands in and puts the hero at its entrance. With `retry` it is the plan after a
+   * lost fight: fresh, with 12 room questions.
+   */
+  const startLair = useCallback(
+    (retry = false) => {
+      const r = runnerRef.current!;
+      const w = worldRef.current!;
+      const trip = tripRef.current!;
+      const k = kidRef.current;
+      const def = LAIRS[w.region];
+      const prior = lairRef.current;
+      const { state, resumed } = planLair({
+        region: w.region,
+        cards: liveCards(),
+        settings: k.settings,
+        learner,
+        now: Date.now(),
+        rng: Math.random,
+        stored: prior ? prior.state : loadLair(k.id),
+        tripId: trip.tripId,
+        retry,
+      });
+      // A fight left half done starts over: its slots are asked again.
+      const done = new Set(state.done.filter((s) => !s.startsWith('b')));
+      const before = new Set(r.queue.map((q) => q.id));
+      const build = instantiateLair(r, state.plan, Math.random);
+      for (const e of [...build.rooms, ...build.boss]) {
+        bossIds.current.add(e.entry.id);
+        known.current.add(e.entry.id);
+      }
+      const teachFor = new Map<string, string>();
+      for (const q of r.queue) {
+        if (before.has(q.id) || q.kind !== 'teach') continue;
+        teachFor.set(q.cardId, q.id);
+        bossIds.current.add(q.id);
+        known.current.add(q.id);
+      }
+      const cleared = roomsClearedOf(state.plan, done);
+      const opened = new Set(openedSpots(trip));
+      const ents = planLairEntities({ def, build, seq: state.seq, rng: Math.random, done, roomsCleared: cleared })
+        .filter((e) => !(e.spotId && opened.has(e.spotId)))
+        .map((e) => (e.kind === 'chest' && teachFor.has(e.cardId) ? { ...e, teachId: teachFor.get(e.cardId)! } : e));
+      const h = hero.current;
+      const at = heroStart(def.map);
+      lairRef.current = { state: { ...state, done: [...done] }, def, build, done, cleared, back: prior?.back ?? { x: h.x, y: h.y }, overEnts: prior?.overEnts ?? entsRef.current };
+      saveLair(k.id, lairRef.current.state);
+      entsRef.current = ents;
+      h.x = h.fx = at.x;
+      h.y = h.fy = at.y;
+      h.facing = 'right';
+      h.moving = null;
+      pathRef.current = [];
+      heldRef.current = null;
+      intent.current = null;
+      markerRef.current = null;
+      setInLair(true);
+      refreshLair();
+      refreshChestHud();
+      refreshHud();
+      say(resumed ? { text: 'You are back in the lair.' } : null);
+      if (!prior) void loadStats();
+    },
+    [liveCards, learner, refreshLair, refreshChestHud, refreshHud, say, loadStats],
+  );
+
+  const stopFightTimers = useCallback(() => {
+    const f = fightRef.current;
+    if (!f) return;
+    if (f.timer) clearInterval(f.timer);
+    f.stopVis();
+    fightRef.current = null;
+  }, []);
+
+  useEffect(() => () => stopFightTimers(), [stopFightTimers]);
+
+  /** The exit tile: the hero goes back to the overworld beside the door and the place is saved. */
+  const leaveLair = useCallback(() => {
+    const l = lairRef.current;
+    if (!l) return;
+    stopFightTimers();
+    bossRun.current = null;
+    setBossHud(null);
+    saveLair(kidRef.current.id, l.state);
+    entsRef.current = l.overEnts;
+    lairRef.current = null;
+    setInLair(false);
+    const h = hero.current;
+    h.x = h.fx = l.back.x;
+    h.y = h.fy = l.back.y;
+    h.facing = 'down';
+    h.moving = null;
+    pathRef.current = [];
+    heldRef.current = null;
+    intent.current = null;
+    markerRef.current = null;
+    touchWorld({ t: 'move', x: l.back.x, y: l.back.y, facing: 'down' });
+    void flushWorld();
+    refreshChestHud();
+    refreshHud();
+    setMsg(null);
+  }, [stopFightTimers, touchWorld, flushWorld, refreshChestHud, refreshHud]);
+
+  /** The fight is over (win, wrong answers or the clock): log it, pay the win once, and show the overlay. */
+  const finishFight = useCallback(() => {
+    const run = bossRun.current;
+    const l = lairRef.current;
+    if (!run || !l) return;
+    const f = fightRef.current;
+    const ms = run.ms ?? (f?.clock ? f.clock.elapsedMs() : Date.now() - run.startedAt);
+    bossRun.current = null;
+    stopFightTimers();
+    setBossHud(null);
+    const k = kidRef.current;
+    const w = worldRef.current!;
+    const win = run.result === 'win';
+    // A miss in the fight queued a retry: it stays out of the map.
+    for (const q of runnerRef.current!.queue) {
+      if (!known.current.has(q.id)) {
+        known.current.add(q.id);
+        bossIds.current.add(q.id);
+      }
+    }
+    void queueLairLog(repo, k.id, tripRef.current!, { region: w.region, bossWon: win, bossCorrect: run.correct, bossMs: ms });
+    setModal(null);
+    if (win) {
+      // Read the reward before the world records the win: the first win pays 10 gems, a key and the trophy once, a replay pays 3.
+      const reward = lairReward(w, w.region, true);
+      touchWorld({ t: 'boss', region: w.region });
+      setKeys(worldRef.current!.keys);
+      if (reward.gems > 0) void grant(reward.gems);
+      defeat();
+      void flushWorld();
+      l.state = { ...l.state, bossDone: true, done: [...l.done] };
+      saveLair(k.id, l.state);
+      setStats((all) => {
+        const prev = all[w.region] ?? NO_STATS;
+        return { ...all, [w.region]: { beaten: prev.beaten + 1, bestMs: prev.bestMs === null ? ms : Math.min(prev.bestMs, ms), bestCorrect: Math.max(prev.bestCorrect, run.correct) } };
+      });
+      setOverlay({ kind: 'win', first: reward.first, gems: reward.gems });
+      voice(reward.first ? 'Boss defeated!' : 'You beat the boss again!');
+    } else {
+      // Driven out: back at the entrance, in a fresh lair of 12 room questions.
+      startLair(true);
+      setOverlay({ kind: 'lose', why: run.result === 'timeout' ? 'timeout' : 'lose' });
+      voice('The boss drove you out!');
+    }
+    refreshHud();
+  }, [repo, stopFightTimers, touchWorld, grant, flushWorld, startLair, refreshHud]);
+
+  const startFight = useCallback(() => {
+    const l = lairRef.current;
+    if (!l || bossRun.current) return;
+    const entries = l.build.boss.map((b) => b.entry);
+    if (!entries.length) return say({ text: 'Nothing to fight yet.' });
+    if (l.state.bossDone) return say({ text: 'The boss is beaten. The way out is behind you.' });
+    const settings = kidRef.current.settings;
+    const timerOn = bossTimerOn(settings);
+    const budget = timerOn ? bossBudgetMs(entries.map((e) => e.cardId), liveCards(), settings) : 0;
+    const clock = timerOn ? new BossClock(budget, () => Date.now() + skew.current) : null;
+    clock?.start();
+    const stopVis = clock ? watchVisibility(clock) : () => {};
+    const timer = clock
+      ? setInterval(() => {
+          const run = bossRun.current;
+          if (!run) return;
+          const left = clock.remainingMs();
+          setBossHud({ remainingMs: left, budgetMs: budget });
+          if (left <= 0 && run.result === 'pending') {
+            run.result = 'timeout';
+            run.ms = clock.elapsedMs();
+            finishFight();
+          }
+        }, 200)
+      : null;
+    stopFightTimers();
+    fightRef.current = { clock, budget, stopVis, timer };
+    bossRun.current = { entries, idx: 0, correct: 0, answered: 0, result: 'pending', startedAt: Date.now(), ms: null };
+    pathRef.current = [];
+    heldRef.current = null;
+    pausedRef.current = true;
+    setMsg(null);
+    setBossHud(timerOn ? { remainingMs: budget, budgetMs: budget } : null);
+    setModal({ entry: entries[0]!, boss: true });
+    refreshHud();
+  }, [liveCards, say, refreshHud, stopFightTimers, finishFight]);
+
   const startBoss = useCallback(() => {
-    const r = runnerRef.current!;
+    if (lairRef.current) return startFight();
     const w = worldRef.current!;
     const cards = liveCards();
-    if (w.bossesDefeated.includes(w.region)) return say({ text: 'The lair is quiet. You already won here.' });
-    if (!bossReady(w.region, cards, kidRef.current.settings)) {
+    // A beaten lair stays open for ever; one not yet beaten needs the region's facts ready.
+    if (!w.bossesDefeated.includes(w.region) && !bossReady(w.region, cards, kidRef.current.settings)) {
       const p = regionProgress(w.region, cards, kidRef.current.settings);
       // N and the bar use the larger of the two counts (reviewing, steady). A pre-reader gets the icon, the dots and the voice.
       if (learner === 'prereader') {
@@ -444,21 +737,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       }
       return say({ text: lairMessage(w.region, p.done, p.total, kidRef.current.settings), progress: p.share });
     }
-    const plan = bossPlan({ region: w.region, cards, now: Date.now(), rng: Math.random, settings: kidRef.current.settings });
-    if (!plan.length) return say({ text: 'Nothing to fight yet.' });
-    const entries = r.append(plan).filter((e) => e.kind !== 'teach');
-    for (const e of entries) {
-      bossIds.current.add(e.id);
-      known.current.add(e.id);
-    }
-    bossRun.current = { entries, idx: 0, correct: 0 };
     pathRef.current = [];
     heldRef.current = null;
-    pausedRef.current = true;
-    setMsg(null);
-    setModal({ entry: entries[0]!, boss: true });
-    refreshHud();
-  }, [liveCards, say, refreshHud, learner]);
+    startLair();
+    void loadStats();
+  }, [liveCards, say, learner, startFight, startLair, loadStats]);
 
   const gateMessage = useCallback(() => {
     const w = worldRef.current!;
@@ -475,20 +758,25 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const onArrive = useCallback(() => {
     const w = worldRef.current!;
     const h = hero.current;
-    const map = MAPS[w.region];
-    touchWorld({ t: 'move', x: h.x, y: h.y, facing: h.facing });
+    const map = curMap();
+    const lair = lairRef.current;
+    // Inside a lair the saved place stays the overworld door: the lair's own coordinates never reach the world doc.
+    if (!lair) touchWorld({ t: 'move', x: h.x, y: h.y, facing: h.facing });
+    else refreshLair();
     const here = entsRef.current.find((e) => e.shown && e.x === h.x && e.y === h.y);
     if (here) return openEntity(here);
     const tile = tileAt(map, h.x, h.y);
-    if (tile === 'gate') {
+    if (lair) {
+      if (tile === 'exit') return leaveLair();
+    } else if (tile === 'gate') {
       const to = NEXT_REGION[w.region];
       if (to) return changeRegion(to, w.region);
     }
-    if (tile === 'back') {
+    if (!lair && tile === 'back') {
       const to = PREV_REGION[w.region];
       if (to) return changeRegion(to, w.region);
     }
-    if (tile === 'camp') {
+    if (!lair && tile === 'camp') {
       const r = runnerRef.current!;
       const left = r.pending().filter((e) => e.kind === 'graded' && !bossIds.current.has(e.id)).length;
       if (left === 0) return void finishTrip();
@@ -503,12 +791,13 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         if (want === 'gate' && t === 'gate') return gateMessage();
       }
     }
-  }, [touchWorld, openEntity, changeRegion, finishTrip, say, startBoss, gateMessage]);
+  }, [touchWorld, openEntity, changeRegion, finishTrip, say, startBoss, gateMessage, curMap, leaveLair, refreshLair]);
 
   const resolveEntity = useCallback(
     (entity: Entity, fb: Feedback) => {
       const r = runnerRef.current!;
       entsRef.current = entsRef.current.filter((e) => e.id !== entity.id);
+      const lair = lairRef.current;
       if (entity.kind === 'chest') {
         chestSound();
         // Each chest pays once on a trip: the spot is written to the trip first, so a second open of the same spot pays nothing.
@@ -530,48 +819,65 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       for (const q of fresh) {
         known.current.add(q.id);
         entsRef.current.push(
-          retryEntity({ prev: entity, entry: q, map: MAPS[worldRef.current!.region], taken: entsRef.current, rng: Math.random, ctx: walkCtx() }),
+          lair
+            ? lairRetryEntity({ prev: entity, entry: q, def: lair.def, taken: entsRef.current, rng: Math.random, cleared: lair.cleared })
+            : retryEntity({ prev: entity, entry: q, map: MAPS[worldRef.current!.region], taken: entsRef.current, rng: Math.random, ctx: walkCtx() }),
         );
+        if (lair) bossIds.current.add(q.id); // a lair retry is extra practice: it is not one of the trip's questions
       }
+      // The answered question's slot is done, and a cleared room opens its door. (After the retry, which stays in the room.)
+      const slot = lair?.build.slotOf[entity.id];
+      if (slot) markDone(slot);
       revealWaiting();
       refreshHud();
       pausedRef.current = false;
       setModal(null);
     },
-    [touchWorld, grant, walkCtx, revealWaiting, refreshHud, refreshChestHud],
+    [touchWorld, grant, walkCtx, revealWaiting, refreshHud, refreshChestHud, markDone],
   );
 
+  /** A boss answer was graded: count it, and decide the fight now (not after the feedback), so the clock cannot change a won fight. */
+  const onPanelAnswered = useCallback(
+    (fb: Feedback) => {
+      const m = modalRef.current;
+      const run = bossRun.current;
+      const l = lairRef.current;
+      if (!m?.boss || !run || !l || run.result !== 'pending') return;
+      run.answered++;
+      if (fb.verdict === 'correct') run.correct++;
+      const slot = l.build.slotOf[m.entry.id];
+      if (slot) markDone(slot);
+      const clock = fightRef.current?.clock ?? null;
+      const out = bossOutcome({ correct: run.correct, answered: run.answered, remainingMs: clock ? clock.remainingMs() : null, prereader: learner === 'prereader', timerOn: !!clock });
+      if (out !== 'pending') {
+        run.result = out;
+        run.ms = clock ? clock.elapsedMs() : Date.now() - run.startedAt;
+        clock?.pause();
+      }
+    },
+    [markDone, learner],
+  );
+
+  /** A boss question is finished (its feedback is done): the next one, or the end of the fight. */
   const resolveBoss = useCallback(
     (fb: Feedback) => {
       const r = runnerRef.current!;
-      const run = bossRun.current!;
-      if (fb.verdict === 'correct') run.correct++;
+      const run = bossRun.current;
+      if (!run) return;
       for (const q of r.queue) {
         if (!known.current.has(q.id)) {
           known.current.add(q.id);
           bossIds.current.add(q.id); // a boss retry stays out of the map
         }
       }
+      void fb;
       run.idx++;
-      if (run.idx < run.entries.length) return setModal({ entry: run.entries[run.idx]!, boss: true });
-      bossRun.current = null;
-      const needed = Math.min(BOSS_WIN, run.entries.length);
-      const win = run.correct >= needed;
-      const w = worldRef.current!;
-      if (win) {
-        // Read the reward before the world records the win: a lair already on the list pays 0 gems.
-        const reward = bossReward(w, w.region);
-        touchWorld({ t: 'boss', region: w.region });
-        setKeys(worldRef.current!.keys);
-        if (reward.gems > 0) void grant(reward.gems);
-        defeat();
-        void flushWorld();
-      }
-      refreshHud();
-      setModal(null);
-      setOverlay(win ? 'win' : 'lose');
+      if (run.result === 'pending' && run.idx < run.entries.length) return setModal({ entry: run.entries[run.idx]!, boss: true });
+      // The questions ran out with the fight still open (cannot happen with 6 and the rules): count it as a loss.
+      if (run.result === 'pending') run.result = 'lose';
+      finishFight();
     },
-    [touchWorld, grant, flushWorld, refreshHud],
+    [finishFight],
   );
 
   const onPanelResolved = useCallback(
@@ -599,12 +905,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   // ---- movement ----
   const beginStep = useCallback(
     (dir: Facing) => {
-      const w = worldRef.current!;
       const h = hero.current;
       const d = DIRS[dir];
       const to = { x: h.x + d.x, y: h.y + d.y };
       h.facing = dir;
-      const map = MAPS[w.region];
+      const map = curMap();
       const t = tileAt(map, to.x, to.y);
       if (t === 'boss') return startBoss();
       if (t === 'gate' && !walkCtx().gateOpen) return gateMessage();
@@ -615,15 +920,14 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       setMsg(null);
       h.moving = { from: { x: h.x, y: h.y }, to, p: 0 };
     },
-    [startBoss, gateMessage, walkCtx],
+    [startBoss, gateMessage, walkCtx, curMap],
   );
 
   const tapTile = useCallback(
     (p: Point) => {
       if (pausedRef.current || !worldRef.current) return;
       unlockSounds();
-      const w = worldRef.current;
-      const map = MAPS[w.region];
+      const map = curMap();
       const h = hero.current;
       const t = tileAt(map, p.x, p.y);
       intent.current = t === 'boss' ? 'boss' : t === 'gate' ? 'gate' : null;
@@ -636,7 +940,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       if (path.length === 0 && intent.current === 'boss') startBoss();
       else if (path.length === 0 && intent.current === 'gate') gateMessage();
     },
-    [walkCtx, say, startBoss, gateMessage],
+    [walkCtx, say, startBoss, gateMessage, curMap],
   );
 
   // The animation loop. It stops moving the world while a question is open or the trip is ending.
@@ -685,7 +989,8 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       if (!canvas || !w) return;
       const g = canvas.getContext('2d');
       if (!g) return;
-      const map = MAPS[w.region];
+      const map = curMap();
+      const lair = lairRef.current;
       const h = hero.current;
       const dpr = canvas.width / Math.max(1, canvas.clientWidth);
       // Tile size in CSS pixels: about 14 tiles across, never fewer than 11 by 7 in view (shrink the tiles before the buttons).
@@ -701,12 +1006,14 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         heroSprite: k.hero,
         ...(worn ? { petSprite: worn } : {}),
         entities: entsRef.current,
-        gateOpen: walkCtxCache(),
-        campLit: hudLit.current,
-        bossDefeated: w.bossesDefeated.includes(w.region),
+        gateOpen: lair ? false : walkCtxCache(),
+        campLit: lair ? false : hudLit.current,
+        bossDefeated: lair ? lair.state.bossDone : w.bossesDefeated.includes(w.region),
         hasKey: hasKey(),
         hasBridgeKit: gearRef.current.bridge,
-        openedChests: openedHere(),
+        openedChests: lair ? openedLairSpots(openedSpots(tripRef.current!), lair.def.region, lair.state.seq) : openedHere(),
+        ...(lair ? { roomsCleared: lair.cleared } : {}),
+        ...(!lair && w.bossesDefeated.includes(w.region) ? { trophy: true } : {}),
         lantern: gearRef.current.lantern,
         time,
         marker: markerRef.current,
@@ -714,11 +1021,18 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       };
       drawScene(g, canvas.width, canvas.height, scale, scene);
       viewScale.current = scale;
+      // The door label rides above the lair door in the world (never inside a lair).
+      const label = doorRef.current;
+      const door = lair ? undefined : BOSS_DOOR[w.region];
+      if (label && door) {
+        const v = viewFor(canvas.width, canvas.height, scale, { x: h.fx, y: h.fy }, map);
+        label.style.transform = `translate(${((door.x + 0.5) * v.t - v.left) / dpr}px, ${(door.y * v.t - v.top) / dpr}px) translate(-50%, -100%)`;
+      }
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, beginStep, onArrive]);
+  }, [loaded, beginStep, onArrive, curMap]);
 
   const viewScale = useRef(4);
   const hudLit = useRef(false);
@@ -737,6 +1051,34 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     return gateCache.current.open;
   };
 
+  /** What the Playwright specs read about the lair the hero is in: the plan, the rooms cleared, the fight and its clock. */
+  const lairState = useCallback(() => {
+    const l = lairRef.current;
+    if (!l) return null;
+    const run = bossRun.current;
+    const f = fightRef.current;
+    const p = lairProgress(l.state.plan, l.done);
+    return {
+      region: l.def.region,
+      seq: l.state.seq,
+      size: l.state.plan.size,
+      roomItems: l.state.plan.rooms.map((r) => r.items.length),
+      bossItems: l.state.plan.boss.length,
+      forms: l.state.plan.boss.filter((b) => b.form).length,
+      cleared: l.cleared,
+      done: [...l.done],
+      answered: p.answered,
+      total: p.total,
+      bossDone: l.state.bossDone,
+      timerOn: bossTimerOn(kidRef.current.settings),
+      fight: run ? { idx: run.idx, correct: run.correct, answered: run.answered, result: run.result } : null,
+      budgetMs: f?.budget ?? null,
+      remainingMs: f?.clock ? f.clock.remainingMs() : null,
+      boss: l.build.boss.map((b) => ({ id: b.entry.id, cardId: b.entry.cardId, form: b.form ?? null })),
+      back: l.back,
+    };
+  }, []);
+
   // A read and drive hook for the Playwright specs. It exists only in the dev server (import.meta.env.DEV), never in a build.
   useEffect(() => {
     if (!loaded || !import.meta.env.DEV) return;
@@ -746,7 +1088,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         region: worldRef.current!.region,
         hero: { x: hero.current.x, y: hero.current.y },
         moving: !!hero.current.moving || pathRef.current.length > 0,
-        entities: entsRef.current.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, shown: e.shown, cardId: e.cardId, ...(e.spotId ? { spotId: e.spotId } : {}), ...(e.key ? { key: true } : {}) })),
+        entities: entsRef.current.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, shown: e.shown, cardId: e.cardId, ...(e.spotId ? { spotId: e.spotId } : {}), ...(e.key ? { key: true } : {}), ...(e.room !== undefined ? { room: e.room } : {}), ...(e.guard ? { guard: true } : {}), ...(e.trap ? { trap: true } : {}) })),
+        lair: lairState(),
+        stats: stats,
         world: worldRef.current,
         trip: tripRef.current ? { tripId: tripRef.current.tripId, opened: openedSpots(tripRef.current) } : null,
         spots: spotsHere().map((s) => ({ id: s.id, x: s.x, y: s.y, key: s.key })),
@@ -762,6 +1106,16 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         return a && a.kind === 'int' ? a.value : null;
       },
       tapTile: (x: number, y: number) => tapTile({ x, y }),
+      /** Dev only: pushes the running boss clock forward by `ms` (a lost fight without waiting for it). */
+      fastForwardBoss: (ms: number) => {
+        skew.current += ms;
+      },
+      /** Dev only: the answer of the question the boss fight is on, or null. */
+      bossAnswer: () => {
+        const run = bossRun.current;
+        const a = run?.entries[run.idx]?.problem.answer;
+        return a && a.kind === 'int' ? a.value : null;
+      },
       teleport: (x: number, y: number) => {
         const h = hero.current;
         h.x = h.fx = x;
@@ -774,14 +1128,14 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         const rect = canvas.getBoundingClientRect();
         const ratio = canvas.width / rect.width;
         const h = hero.current;
-        const { t, left, top } = viewFor(canvas.width, canvas.height, viewScale.current, { x: h.fx, y: h.fy }, MAPS[worldRef.current!.region]);
+        const { t, left, top } = viewFor(canvas.width, canvas.height, viewScale.current, { x: h.fx, y: h.fy }, curMap());
         return { x: rect.left + ((x + 0.5) * t - left) / ratio, y: rect.top + ((y + 0.5) * t - top) / ratio };
       },
     };
     return () => {
       delete w.__ow;
     };
-  }, [loaded, tapTile]);
+  }, [loaded, tapTile, curMap, lairState, stats]);
 
   // Size the canvas to its box.
   useEffect(() => {
@@ -832,7 +1186,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     if (!canvas || !w) return;
     const rect = canvas.getBoundingClientRect();
     const ratio = canvas.width / rect.width;
-    const map = MAPS[w.region];
+    const map = curMap();
     const h = hero.current;
     const { t, left, top } = viewFor(canvas.width, canvas.height, viewScale.current, { x: h.fx, y: h.fy }, map);
     const tile = { x: Math.floor(((e.clientX - rect.left) * ratio + left) / t), y: Math.floor(((e.clientY - rect.top) * ratio + top) / t) };
@@ -862,6 +1216,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const r = runnerRef.current!;
   const waiting = r.pending().filter((e) => e.kind === 'graded' && !bossIds.current.has(e.id));
   const adventureItems = items.filter((i) => i.startsWith('a-'));
+  const lairNow = inLair ? lairRef.current : null;
+  const won = worldRef.current!.bossesDefeated.includes(region);
+  const doorLines = lairNow ? [] : doorLabel(stats[region] ?? NO_STATS, won);
 
   return (
     <div className={`screen overworld${learner === 'prereader' ? ' ow-pre' : ''}`} data-testid="overworld" data-region={region}>
@@ -873,16 +1230,21 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         <span className="ow-stat" aria-label={`${kid.game.gems} gems`}><PixelIcon name="gem" size={30} /><b>{kid.game.gems}</b></span>
         <span className="ow-stat" aria-label={`${keys} keys`} data-testid="ow-keys"><KeyIcon /><b>{keys}</b></span>
         <span className="ow-stat ow-chests" aria-label={`${chestHud.open} of ${chestHud.total} chests opened`} data-testid="ow-chests"><PixelIcon name="chest" size={30} /><b>{learner === 'prereader' ? `${chestHud.open}/${chestHud.total}` : `${chestHud.open} of ${chestHud.total}`}</b></span>
-        <span className="ow-remaining" role="status" aria-label={`${waiting.length} questions left`} data-testid="ow-left">
-          {waiting.slice(0, 8).map((e) => <Sprite key={e.id} name={entsRef.current.find((x) => x.id === e.id)?.look ?? 'slime'} size={26} />)}
-          {waiting.length > 8 ? <b>+{waiting.length - 8}</b> : null}
-          {waiting.length === 0 ? <span className="ow-camp-lit" data-testid="camp-lit"><PixelIcon name="flame" size={30} /> Camp is lit!</span> : null}
-        </span>
+        {lairNow ? (
+          <LairHud answered={lairView.answered} total={lairView.total} {...miniMap(lairNow.def, lairView.cleared, lairView.here)} />
+        ) : (
+          <span className="ow-remaining" role="status" aria-label={`${waiting.length} questions left`} data-testid="ow-left">
+            {waiting.slice(0, 8).map((e) => <Sprite key={e.id} name={entsRef.current.find((x) => x.id === e.id)?.look ?? 'slime'} size={26} />)}
+            {waiting.length > 8 ? <b>+{waiting.length - 8}</b> : null}
+            {waiting.length === 0 ? <span className="ow-camp-lit" data-testid="camp-lit"><PixelIcon name="flame" size={30} /> Camp is lit!</span> : null}
+          </span>
+        )}
         {adventureItems.map((id) => <Sprite key={id} name={id} size={28} className="ow-item" />)}
         <MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} chimesOnly={mute.chimesOnly} />
       </div>
       <div className="ow-stage" ref={stageRef}>
         <canvas ref={canvasRef} className="ow-canvas" data-testid="ow-canvas" onPointerUp={onCanvasTap} aria-label="The map. Tap a tile to walk there." role="img" />
+        <DoorLabel ref={doorRef} lines={doorLines} prereader={learner === 'prereader'} count={Math.max((stats[region] ?? NO_STATS).beaten, won ? 1 : 0)} />
         {msg ? (
           <div className="ow-msg" role="status" data-testid="ow-msg">
             {msg.dots ? (
@@ -928,26 +1290,40 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           repo={repo}
           learner={learner}
           display="modal"
+          onAnswered={onPanelAnswered}
           onResolved={onPanelResolved}
         />
       ) : null}
+      {bossHud && modal?.boss ? <BossBar remainingMs={bossHud.remainingMs} budgetMs={bossHud.budgetMs} prereader={learner === 'prereader'} /> : null}
       {overlay ? (
-        <div className="question-modal ow-overlay" role="dialog" aria-modal="true" data-testid={`boss-${overlay}`}>
-          <div className="panel">
+        <div className="question-modal ow-overlay" role="dialog" aria-modal="true" data-testid={`boss-${overlay.kind}`}>
+          <PixelFrame tone={overlay.kind === 'win' ? 'gold' : 'neutral'} className="ow-overlay-frame">
             <Sprite name="boss" size={120} />
-            <h2 className="pixel">{overlay === 'win' ? 'Boss defeated!' : 'Not this time'}</h2>
-            <p>{overlay === 'win' ? 'You won a key and some gems.' : 'The boss keeps its lair. Try again on your next trip.'}</p>
-            <button
-              type="button"
-              className="btn btn-big"
+            <h2 className="pixel">{overlay.kind === 'win' ? (overlay.first ? 'Boss defeated!' : 'Boss beaten again!') : 'The boss drove you out!'}</h2>
+            {learner === 'prereader' ? null : (
+              <p>
+                {overlay.kind === 'win'
+                  ? overlay.first
+                    ? 'You won a key, a trophy for your camp and gems.'
+                    : 'You won gems.'
+                  : overlay.why === 'timeout'
+                    ? 'Time ran out. The rooms are new. Try again!'
+                    : 'Too many wrong answers. The rooms are new. Try again!'}
+              </p>
+            )}
+            <PixelButton
+              tone="go"
+              size={learner === 'prereader' ? 'prereader' : 'big'}
+              data-testid="boss-continue"
               onClick={() => {
                 setOverlay(null);
+                if (overlay.kind === 'win') leaveLair();
                 pausedRef.current = false;
               }}
             >
-              Keep exploring
-            </button>
-          </div>
+              {overlay.kind === 'win' ? 'Leave the lair' : 'Try again'}
+            </PixelButton>
+          </PixelFrame>
         </div>
       ) : null}
     </div>

@@ -1584,3 +1584,33 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .lr-gems { display: flex; gap: 8px; justify-content: center; }
 .lr-end-top { justify-content: flex-end; }
 .lightning-btn { position: relative; }
+/* ---- Lairs: the boss countdown, the lair line and mini map, the door label. Style-1 tokens and pixel frames only. ---- */
+.lair-bar { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 60; width: min(560px, calc(100% - 48px)); display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin: 4px 0; }
+.lair-bar-pre { width: min(720px, calc(100% - 48px)); padding: 16px 20px; }
+.lair-bar-track { flex: 1; height: 28px; background: var(--px-edge); padding: 4px; box-sizing: border-box; }
+.lair-bar-pre .lair-bar-track { height: 48px; }
+.lair-bar-fill { height: 100%; transition: width 0.2s steps(4); }
+.lair-bar-go { background: var(--px-go); }
+.lair-bar-gold { background: var(--px-gold); }
+.lair-bar-secs { min-width: 3ch; text-align: right; font-size: 24px; }
+.lair-bar-pre .lair-bar-secs { font-size: 36px; }
+.lair-bar-urgent .lair-bar-fill { animation: px-twinkle 0.8s steps(2) infinite; }
+.lair-hud { display: inline-flex; align-items: center; gap: 12px; flex: 1; min-width: 0; flex-wrap: wrap; }
+.lair-count { font-size: 22px; white-space: nowrap; }
+.lair-count b { color: var(--gold); font-size: 26px; }
+.lair-map { position: relative; flex: none; margin: 4px; }
+.lair-room { position: absolute; display: flex; align-items: center; justify-content: center; box-sizing: border-box; border: 2px solid var(--px-edge); background: var(--px-neutral-dark); overflow: hidden; }
+.lair-room-cleared { background: var(--px-go); }
+.lair-room-here { background: var(--px-gold); }
+.lair-room-open { background: var(--px-neutral); }
+.lair-room-locked { background: var(--px-neutral-dark); }
+.ow-pre .lair-count { font-size: 28px; }
+.lair-door { position: absolute; left: 0; top: 0; z-index: 4; pointer-events: none; will-change: transform; }
+.lair-door[hidden] { display: none; }
+.lair-door-frame { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 10px; margin: 4px; font-size: 16px; font-weight: 700; white-space: nowrap; }
+.lair-door-pre { display: inline-flex; align-items: center; gap: 8px; }
+.lair-door-pre b { font-size: 20px; }
+@media (prefers-reduced-motion: reduce) { .lair-bar-urgent .lair-bar-fill { animation: none; } }
+.ow-overlay-frame { align-self: center; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 12px; padding: 24px 32px; max-width: min(560px, 92%); }
+.ow-overlay-frame h2 { margin: 0; font-size: 20px; line-height: 1.4; }
+.ow-overlay-frame p { margin: 0; font-size: 20px; }
