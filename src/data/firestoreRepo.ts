@@ -21,6 +21,7 @@ import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../e
 import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import type { CampDoc } from '../game/overworld/camp';
 import type { WorldState } from '../game/overworld/worldState';
 import type { GameModeId } from '../game/modes/types';
 import { newId, type Repo } from './repo';
@@ -306,6 +307,15 @@ export class FirestoreRepo implements Repo {
 
   async saveWorld(kidId: string, world: WorldState): Promise<void> {
     await setDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'main'), world);
+  }
+
+  async loadCamp(kidId: string): Promise<unknown | null> {
+    const snap = await getDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'camp'));
+    return snap.exists() ? snap.data() : null;
+  }
+
+  async saveCamp(kidId: string, camp: CampDoc): Promise<void> {
+    await setDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'camp'), camp);
   }
 
   async setWorldLastMode(kidId: string, mode: GameModeId): Promise<void> {

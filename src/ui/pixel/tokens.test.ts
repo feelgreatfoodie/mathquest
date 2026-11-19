@@ -62,8 +62,8 @@ describe('pixel tokens: styles.css matches the table', () => {
 });
 
 describe('pixel icon set', () => {
-  it('has the 10 icons, each a 12 by 12 grid with every letter in its palette', () => {
-    expect(PIXEL_ICON_NAMES.sort()).toEqual(['bolt', 'chest', 'flame', 'gem', 'house', 'key', 'speaker', 'star', 'torch', 'vault']);
+  it('has the 12 icons, each a 12 by 12 grid with every letter in its palette', () => {
+    expect(PIXEL_ICON_NAMES.sort()).toEqual(['bolt', 'chest', 'flag', 'flame', 'gem', 'house', 'key', 'speaker', 'star', 'tent', 'torch', 'vault']);
     for (const name of PIXEL_ICON_NAMES) {
       const def = PIXEL_ICONS[name];
       expect(def.rows, name).toHaveLength(12);

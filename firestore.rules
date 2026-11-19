@@ -308,6 +308,13 @@ service cloud.firestore {
         && (!('d14' in v) || (v.d14 is int && v.d14 >= 0 && v.d14 <= 10));
     }
 
+    // The Lightning Round delay floor the parent sets, settings.lightningFloorMs, when present, is a whole number of ms from 1000 to 4000
+    // (the Parent screen offers the same range). A write without it passes. Applies to the parent branches; kids never write settings.
+    function lightningFloorOk() {
+      let f = request.resource.data.get('settings', {}).get('lightningFloorMs', 1000);
+      return f is int && f >= 1000 && f <= 4000;
+    }
+
     // game.hero may change only to a hero the kid owns after the write (a buy equips the new hero in the same
     // write). An unchanged hero passes, so a stored doc that already disagrees can still be saved.
     function heroChangeOk() {
@@ -422,6 +429,68 @@ service cloud.firestore {
         && (!('lastMode' in w) || w.lastMode in ['dungeon', 'prereader', 'overworld']);
     }
 
+    // The camp (world/camp): the tent and flags a kid places on the map. 3 fields: placed, version, updatedAt. placed is a list of at most
+    // 10 entries (1 tent plus 3 flags in each of 3 lands), each exactly { region, kind, x, y } with whole-number x in 0..39 and y in 0..29 (the
+    // map size). Rules cannot loop and a count over 10 slots passes the 1000-expression limit, so the list has one fixed order the app writes:
+    // the tent first (only slot 0 may hold it), then the flags sorted by region name. In that order the flags of a land sit side by side,
+    // so "no 4th flag in a land" is "slot i and slot i+3 never both hold a flag of the same land".
+    // An entry has exactly 4 fields: its size is 4 and reading region, kind, x and y all succeed (a missing one fails the rule).
+    // One function per slot keeps the list under the 1000-expression limit with 10 slots. Slot 0 holds a tent or a flag, later slots a
+    // flag. A flag's region is at or after the one before it (sorted), and slot i never matches slot i-3 (no 4th flag in a land).
+    // e: the entry, r: its region (read once by the caller), regs: the 3 land names (built once), prev: the region of the slot before it,
+    // far: the region of the slot 3 before it ('' when there is none to compare).
+    function campFlag(e, r, regs, prev, far) {
+      let x = e.x;
+      let y = e.y;
+      return e.size() == 4 && e.kind == 'flag' && r in regs && r >= prev && r != far
+        && x is int && x >= 0 && x < 40 && y is int && y >= 0 && y < 30;
+    }
+    function campSlot0(e, r, regs) {
+      let x = e.x;
+      let y = e.y;
+      return e.size() == 4 && e.kind in ['tent', 'flag'] && r in regs
+        && x is int && x >= 0 && x < 40 && y is int && y >= 0 && y < 30;
+    }
+    // Slots 6 to 9. r3, r4, r5: the regions of slots 3 to 5, read once by campHead.
+    function campTail(p, n, regs, r3, r4, r5) {
+      let r6 = p[6].region;
+      let r7 = p[7].region;
+      let r8 = p[8].region;
+      let r9 = p[9].region;
+      return (n <= 6 || campFlag(p[6], r6, regs, r5, r3))
+        && (n <= 7 || campFlag(p[7], r7, regs, r6, r4))
+        && (n <= 8 || campFlag(p[8], r8, regs, r7, r5))
+        && (n <= 9 || campFlag(p[9], r9, regs, r8, r6));
+    }
+    // Slots 0 to 5. r0..r5: the region of each slot, read once ('' for a missing slot or for the tent), shared by the next slot (sorted)
+    // and the slot 3 on (no 4th).
+    function campHead(p, n, regs) {
+      let r0 = p[0].region;
+      let r1 = p[1].region;
+      let r2 = p[2].region;
+      let r3 = p[3].region;
+      let r4 = p[4].region;
+      let r5 = p[5].region;
+      let t = p[0].kind == 'tent';
+      return (n == 0 || campSlot0(p[0], r0, regs))
+        && (n <= 1 || campFlag(p[1], r1, regs, t ? '' : r0, ''))
+        && (n <= 2 || campFlag(p[2], r2, regs, r1, ''))
+        && (n <= 3 || campFlag(p[3], r3, regs, r2, t ? '' : r0))
+        && (n <= 4 || campFlag(p[4], r4, regs, r3, r1))
+        && (n <= 5 || campFlag(p[5], r5, regs, r4, r2))
+        && campTail(p, n, regs, r3, r4, r5);
+    }
+    function campOk() {
+      let c = request.resource.data;
+      let p = c.get('placed', null);
+      return c.keys().hasOnly(['placed', 'version', 'updatedAt'])
+        && c.keys().hasAll(['placed', 'version', 'updatedAt'])
+        && c.version == 1
+        && c.updatedAt is number
+        && p is list && p.size() <= 10
+        && campHead(p, p.size(), ['meadow', 'forest', 'castle']);
+    }
+
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
     // touches them.
     match /parents/{document=**} {
@@ -456,8 +525,8 @@ service cloud.firestore {
       match /kids/{kidId} {
         allow read: if isParent(uid) || isKid(uid, kidId);
         allow delete: if isParent(uid);
-        allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId && vaultSettingsOk();
-        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && vaultSettingsOk())
+        allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId && vaultSettingsOk() && lightningFloorOk();
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && vaultSettingsOk() && lightningFloorOk())
           || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk() || kidVaultKeysOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && kidHeroGrowthOk() && kidRaiseOk());
 
         match /cards/{cardId} {
@@ -482,6 +551,14 @@ service cloud.firestore {
         match /world/{docId} {
           allow read: if isParent(uid) || isKid(uid, kidId);
           allow create, update: if (isParent(uid) || isKid(uid, kidId)) && docId == 'main' && smallDoc() && worldOk();
+          allow delete: if isParent(uid);
+        }
+
+        // The camp: world/camp, the tent and flags a kid places. Same owners as world/main: the kid token for this kidId and the parent
+        // read and write it, a sibling's token, another family and anonymous clients match no rule. It never touches world/main or the kid doc.
+        match /world/camp {
+          allow read: if isParent(uid) || isKid(uid, kidId);
+          allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc() && campOk();
           allow delete: if isParent(uid);
         }
 

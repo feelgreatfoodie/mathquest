@@ -44,6 +44,14 @@ export const PIXEL_ICONS = {
     palette: { y: '#fde047', o: '#fb923c', R: '#ef4444', k: K, n: '#92400e' },
     rows: ['.....y......', '....yoy.....', '...yooRy....', '...yoRRy....', '....RRR.....', '....kkk.....', '....nnn.....', '....nnn.....', '....nnn.....', '....nnn.....', '....nnn.....', '....kkk.....'],
   },
+  tent: {
+    palette: { k: K, t: '#f1e4c3', d: '#92400e', p: K, R: '#ef4444' },
+    rows: ['.....pRR....', '.....pRRR...', '.....pRR....', '.....kk.....', '....kttk....', '...kttttk...', '..kttkkttk..', '.kttkddkttk.', 'kttkddddkttk', 'ktkddddddktk', 'kkkkkkkkkkkk', '............'],
+  },
+  flag: {
+    palette: { p: '#92400e', R: '#ef4444', s: '#6b7280' },
+    rows: ['...pRRRR....', '...pRRRRRR..', '...pRRRRRRR.', '...pRRRRRR..', '...pRRRR....', '...p........', '...p........', '...p........', '...p........', '..sssss.....', '.sssssss....', '............'],
+  },
 } as const satisfies Record<string, ArtDef>;
 
 export type PixelIconName = keyof typeof PIXEL_ICONS;
