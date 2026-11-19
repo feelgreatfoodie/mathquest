@@ -191,8 +191,10 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
 
   return (
     <>
-      <div className={`panel question ${entry.kind === 'practice' && !entry.fill ? 'is-practice' : ''}`} data-preview={entry.preview ? 'true' : undefined}>
-        {entry.kind === 'practice' && !entry.fill ? <p className="pixel tag">Try again!</p> : null}
+      <div className={`panel question ${entry.kind === 'practice' && !entry.fill && !entry.riddle ? 'is-practice' : ''}`} data-preview={entry.preview ? 'true' : undefined}>
+        {entry.kind === 'practice' && !entry.fill && !entry.riddle ? <p className="pixel tag">Try again!</p> : null}
+        {entry.riddle ? <p className="pixel tag" data-testid="riddle-tag">A riddle!</p> : null}
+        {entry.problem.story ? <p className="story" data-testid="riddle-story">{entry.problem.story}</p> : null}
         {entry.preview ? <p className="pixel tag">A new one to try</p> : null}
         {entry.preview && !feedback ? <p className="hint preview-hint" data-testid="preview-hint">{entry.problem.hint}</p> : null}
         <MathView tokens={entry.problem.tokens} answer={answerDisplay} />
@@ -420,7 +422,7 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
 
   return (
     <>
-      <div data-preview={entry.preview ? 'true' : undefined} data-support={level} className={`early-question ${entry.kind === 'practice' && !entry.fill ? 'is-practice' : ''}`} data-mode={view}>
+      <div data-preview={entry.preview ? 'true' : undefined} data-support={level} data-riddle={entry.riddle ? 'true' : undefined} className={`early-question ${entry.kind === 'practice' && !entry.fill && !entry.riddle ? 'is-practice' : ''}`} data-mode={view}>
         <div className="early-pictures">
           {view === 'cue' ? <StrategyCueView cue={cue!} visual={visual} icon={visual.icon} /> : null}
           {view === 'groups' ? (p.gap ? <GapFrame a={p.gap.a} total={p.gap.total} count={missed ? count : 0} fill={missed && count >= answer} /> : <ObjectGroups visual={visual} count={missed ? count : 0} crossOut={missed} size={Math.max(visual.a, visual.b) > 5 ? 52 : 64} />) : null}

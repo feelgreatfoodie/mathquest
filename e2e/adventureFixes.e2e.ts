@@ -180,7 +180,7 @@ test('Camp is lit: no guide is drawn, the voice says it once, and the campfire s
   await openAdventure(page);
   expect(await spoken(page)).not.toContain('Walk to the campfire to finish your trip!');
   for (let guard = 0; guard < 8; guard++) {
-    const left = (await ow(page, (o) => o.state())).entities.filter((e) => e.shown && e.kind === 'monster');
+    const left = (await ow(page, (o) => o.state())).entities.filter((e) => e.shown);
     if (!left.length) break;
     await page.evaluate(([x, y]) => (window as unknown as { __ow: Ow }).__ow.tapTile(x!, y!), [left[0]!.x, left[0]!.y]);
     await expect(page.locator('.question-modal')).toBeVisible({ timeout: 25_000 });

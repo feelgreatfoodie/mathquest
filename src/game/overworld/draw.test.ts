@@ -33,7 +33,7 @@ describe('camp lit: no guide to the campfire is drawn', () => {
     const path = [{ x: hero.x + 1, y: hero.y }, { x: hero.x + 2, y: hero.y }, camp];
     const scene = {
       map, hero: { x: hero.x, y: hero.y, facing: 'right', frame: 0 }, heroSprite: 'knight', entities: [], gateOpen: true,
-      campLit: true, bossDefeated: false, hasKey: false, hasBridgeKit: false, lantern: false, time: 1, marker: null,
+      campLit: true, bossDefeated: false, hasKey: false, hasBridgeKit: false, openedChests: [], lantern: false, time: 1, marker: null,
       campGuide: path, // an old caller; nothing may draw it
     } as unknown as Scene;
     const draw = recorder();

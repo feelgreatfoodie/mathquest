@@ -1,4 +1,5 @@
 import type { GameModeId } from '../modes/types';
+import { addChest } from '../../engine/chestLedger';
 import { MAPS, REGION_IDS, heroStart, isWalkable, type RegionId } from './maps';
 
 /** Most chests the save remembers. The rules cap the list at the same number; the oldest drop first. */
@@ -14,7 +15,7 @@ export interface WorldState {
   x: number;
   y: number;
   facing: Facing;
-  /** Card ids whose chest was opened. */
+  /** The chest ledger: a "#<n>" marker with the count of chests opened (engine/chestLedger.ts), after the card ids an older app stored. Which chests are open on a trip lives with the trip (trip.ts). */
   openedChests: string[];
   bossesDefeated: RegionId[];
   keys: number;
@@ -26,7 +27,8 @@ export interface WorldState {
 
 export type WorldAction =
   | { t: 'move'; x: number; y: number; facing?: Facing }
-  | { t: 'chest'; cardId: string }
+  | { t: 'chest' }
+  | { t: 'key' }
   | { t: 'boss'; region: RegionId }
   | { t: 'region'; region: RegionId; x: number; y: number };
 
@@ -35,16 +37,15 @@ export function newWorld(now: number): WorldState {
   return { region: 'meadow', x: s.x, y: s.y, facing: 'down', openedChests: [], bossesDefeated: [], keys: 0, version: 1, updatedAt: now };
 }
 
-/** The pure reducer. A boss gives one key the first time it is defeated; a chest id is stored once. */
+/** The pure reducer. A boss gives one key the first time it is defeated. A chest adds 1 to the lifetime count. A key chest gives a key only to a kid who holds none. */
 export function worldReducer(s: WorldState, a: WorldAction, now: number = s.updatedAt): WorldState {
   switch (a.t) {
     case 'move':
       return { ...s, x: a.x, y: a.y, facing: a.facing ?? s.facing, updatedAt: now };
-    case 'chest': {
-      if (s.openedChests.includes(a.cardId)) return s;
-      const list = [...s.openedChests, a.cardId];
-      return { ...s, openedChests: list.length > MAX_OPENED ? list.slice(list.length - MAX_OPENED) : list, updatedAt: now };
-    }
+    case 'chest':
+      return { ...s, openedChests: addChest(s.openedChests), updatedAt: now };
+    case 'key':
+      return s.keys >= 1 ? s : { ...s, keys: 1, updatedAt: now };
     case 'boss':
       if (s.bossesDefeated.includes(a.region)) return s;
       return { ...s, bossesDefeated: [...s.bossesDefeated, a.region], keys: Math.min(MAX_KEYS, s.keys + 1), updatedAt: now };

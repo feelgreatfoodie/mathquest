@@ -3,6 +3,7 @@ import { createHash, randomInt } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { newCardState } from '../src/engine/scheduler';
+import { recentChanges } from '../src/whatsnew';
 
 /**
  * Parent area on iPhone widths (375x667, 390x844, 430x932), system Chrome with iPhone emulation.
@@ -280,9 +281,11 @@ for (const { w, h } of PHONES) {
       await shot(page, w, 'parent-version-footer', false);
       await footer.getByRole('button', { name: /what.s new/i }).click();
       const items = page.locator('.whatsnew li');
-      await expect(items).toHaveCount(10);
-      await expect(page.locator('.whatsnew')).toContainText('(behind the scenes)');
-      await expect(page.locator('.whatsnew')).toContainText('(turn on in Settings)');
+      const recent = recentChanges();
+      await expect(items).toHaveCount(recent.length);
+      // Each marker shows only while an entry that carries it is among the newest; the unit test checks the whole list.
+      if (recent.some((e) => e.behindTheScenes)) await expect(page.locator('.whatsnew')).toContainText('(behind the scenes)');
+      if (recent.some((e) => e.setting)) await expect(page.locator('.whatsnew')).toContainText('(turn on in Settings)');
       await expectFits(page, 'whats new');
       await shot(page, w, 'parent-whatsnew', false);
     });

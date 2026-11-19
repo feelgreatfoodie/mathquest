@@ -153,16 +153,16 @@ test('walking adds nothing to graded time: the clock starts when the panel opens
   expect(ms).toBeLessThan(walked - 1000); // the answer took well under the walk
 });
 
-test('a chest holds a new card: opening it and answering right adds 1 gem and remembers the chest', async ({ page }) => {
+test('a chest holds a new card: opening it and answering right adds 1 or 2 gems and counts the chest', async ({ page }) => {
   await seed(page, { settings: { modes: { overworld: true }, maxNew: 2, sessionSize: 4 } });
   await openAdventure(page);
   const chest = (await ow(page, (o) => o.state())).entities.find((e) => e.kind === 'chest')!;
   expect(chest).toBeDefined();
   await clear(page, chest.id);
   const gems = await page.evaluate((k) => JSON.parse(localStorage.getItem('mathquest:v1:kids')!)[0].game.gems as number, KID);
-  expect(gems).toBe(6); // 5 + 1
+  expect([6, 7]).toContain(gems); // 5 + 1 or 2
   const s = await ow(page, (o) => o.state());
-  expect(s.world.openedChests).toContain(chest.cardId);
+  expect(s.world.openedChests).toEqual(['#1']);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-chest-820x1180.png` });
 });
 
@@ -183,7 +183,7 @@ test('clearing every entry lights the campfire; walking to it ends the trip and 
   await openAdventure(page);
   await expect(page.getByTestId('camp-lit')).toHaveCount(0);
   for (let guard = 0; guard < 8; guard++) {
-    const left = (await ow(page, (o) => o.state())).entities.filter((e) => e.shown && e.kind === 'monster');
+    const left = (await ow(page, (o) => o.state())).entities.filter((e) => e.shown);
     if (!left.length) break;
     await clear(page, left[0]!.id);
   }

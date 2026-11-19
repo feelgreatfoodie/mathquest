@@ -37,6 +37,8 @@ export interface TripState {
   updatedAt: number;
   finished: boolean;
   totals: TripTotals;
+  /** Chests opened on this trip: spot ids (`land:x,y`). A new trip starts with none. Kept on this device with the trip, so a write from an older app to world/main cannot reset it. */
+  chests?: { opened: string[] };
 }
 
 export const EMPTY_TOTALS: TripTotals = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0, xp: 0, bestCombo: 0, medianMs: 0, missed: [] };
@@ -47,7 +49,8 @@ export function loadTrip(kidId: string): TripState | null {
   try {
     const raw = JSON.parse(localStorage.getItem(key(kidId)) ?? 'null') as Partial<TripState> | null;
     if (!raw || typeof raw.tripId !== 'string' || typeof raw.startedAt !== 'number' || typeof raw.seq !== 'number' || !raw.totals) return null;
-    return { ...(raw as TripState), finished: raw.finished === true, updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : raw.startedAt, totals: { ...EMPTY_TOTALS, ...raw.totals } };
+    const opened = Array.isArray(raw.chests?.opened) ? raw.chests!.opened.filter((s): s is string => typeof s === 'string' && s.length <= 40).slice(0, 60) : [];
+    return { ...(raw as TripState), chests: { opened }, finished: raw.finished === true, updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : raw.startedAt, totals: { ...EMPTY_TOTALS, ...raw.totals } };
   } catch {
     return null;
   }
@@ -111,4 +114,17 @@ export function tripLog(trip: Pick<TripState, 'tripId' | 'startedAt'>, t: TripTo
     finished: end === 'camp',
     ...(end ? { endedBy: end } : {}),
   };
+}
+
+/** Spot ids of the chests opened on this trip. */
+export function openedSpots(trip: Pick<TripState, 'chests'>): string[] {
+  return trip.chests?.opened ?? [];
+}
+
+/** Marks a chest opened on the trip and saves it. Returns false when the chest was already open: pay nothing then. */
+export function openChest(kidId: string, trip: TripState, spot: string): boolean {
+  if (openedSpots(trip).includes(spot)) return false;
+  trip.chests = { opened: [...openedSpots(trip), spot] };
+  saveTrip(kidId, trip);
+  return true;
 }
