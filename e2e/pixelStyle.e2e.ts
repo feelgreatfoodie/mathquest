@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { keypadReady } from './harness/keypadReady';
 
 /** style-1: title screen, self-hosted fonts, per-kid CRT switch, reduced motion, and no layout shift in a question. */
 const LANDING_PORT = Number(process.env.E2E_LANDING_PORT) || 5198;
@@ -38,7 +39,7 @@ for (const vp of [
       await page.goto('/');
       await page.locator('.kid-card', { hasText: 'Pip' }).click();
       await page.getByRole('button', { name: 'Start Quest' }).click();
-      await expect(page.locator('.keypad')).toBeVisible();
+      await keypadReady(page);
       await page.waitForTimeout(300);
       const before = await box(page, '.panel.question');
       for (const d of '9999') await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();

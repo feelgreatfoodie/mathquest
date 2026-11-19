@@ -1,6 +1,7 @@
 import { createHash, randomInt } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { keypadReady } from './harness/keypadReady';
 
 /**
  * PIN screens sign in on the 4th digit, with no GO key. System Chrome at 820x1180 with touch emulation
@@ -171,6 +172,7 @@ test.describe('parent PIN screens (real app, local data)', () => {
     await page.goto('/');
     await page.locator('.kid-card', { hasText: 'Pip' }).click();
     await page.getByRole('button', { name: 'Start Quest' }).click();
+    await keypadReady(page);
     await expect(page.locator('.keypad .key-go')).toBeVisible();
   });
 });

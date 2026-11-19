@@ -2,6 +2,7 @@ import { createHash, randomInt } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { getModule } from '../src/engine/modules';
+import { keypadReady } from './harness/keypadReady';
 
 /**
  * practice-credit-ui, updated by every-answer-counts: the end screen when every card already had 3 answers today (every answer counts, so no practice wording), for a
@@ -64,6 +65,7 @@ for (const { w, h } of VIEWPORTS) {
       await page.goto('/');
       await page.locator('.kid-card', { hasText: 'Pip' }).click();
       await page.getByRole('button', { name: 'Start Quest' }).click();
+      await keypadReady(page);
       for (let i = 0; i < 12 && !(await page.getByText('Quest complete!').count()); i++) {
         const q = (await page.locator('.panel.question').innerText()).replace(/\s+/g, ' ');
         const m = /(\d+) × (\d+)/.exec(q);

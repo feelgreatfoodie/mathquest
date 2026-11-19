@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type Page } from '@playwright/test';
+import { keypadReady } from './harness/keypadReady';
 
 /**
  * Before and after screenshots for the style PRs. Skipped unless STYLE_SHOTS_DIR is set:
@@ -104,12 +105,7 @@ for (const s of SIZES) {
       await page.locator('.kid-card', { hasText: 'Pip' }).click();
       await shot(page, s.tag, 'home-pip');
       await page.getByRole('button', { name: 'Start Quest' }).click();
-      const teach = page.getByRole('button', { name: 'Let me try one!' });
-      if (await teach.isVisible().catch(() => false)) {
-        await shot(page, s.tag, 'teach-pip');
-        await teach.click();
-      }
-      await page.locator('.keypad').waitFor();
+      await keypadReady(page, () => shot(page, s.tag, 'teach-pip'));
       await shot(page, s.tag, 'question-pip');
       for (const d of '9999') await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
       await page.locator('.key-go').click();

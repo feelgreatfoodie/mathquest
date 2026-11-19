@@ -166,6 +166,10 @@ test('a chest holds a new card: opening it and answering right adds 1 or 2 gems 
   const chest = (await ow(page, (o) => o.state())).entities.find((e) => e.kind === 'chest')!;
   expect(chest).toBeDefined();
   await clear(page, chest.id);
+  // The gem grant is an async write that lands after the modal closes, so the stored count is polled, not read once.
+  await expect
+    .poll(() => page.evaluate((k) => JSON.parse(localStorage.getItem('mathquest:v1:kids')!)[0].game.gems as number, KID), { timeout: 8000 })
+    .toBeGreaterThan(5);
   const gems = await page.evaluate((k) => JSON.parse(localStorage.getItem('mathquest:v1:kids')!)[0].game.gems as number, KID);
   expect([6, 7]).toContain(gems); // 5 + 1 or 2
   const s = await ow(page, (o) => o.state());

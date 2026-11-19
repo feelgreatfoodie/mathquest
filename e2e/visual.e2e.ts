@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { keypadReady } from './harness/keypadReady';
 
 /**
  * Visual baselines for the Dungeon run and the pre-reader run.
@@ -80,7 +81,7 @@ for (const s of SIZES) {
     test('dungeon: question, wrong answer', async ({ page }) => {
       await seed(page, 'reader');
       await start(page, 'Start Quest');
-      await expect(page.locator('.keypad')).toBeVisible();
+      await keypadReady(page);
       await expect(page).toHaveScreenshot(`dungeon-question-${s.tag}.png`);
       // 9999 is never a times-table answer in the first group.
       for (const d of '9999') await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();

@@ -2,6 +2,7 @@ import { createHash, randomInt } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { getModule } from '../src/engine/modules';
+import { keypadReady } from './harness/keypadReady';
 
 /**
  * coverage-1 at 820x1180 (iPad portrait) on synthetic profiles: a reader with group 1 seen and group 2 locked, and a
@@ -73,6 +74,7 @@ test('a reader preview shows its hint first, and a miss on it is not a red miss'
   await page.goto('/');
   await page.locator('.kid-card', { hasText: 'Pip' }).click();
   await page.getByRole('button', { name: 'Start Quest' }).click();
+  await keypadReady(page);
   const hint = page.getByTestId('preview-hint');
   // Answer correctly until a preview appears (2 per run, spread through the run).
   for (let i = 0; i < 16 && !(await hint.count()); i++) {
