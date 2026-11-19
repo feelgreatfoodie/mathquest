@@ -55,7 +55,8 @@ describe('pixel tokens: styles.css matches the table', () => {
   });
   it('every keyframe animation added for the pixel parts is behind prefers-reduced-motion', () => {
     const block = css.slice(css.indexOf('Modern pixel: tokens'));
-    const reduced = block.slice(block.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+    // Every reduced-motion block after the marker, so later sections can add their own.
+    const reduced = block.split('@media (prefers-reduced-motion: reduce)').slice(1).map((b) => b.slice(0, 300)).join('\n');
     for (const sel of ['.px-twinkle', '.title-bat']) expect(reduced).toContain(sel);
   });
 });
