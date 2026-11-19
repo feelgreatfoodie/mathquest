@@ -306,13 +306,7 @@ p { margin: 0 0 10px; line-height: 1.45; }
 .hm-row { display: flex; gap: 3px; }
 .hm-head, .hm-cell { width: 44px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-size: 13px; font-weight: 700; flex-shrink: 0; }
 .hm-head { color: var(--muted); }
-/* Sequential: darker = less mastered, brighter = more. Readable without color alone via the tooltip/label. */
-.lv0 { background: #1b1f33; color: #6b7394; }
-.lv1 { background: #3b3f8c; color: #e0e7ff; }
-.lv2 { background: #3f6fd1; color: #f8fafc; }
-.lv3 { background: #3aa8e0; color: #04121f; }
-.lv4 { background: #a7f3d0; color: #052e1b; }
-.leech { outline: 3px solid #fb923c; outline-offset: -3px; }
+/* Mastery colors (.lv0 to .lv4, .leech) are in the style-3 block below. */
 .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; font-size: 15px; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; }
 .swatch { width: 20px; height: 20px; border-radius: 4px; display: inline-block; }
@@ -657,7 +651,6 @@ legend { padding: 0 6px; color: var(--muted); }
   .heatmap { display: flex; width: 100%; overflow-x: visible; gap: 2px; }
   .hm-row { gap: 2px; width: 100%; }
   .hm-head, .hm-cell { flex: 1 1 0; min-width: 0; width: auto; height: 24px; font-size: 10px; border-radius: 3px; }
-  .leech { outline-width: 2px; outline-offset: -2px; }
 
   .two-col { grid-template-columns: 1fr; }
   .chip { overflow-wrap: anywhere; }
@@ -1275,20 +1268,23 @@ html[data-crt='on'] body::after {
 .intro-buttons .btn { min-width: 140px; }
 @media (prefers-reduced-motion: reduce) { .intro-track { scroll-behavior: auto; } }
 
-/* ===== style-3: Grown-ups area. Clean, number first, color with a meaning; pixel art only as small accents. Values mirror tokens.ts (STATUS, GROWNUPS_LIGHT). ===== */
+/* ===== style-3: Grown-ups area. Clean, number first, color with a meaning; pixel art only as small accents. Values mirror tokens.ts (STATUS, STATUS_LIGHT, GROWNUPS_LIGHT). ===== */
 :root {
-  --st-none: #3a3d4d; --st-none-text: #e5e7f0;
-  --st-work: #d97706; --st-work-text: #1a1300;
-  --st-work-near: #fbbf24; --st-work-near-text: #1a1300;
-  --st-strong: #4ade80; --st-strong-text: #052e16;
-  --st-strongest: #22c55e; --st-strongest-text: #052e16;
+  --st-none-text: #9aa3cc; --st-none-border: #5a6594;
+  --st-missed: #ff8a5c; --st-missed-text: #4a1b0c;
+  --st-learning: #62b4ff; --st-learning-text: #042c53;
+  --st-reviewing: #2b7be0; --st-reviewing-text: #000814;
+  --st-solid: #1c4585; --st-solid-text: #b5d4f4;
+  --st-fluent: #131a33; --st-fluent-text: #6584bd; --st-fluent-border: #28335c;
 }
-/* Mastery levels: grey is not started, amber needs work, green is strong. */
-.lv0 { background: var(--st-none); color: var(--st-none-text); }
-.lv1 { background: var(--st-work); color: var(--st-work-text); }
-.lv2 { background: var(--st-work-near); color: var(--st-work-near-text); }
-.lv3 { background: var(--st-strong); color: var(--st-strong-text); }
-.lv4 { background: var(--st-strongest); color: var(--st-strongest-text); }
+/* Mastery levels, one blue ramp: bright is weak, dark fades into the page, coral is missed 3 or more times, a dashed outline is not started. */
+.hm-cell, .ins-cell, .swatch { box-sizing: border-box; border: 1px solid transparent; }
+.lv0 { background: transparent; color: var(--st-none-text); border: 1px dashed var(--st-none-border); }
+.lv1 { background: var(--st-learning); color: var(--st-learning-text); }
+.lv2 { background: var(--st-reviewing); color: var(--st-reviewing-text); }
+.lv3 { background: var(--st-solid); color: var(--st-solid-text); }
+.lv4 { background: var(--st-fluent); color: var(--st-fluent-text); border: 1px solid var(--st-fluent-border); }
+.leech { background: var(--st-missed); color: var(--st-missed-text); border: 1px solid var(--st-missed); }
 .ins-state.locked { color: #fbbf24; }
 .ins-state.open { color: #4ade80; }
 .parent .head-icon { vertical-align: -3px; margin-right: 4px; image-rendering: pixelated; }
@@ -1302,6 +1298,12 @@ html[data-crt='on'] body::after {
 .screen.parent[data-theme='light'] {
   --bg: #f4f5fb; --bg-2: #e8eaf5; --panel: #ffffff; --panel-2: #eceefa; --line: #9aa1c2;
   --text: #141726; --muted: #4a5070; --gold: #8a4b00; --gold-dark: #8a4b00; --good: #166534; --bad: #b91c1c; --info: #1d4ed8;
+  --st-none-text: #4a5070; --st-none-border: #7a83ab;
+  --st-missed: #c8431d; --st-missed-text: #ffffff;
+  --st-learning: #1250a8; --st-learning-text: #ffffff;
+  --st-reviewing: #3f86e8; --st-reviewing-text: #000814;
+  --st-solid: #93bdf0; --st-solid-text: #04121f;
+  --st-fluent: #dce8f8; --st-fluent-text: #2c4a7e; --st-fluent-border: #afc3e6;
   background: var(--bg);
   color: var(--text);
   color-scheme: light;

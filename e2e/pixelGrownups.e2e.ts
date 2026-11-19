@@ -78,7 +78,7 @@ for (const vp of [
       expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).not.toBe('rgb(244, 245, 251)');
     });
 
-    test('Grown-ups: the mastery colors are grey, amber and green', async ({ page }) => {
+    test('Grown-ups: the mastery colors are one blue ramp, with coral for missed 3+', async ({ page }) => {
       await openGrownups(page);
       const colors = await page.evaluate(() => {
         const probe = (cls: string) => {
@@ -89,9 +89,9 @@ for (const vp of [
           el.remove();
           return c;
         };
-        return [0, 1, 2, 3, 4].map((l) => probe(`lv${l}`));
+        return [...[0, 1, 2, 3, 4].map((l) => probe(`lv${l}`)), probe('leech')];
       });
-      expect(colors).toEqual(['rgb(58, 61, 77)', 'rgb(217, 119, 6)', 'rgb(251, 191, 36)', 'rgb(74, 222, 128)', 'rgb(34, 197, 94)']);
+      expect(colors).toEqual(['rgba(0, 0, 0, 0)', 'rgb(98, 180, 255)', 'rgb(43, 123, 224)', 'rgb(28, 69, 133)', 'rgb(19, 26, 51)', 'rgb(255, 138, 92)']);
     });
 
     test('Shop: a stall above the items, a vault door above the vault, a plank under each item', async ({ page }) => {

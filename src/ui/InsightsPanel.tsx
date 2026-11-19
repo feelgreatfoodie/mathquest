@@ -177,7 +177,7 @@ function MatrixView({ matrix, onCell }: { matrix: Matrix; onCell: (c: MatrixCell
 function Legend() {
   return (
     <div className="legend ins-legend" data-testid="ins-legend">
-      {([0, 1, 2, 3, 4] as Level[]).map((l) => (
+      {([1, 2, 3, 4, 0] as Level[]).map((l) => (
         <span key={l} className="legend-item"><span className={`swatch lv${l}`} />{l === 0 ? 'Not seen' : LEVEL_LABELS[l]}</span>
       ))}
       <span className="legend-item"><span className="swatch lv0 ins-preview-swatch"><span className="ins-dot" /></span>Seen early (preview)</span>
