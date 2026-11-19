@@ -185,6 +185,15 @@ for (const vp of VIEWPORTS) {
         }
         expect(found, 'the canvas is under the finger at some distance from the mound').toBeTruthy();
         await page.mouse.click(found!.x + found!.dx, found!.y + found!.dy);
+        // The walk can cross a monster: its question comes first. Answer it, then walk on to the mound.
+        for (let i = 0; i < 6 && (await gems(page)) === before; i++) {
+          await page.waitForTimeout(900);
+          if (await page.locator('.question-modal').isVisible()) {
+            await answer(page, who);
+            await expect(page.locator('.question-modal')).toHaveCount(0, { timeout: 12_000 });
+            await tap(page, m.x, m.y);
+          }
+        }
         await expect.poll(() => gems(page), { timeout: 15_000 }).toBe(before + 1);
       });
 
