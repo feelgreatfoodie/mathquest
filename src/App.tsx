@@ -18,6 +18,7 @@ import type { VaultApi } from './ui/vaultApi';
 import { rememberKids } from './data/deviceKids';
 import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
+import { applyCrt, readCrt } from './ui/pixel';
 import { ParentArea, Setup } from './ui/screens/Parent';
 import { PauseScreen } from './ui/screens/PauseScreen';
 import { PauseContext, usePause } from './ui/usePause';
@@ -201,6 +202,11 @@ export function App() {
   );
 
   const kid = 'kidId' in screen ? kids.find((k) => k.id === screen.kidId) : undefined;
+  // CRT scanlines: this device's switch for the kid on screen. No kid on screen, no overlay.
+  const crtKid = kid?.id;
+  useEffect(() => {
+    applyCrt(crtKid ? readCrt(crtKid) : false);
+  }, [crtKid]);
   const pictureMode = learnerOf((kid ?? (kidSession ? kids[0] : undefined))?.settings) === 'prereader';
   // The pause on the kid on screen: one listener on that kid doc, settings.pause only.
   const pauseKid = kid ?? (kidSession ? kids[0] : undefined);
