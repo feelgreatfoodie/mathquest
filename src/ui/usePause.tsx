@@ -117,7 +117,9 @@ export function usePause(repo: Repo | null, kidId: string | null): PauseState & 
     } catch {
       // Offline: the last known state applies.
     }
-    await syncServerClock();
+    // Only a timed pause needs the clock, and the clock is read at launch and whenever the app comes to the front: a read here
+    // only waits for the network when there is no estimate yet. The common case (no pause) starts the run without a delay.
+    if (pauseRef.current?.until !== undefined && serverClock.now() === null) await syncServerClock();
     return !isPaused(pauseRef.current, serverClock.now());
   }, [repo, kidId]);
 
