@@ -145,6 +145,18 @@ for (const vp of VIEWPORTS) {
         expect(await gems(page)).toBe(before + 1);
       });
 
+      test('Beetle: a tap 50 px from the mound still walks to it (a 120 px target)', async ({ page }) => {
+        await seed(page, who, ['p-beetle'], 'p-beetle');
+        await openAdventure(page, who);
+        const m = (await state(page)).mound;
+        await teleport(page, m.x, m.y - 2);
+        await page.waitForTimeout(200);
+        const c = await page.evaluate(([x, y]) => (window as unknown as { __ow: { clientOf(x: number, y: number): { x: number; y: number } } }).__ow.clientOf(x!, y!), [m.x, m.y]);
+        const before = await gems(page);
+        await page.mouse.click(c.x + 50, c.y);
+        await expect.poll(() => gems(page), { timeout: 15_000 }).toBe(before + 1);
+      });
+
       test('Dog: the bonus chest stands out of sight, shows near the hero, and pays through the usual question', async ({ page }) => {
         await seed(page, who, ['p-dog'], 'p-dog');
         await openAdventure(page, who);
