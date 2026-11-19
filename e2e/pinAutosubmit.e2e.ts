@@ -157,7 +157,7 @@ test.describe('parent PIN screens (real app, local data)', () => {
 
   test('create and confirm a parent PIN: 4 taps each, no GO', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Make a parent PIN' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Make a Grown-up PIN' })).toBeVisible();
     await noGo(page);
     await tap(page, PARENT_PIN);
     await expect(page.getByRole('heading', { name: 'Type it again' })).toBeVisible();

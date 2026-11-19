@@ -186,6 +186,8 @@ for (const { w, h } of SIZES) {
         expect(cb.x).toBeGreaterThanOrEqual(0);
         expect(cb.x + cb.width).toBeLessThanOrEqual(w);
         expect(cb.y + cb.height).toBeLessThanOrEqual(h);
+        // The smooth scroll has settled when the spotlight is inside the viewport.
+        await expect.poll(async () => (await page.getByTestId('tour-spot').boundingBox())!.y, { timeout: 5000, message: `spotlight for ${seen.at(-1)}` }).toBeLessThan(h);
         const sb = (await page.getByTestId('tour-spot').boundingBox())!;
         expect(sb.width).toBeGreaterThan(20);
         expect(sb.y).toBeGreaterThanOrEqual(0);
