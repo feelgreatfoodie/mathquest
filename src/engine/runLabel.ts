@@ -1,3 +1,4 @@
+import { lifetimeChests } from './chestLedger';
 import type { RunSummary } from './session';
 import { sessionModeOf, type Learner, type SessionLog, type SessionMode } from './models';
 
@@ -37,7 +38,7 @@ const ORDER = ['meadow', 'forest', 'castle'];
 /** One line about the kid's map, from world/main: how far they got, chests opened, bosses beaten. Null before the first Adventure save. */
 export function adventureLine(world: { region?: unknown; openedChests?: unknown; bossesDefeated?: unknown } | null | undefined): string | null {
   if (!world) return null;
-  const chests = Array.isArray(world.openedChests) ? world.openedChests.length : 0;
+  const chests = lifetimeChests(Array.isArray(world.openedChests) ? (world.openedChests as string[]) : []);
   const bosses = Array.isArray(world.bossesDefeated) ? world.bossesDefeated.length : 0;
   const here = ORDER.indexOf(String(world.region));
   // A beaten boss opens the next region, so the furthest region reached is at least one past the last boss.

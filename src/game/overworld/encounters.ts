@@ -2,6 +2,7 @@ import { moduleOfCard } from '../../engine/modules';
 import type { Rng } from '../../engine/problems';
 import type { Entry } from '../../engine/session';
 import { findTiles, isWalkable, tileAt, type Point, type TileMap, type WalkCtx } from './maps';
+import { hash, type TripSpot } from './chests';
 
 export type Look = 'slime' | 'bat' | 'ghost' | 'skeleton' | 'boss';
 
@@ -15,6 +16,10 @@ export interface Entity {
   cardId: string;
   /** A chest for a new skill: the teach entry to show before the question. */
   teachId?: string;
+  /** A chest's spot id (`land:x,y`). Opening it records the id on the trip. */
+  spotId?: string;
+  /** The land's key chest on this trip. */
+  key?: boolean;
   /** Monsters past MAX_VISIBLE wait off the map. */
   shown: boolean;
 }
@@ -24,12 +29,6 @@ export const MAX_VISIBLE = 6;
 export const SPAWN_MIN = 6;
 export const SPAWN_MAX = 15;
 export const RETRY_RADIUS = 3;
-
-function hash(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
-  return h >>> 0;
-}
 
 /** Facts are slimes and bats, multidigit skeletons, fractions ghosts. The same card always looks the same. */
 export function lookFor(cardId: string): Look {
@@ -50,18 +49,29 @@ function shuffled<T>(xs: T[], rng: Rng): T[] {
   return a;
 }
 
+/** Fill order for the chests: a new fact first, then a preview, then a fact that needs work, then a riddle. */
+export function chestRank(e: Entry, needsWork: ReadonlySet<string>): number {
+  if (e.kind === 'graded' && e.isNew && !e.preview) return 0;
+  if (e.kind === 'graded' && e.preview) return 1;
+  if (e.kind === 'graded' && !e.isNew && needsWork.has(e.cardId)) return 2;
+  if (e.kind === 'practice' && e.riddle) return 3;
+  return 4;
+}
+
 /**
- * Turns the run's entries into things on the map. A graded or practice entry is one entity; a teach entry joins the
- * graded entry after it as a chest. A new card is a chest on a chest spot (the same card always picks the same spot,
- * and a card whose chest was already opened is a monster instead). Everything else is a monster on a spawn tile 6 to
- * 15 tiles from the hero (nearest free tiles when that band is too small). Nothing stands on a blocked tile or on
- * another entity. Only the first 6 monsters show; the rest wait.
+ * Turns the run's entries into things on the map. A graded or practice entry is one entity; a teach entry joins the graded
+ * entry after it as a chest. The trip's closed chest spots (`spots` minus `opened`) each take the next entry in fill order
+ * (see chestRank), the key chest first. Everything else is a monster on a spawn tile 6 to 15 tiles from the hero (nearest
+ * free tiles when that band is too small). Nothing stands on a blocked tile or on another entity. Only the first 6 monsters
+ * show; the rest wait.
  */
 export function planEntities({
   entries,
   map,
   hero,
-  openedChests,
+  spots,
+  opened,
+  needsWork,
   rng,
   ctx,
   skip = [],
@@ -69,7 +79,12 @@ export function planEntities({
   entries: Entry[];
   map: TileMap;
   hero: Point;
-  openedChests: string[];
+  /** The trip's chest spots in this land, key chest first. */
+  spots: TripSpot[];
+  /** Spot ids already opened on this trip. */
+  opened: string[];
+  /** Fact ids that need work (insights.ts). */
+  needsWork: ReadonlySet<string>;
   rng: Rng;
   ctx: WalkCtx;
   /** Entry ids that already have an entity or are not part of the map (boss questions). */
@@ -77,29 +92,25 @@ export function planEntities({
 }): Entity[] {
   const skipped = new Set(skip);
   const taken = new Set<string>([key(hero)]);
-  const chestSpots = findTiles(map, 'chest');
   const spawns = shuffled(findTiles(map, 'spawn').filter((p) => isWalkable(map, p.x, p.y, ctx)), rng);
   const out: Entity[] = [];
   const teachFor = new Map<string, string>();
   for (const e of entries) if (e.kind === 'teach') teachFor.set(e.cardId, e.id);
   let shown = 0;
 
+  const closed = spots.filter((s) => !opened.includes(s.id));
+  const asked = entries.filter((e) => e.kind !== 'teach' && !skipped.has(e.id));
+  const ranked = asked.map((e, i) => ({ e, i, r: chestRank(e, needsWork) })).filter((x) => x.r < 4).sort((a, b) => a.r - b.r || a.i - b.i);
+  const chestOf = new Map<string, TripSpot>();
+  ranked.slice(0, closed.length).forEach((x, i) => chestOf.set(x.e.id, closed[i]!));
+
   const free = (p: Point) => !taken.has(key(p));
-  for (const e of entries) {
-    if (e.kind === 'teach' || skipped.has(e.id)) continue;
-    const isChest = e.kind === 'graded' && e.isNew && !e.preview && !openedChests.includes(e.cardId) && chestSpots.length > 0;
-    let spot: Point | undefined;
-    if (isChest) {
-      const start = hash(e.cardId) % chestSpots.length;
-      for (let i = 0; i < chestSpots.length && !spot; i++) {
-        const p = chestSpots[(start + i) % chestSpots.length]!;
-        if (free(p)) spot = p;
-      }
-    }
-    if (spot) {
+  for (const e of asked) {
+    const spot = chestOf.get(e.id);
+    if (spot && free(spot)) {
       taken.add(key(spot));
       const teachId = teachFor.get(e.cardId);
-      out.push({ id: e.id, kind: 'chest', x: spot.x, y: spot.y, look: lookFor(e.cardId), cardId: e.cardId, ...(teachId ? { teachId } : {}), shown: true });
+      out.push({ id: e.id, kind: 'chest', x: spot.x, y: spot.y, look: lookFor(e.cardId), cardId: e.cardId, spotId: spot.id, ...(spot.key ? { key: true } : {}), ...(teachId ? { teachId } : {}), shown: true });
       continue;
     }
     const candidates = spawns.filter(free);

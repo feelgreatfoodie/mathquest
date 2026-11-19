@@ -42,6 +42,8 @@ export interface Problem {
   gap?: { a: number; total: number };
   /** Which strategy cue fits this fact. Absent: the add10 rules in support.ts decide from the pictures. */
   strategy?: 'double' | 'neardouble' | 'split10';
+  /** A riddle chest's story, shown (and spoken for a pre-reader) above the question. Only riddle entries carry it. */
+  story?: string;
   /** What the voice says after a right answer, instead of "<speech> is <answer>". */
   confirm?: string;
 }

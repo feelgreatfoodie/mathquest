@@ -7,10 +7,12 @@ import { mulberry32 } from '../../engine/problems';
 import { SessionRunner, type PlanItem } from '../../engine/session';
 import { BOSS_GEMS, bossPlan, bossReady, bossReward } from './boss';
 import { planEntities, retryEntity, MAX_VISIBLE } from './encounters';
+import { tripChestSpots } from './chests';
+import { lifetimeChests } from '../../engine/chestLedger';
 import { MAPS, REGION_IDS, findTiles, heroStart, isWalkable, tileAt, type WalkCtx } from './maps';
 import { findPath } from './pathfind';
 import { gateInfo, lairMessage, regionCardIds, regionFactsText, regionProgress, NEXT_REGION, REGION_GROUPS } from './regions';
-import { MAX_OPENED, fromDoc, newWorld, settleHero, toDoc, worldReducer } from './worldState';
+import { MAX_OPENED, fromDoc, newWorld, settleHero, toDoc, worldReducer, type WorldState } from './worldState';
 
 const NOW = new Date('2026-11-16T16:00:00').getTime();
 const DAY = 86_400_000;
@@ -321,8 +323,9 @@ describe('encounters come from the plan', () => {
   }
   const m = MAPS.meadow;
   const hero = heroStart(m);
+  const spots = tripChestSpots('t1', 'meadow', false, 4);
   const plan = (r: SessionRunner, opened: string[] = []) =>
-    planEntities({ entries: r.queue, map: m, hero, openedChests: opened, rng: mulberry32(9), ctx: open });
+    planEntities({ entries: r.queue, map: m, hero, spots, opened, needsWork: new Set(), rng: mulberry32(9), ctx: open });
 
   it('every graded or practice entry becomes exactly one entity; none on a blocked tile or stacked', () => {
     const r = runnerWith(20, 5);
@@ -330,17 +333,18 @@ describe('encounters come from the plan', () => {
     const asked = r.queue.filter((e) => e.kind !== 'teach');
     expect(ents).toHaveLength(asked.length);
     expect(new Set(ents.map((e) => e.id))).toEqual(new Set(asked.map((e) => e.id)));
-    const spots = new Set<string>();
+    const used = new Set<string>();
     for (const e of ents) {
       expect(isWalkable(m, e.x, e.y, open)).toBe(true);
-      expect(spots.has(`${e.x},${e.y}`)).toBe(false);
-      spots.add(`${e.x},${e.y}`);
+      expect(used.has(`${e.x},${e.y}`)).toBe(false);
+      used.add(`${e.x},${e.y}`);
     }
   });
   it('a due review is a monster 6 to 15 tiles from the hero; a new card is a chest on a chest spot', () => {
     const r = runnerWith(12, 4);
     const ents = plan(r);
     const chestSpots = new Set(findTiles(m, 'chest').map((t) => `${t.x},${t.y}`));
+    expect(ents.filter((e) => e.kind === 'chest')).toHaveLength(4);
     for (const e of ents) {
       const entry = r.queue.find((q) => q.id === e.id)!;
       if (entry.isNew) {
@@ -360,18 +364,18 @@ describe('encounters come from the plan', () => {
     expect(ents.filter((e) => e.kind === 'monster' && e.shown)).toHaveLength(6);
     expect(ents.filter((e) => e.kind === 'monster' && !e.shown)).toHaveLength(14);
   });
-  it('a new skill chest carries its teach entry; a chest already opened is a monster instead', () => {
+  it('a new skill chest carries its teach entry; with every spot of the trip opened it is a monster instead', () => {
     const r = new SessionRunner([{ cardId: 'fr:add', isNew: true }], {}, mulberry32(2), () => NOW, DEFAULT_SETTINGS);
     const [teach, graded] = r.queue;
     const ents = plan(r);
     expect(ents).toHaveLength(1);
     expect(ents[0]).toMatchObject({ kind: 'chest', id: graded!.id, teachId: teach!.id });
-    const again = plan(r, ['fr:add']);
+    const again = plan(r, spots.map((s) => s.id));
     expect(again[0]!.kind).toBe('monster');
   });
   it('monsters look like their module: facts slimes or bats, fractions ghosts, multidigit skeletons', () => {
     const r = new SessionRunner([{ cardId: 'mul:7x8', isNew: false }, { cardId: 'fr:add', isNew: false }, { cardId: 'md:tens', isNew: false }], {}, mulberry32(2), () => NOW, DEFAULT_SETTINGS);
-    const looks = Object.fromEntries(planEntities({ entries: r.queue, map: m, hero, openedChests: [], rng: mulberry32(1), ctx: open }).map((e) => [e.cardId, e.look]));
+    const looks = Object.fromEntries(planEntities({ entries: r.queue, map: m, hero, spots: [], opened: [], needsWork: new Set(), rng: mulberry32(1), ctx: open }).map((e) => [e.cardId, e.look]));
     expect(['slime', 'bat']).toContain(looks['mul:7x8']);
     expect(looks['fr:add']).toBe('ghost');
     expect(looks['md:tens']).toBe('skeleton');
@@ -405,28 +409,30 @@ describe('worldState', () => {
     expect(w).toMatchObject({ region: 'meadow', openedChests: [], bossesDefeated: [], keys: 0, version: 1 });
     expect(heroStart(MAPS.meadow)).toEqual({ x: w.x, y: w.y });
   });
-  it('moves, opens chests (once), changes region, and wins a boss once for one key', () => {
+  it('moves, counts chests, changes region, and wins a boss once for one key', () => {
     let w = newWorld(1);
     w = worldReducer(w, { t: 'move', x: 5, y: 6, facing: 'left' }, 2);
     expect(w).toMatchObject({ x: 5, y: 6, facing: 'left', updatedAt: 2 });
-    w = worldReducer(worldReducer(w, { t: 'chest', cardId: 'mul:2x3' }), { t: 'chest', cardId: 'mul:2x3' });
-    expect(w.openedChests).toEqual(['mul:2x3']);
+    w = worldReducer(worldReducer(w, { t: 'chest' }), { t: 'chest' });
+    expect(w.openedChests).toEqual(['#2']);
+    expect(lifetimeChests(w.openedChests)).toBe(2);
     w = worldReducer(w, { t: 'region', region: 'forest', x: 3, y: 4 });
     expect(w).toMatchObject({ region: 'forest', x: 3, y: 4 });
     w = worldReducer(worldReducer(w, { t: 'boss', region: 'forest' }), { t: 'boss', region: 'forest' });
     expect(w.bossesDefeated).toEqual(['forest']);
     expect(w.keys).toBe(1);
   });
-  it('keeps at most 500 opened chests, dropping the oldest', () => {
-    let w = newWorld(1);
-    for (let i = 0; i < MAX_OPENED + 25; i++) w = worldReducer(w, { t: 'chest', cardId: `c${i}` });
-    expect(w.openedChests).toHaveLength(MAX_OPENED);
-    expect(w.openedChests.at(-1)).toBe(`c${MAX_OPENED + 24}`);
-    expect(w.openedChests[0]).toBe('c25');
+  it('the chest count only goes up, and the list never passes the 500 the rules allow', () => {
+    let w: WorldState = { ...newWorld(1), openedChests: Array.from({ length: MAX_OPENED }, (_, i) => `c${i}`) };
+    for (let i = 1; i <= 25; i++) {
+      w = worldReducer(w, { t: 'chest' });
+      expect(w.openedChests.length).toBeLessThanOrEqual(MAX_OPENED);
+      expect(lifetimeChests(w.openedChests)).toBe(MAX_OPENED + i);
+    }
   });
   it('persists in both directions: state to doc and back, and the doc stays under 20 fields', () => {
     let w = newWorld(1);
-    w = worldReducer(worldReducer(w, { t: 'chest', cardId: 'mul:2x3' }), { t: 'boss', region: 'meadow' }, 77);
+    w = worldReducer(worldReducer(w, { t: 'chest' }), { t: 'boss', region: 'meadow' }, 77);
     const doc = toDoc(w);
     expect(Object.keys(doc).length).toBeLessThan(20);
     expect(fromDoc(JSON.parse(JSON.stringify(doc)), 1)).toEqual(w);
@@ -528,28 +534,20 @@ describe('adventure regions: saved state survives the new layouts', () => {
       expect(isWalkable(MAPS[id], w.x, w.y, { gateOpen: true, hasKey: false, hasBridgeKit: false })).toBe(true);
     }
   });
-  it('opened chests are stored as card ids, never as positions, so a redrawn map cannot lose them', () => {
-    const r = new SessionRunner([{ cardId: 'mul:6x7', isNew: true }, { cardId: 'mul:7x8', isNew: true }, { cardId: 'mul:6x8', isNew: true }], {}, mulberry32(3), () => NOW, DEFAULT_SETTINGS);
-    for (const id of ['forest', 'castle'] as const) {
-      const m = MAPS[id];
-      const ents = planEntities({ entries: r.queue, map: m, hero: heroStart(m), openedChests: [], rng: mulberry32(9), ctx: open });
-      const chests = ents.filter((e) => e.kind === 'chest');
-      expect(chests.length, id).toBe(3);
-      let w = newWorld(NOW);
-      for (const c of chests) w = worldReducer(w, { t: 'chest', cardId: c.cardId });
-      expect(w.openedChests.sort()).toEqual(['mul:6x7', 'mul:6x8', 'mul:7x8']);
-      for (const stored of w.openedChests) expect(stored).toMatch(/^[a-z]+:/);
-    }
-  });
-  it('a chest opened before the redraw stays opened on the new maps: the same card is a monster, never a chest again', () => {
+  it('old saves with card ids in openedChests still read, and their ids count as chests opened', () => {
     const w = fromDoc(doc({}), NOW);
     expect(w.openedChests).toEqual(['mul:6x7', 'mul:7x8']);
+    expect(lifetimeChests(w.openedChests)).toBe(2);
+    expect(lifetimeChests(worldReducer(w, { t: 'chest' }).openedChests)).toBe(3);
+  });
+  it('a card whose chest an old app opened is a chest again on a new trip: the list no longer blocks it', () => {
+    const w = fromDoc(doc({}), NOW);
     const r = new SessionRunner([{ cardId: 'mul:6x7', isNew: true }, { cardId: 'mul:6x8', isNew: true }], {}, mulberry32(3), () => NOW, DEFAULT_SETTINGS);
     for (const id of REGION_IDS) {
       const m = MAPS[id];
-      const ents = planEntities({ entries: r.queue, map: m, hero: heroStart(m), openedChests: w.openedChests, rng: mulberry32(9), ctx: open });
-      expect(ents.find((e) => e.cardId === 'mul:6x7')!.kind, id).toBe('monster');
-      expect(ents.find((e) => e.cardId === 'mul:6x8')!.kind, id).toBe('chest');
+      const ents = planEntities({ entries: r.queue, map: m, hero: heroStart(m), spots: tripChestSpots('t9', id, false), opened: [], needsWork: new Set(), rng: mulberry32(9), ctx: open });
+      expect(w.openedChests).toContain('mul:6x7');
+      expect(ents.find((e) => e.cardId === 'mul:6x7')!.kind, id).toBe('chest');
     }
   });
   it('the stored world doc keeps its 10 fields', () => {

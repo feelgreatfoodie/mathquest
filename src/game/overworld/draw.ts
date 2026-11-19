@@ -286,6 +286,8 @@ export interface Scene {
   bossDefeated: boolean;
   hasKey: boolean;
   hasBridgeKit: boolean;
+  /** Chests opened on this trip in this land: they stay on the map with the lid up. */
+  openedChests: Point[];
   lantern: boolean;
   /** Seconds, for animation. */
   time: number;
@@ -347,8 +349,12 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
   const items: Array<{ y: number; draw: () => void }> = [];
   for (const e of s.entities) {
     if (!e.shown || e.x < x0 - 1 || e.x > x1 + 1 || e.y < y0 - 1 || e.y > y1 + 1) continue;
-    if (e.kind === 'chest') items.push({ y: e.y, draw: () => chestAt(g, e.x * t - left, e.y * t - top, t, false, s.lantern, s.time) });
+    if (e.kind === 'chest') items.push({ y: e.y, draw: () => chestAt(g, e.x * t - left, e.y * t - top, t, false, true, s.time) });
     else items.push({ y: e.y, draw: () => sprite(e.look, e.x, e.y, Math.sin(s.time * 3 + e.x) * 0.8) });
+  }
+  for (const c of s.openedChests) {
+    if (c.x < x0 - 1 || c.x > x1 + 1 || c.y < y0 - 1 || c.y > y1 + 1) continue;
+    items.push({ y: c.y, draw: () => chestAt(g, c.x * t - left, c.y * t - top, t, true, false, s.time) });
   }
   const h = s.hero;
   const bob = h.frame % 2 === 1 ? -1 : 0;

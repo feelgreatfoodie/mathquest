@@ -35,9 +35,9 @@ function dueCards(ids: string[], now: number, dueIn = -DAY) {
   );
 }
 
-async function seed(page: Page, opts: { settings?: object; cards?: Record<string, unknown>; extraGame?: object } = {}) {
+async function seed(page: Page, opts: { settings?: object; cards?: Record<string, unknown>; extraGame?: object; tripId?: string } = {}) {
   await page.addInitScript(
-    ({ kid, settings, game, cards }) => {
+    ({ kid, settings, game, cards, tripId }) => {
       let a = 99;
       Math.random = () => {
         a = (a + 0x6d2b79f5) | 0;
@@ -49,9 +49,15 @@ async function seed(page: Page, opts: { settings?: object; cards?: Record<string
         localStorage.setItem('mathquest:v1:family', JSON.stringify({ pinHash: 'x', createdAt: 1 }));
         localStorage.setItem('mathquest:v1:kids', JSON.stringify([{ id: kid, name: 'Ada', createdAt: 1, settings, game }]));
         if (cards) localStorage.setItem(`mathquest:v1:cards:${kid}`, JSON.stringify(cards));
+        // A stored open trip under 24 h old resumes, so its id (and with it the chest spots) is fixed.
+        if (tripId) {
+          const t = Date.now();
+          const totals = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0, xp: 0, bestCombo: 0, medianMs: 0, missed: [] };
+          localStorage.setItem(`mathquest:v1:trip:${kid}`, JSON.stringify({ tripId, startedAt: t, seq: 0, updatedAt: t, finished: false, totals, chests: { opened: [] } }));
+        }
       }
     },
-    { kid: KID, settings: settings(opts.settings), game: { ...game, ...opts.extraGame }, cards: opts.cards ?? null },
+    { kid: KID, settings: settings(opts.settings), game: { ...game, ...opts.extraGame }, cards: opts.cards ?? null, tripId: opts.tripId ?? null },
   );
 }
 
@@ -117,11 +123,12 @@ test('the picker shows one start button with Adventure off and two mode cards wi
 
 test('tap a monster: the hero walks, the panel opens, a correct answer defeats it, the card saves', async ({ page }) => {
   const now = Date.now();
-  await seed(page, { settings: { modes: { overworld: true } }, cards: dueCards(FACTS.groups![0]!.cardIds.slice(0, 10), now) });
+  await seed(page, { settings: { modes: { overworld: true } }, cards: dueCards(FACTS.groups![0]!.cardIds.slice(0, 10), now), tripId: 'trip-tap-a-monster' });
   await openAdventure(page);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/map-820x1180.png` });
   const s0 = await ow(page, (o) => o.state());
-  const monsters = s0.entities.filter((e) => e.kind === 'monster' && e.shown);
+  // Nearest first: the camera follows the hero, so a monster far up the map can sit above the screen and a real tap on it hits nothing.
+  const monsters = s0.entities.filter((e) => e.kind === 'monster' && e.shown).sort((p, q) => Math.abs(p.x - s0.hero.x) + Math.abs(p.y - s0.hero.y) - (Math.abs(q.x - s0.hero.x) + Math.abs(q.y - s0.hero.y)));
   expect(monsters.length).toBeLessThanOrEqual(6);
   expect(monsters.length).toBeGreaterThan(0);
   await clear(page, monsters[0]!.id, true);
@@ -153,16 +160,16 @@ test('walking adds nothing to graded time: the clock starts when the panel opens
   expect(ms).toBeLessThan(walked - 1000); // the answer took well under the walk
 });
 
-test('a chest holds a new card: opening it and answering right adds 1 gem and remembers the chest', async ({ page }) => {
+test('a chest holds a new card: opening it and answering right adds 1 or 2 gems and counts the chest', async ({ page }) => {
   await seed(page, { settings: { modes: { overworld: true }, maxNew: 2, sessionSize: 4 } });
   await openAdventure(page);
   const chest = (await ow(page, (o) => o.state())).entities.find((e) => e.kind === 'chest')!;
   expect(chest).toBeDefined();
   await clear(page, chest.id);
   const gems = await page.evaluate((k) => JSON.parse(localStorage.getItem('mathquest:v1:kids')!)[0].game.gems as number, KID);
-  expect(gems).toBe(6); // 5 + 1
+  expect([6, 7]).toContain(gems); // 5 + 1 or 2
   const s = await ow(page, (o) => o.state());
-  expect(s.world.openedChests).toContain(chest.cardId);
+  expect(s.world.openedChests).toEqual(['#1']);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/after-chest-820x1180.png` });
 });
 
@@ -183,7 +190,7 @@ test('clearing every entry lights the campfire; walking to it ends the trip and 
   await openAdventure(page);
   await expect(page.getByTestId('camp-lit')).toHaveCount(0);
   for (let guard = 0; guard < 8; guard++) {
-    const left = (await ow(page, (o) => o.state())).entities.filter((e) => e.shown && e.kind === 'monster');
+    const left = (await ow(page, (o) => o.state())).entities.filter((e) => e.shown);
     if (!left.length) break;
     await clear(page, left[0]!.id);
   }

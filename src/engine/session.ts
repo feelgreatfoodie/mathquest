@@ -6,6 +6,7 @@ import { cardLevel, availableCards, previewPool } from './mastery';
 import { dayKey } from './game';
 import { gemsForRun } from './gems';
 import { learnerOf, learnerParams, paceOf, type CardMap, type CardState, type KidSettings, type Learner, type SupportLevel } from './models';
+import { riddleProblem } from './riddles';
 import { answerText, checkAnswer, generateProblem, ICON_IDS, type AnswerInput, type IconId, type Problem, type Rng, type Verdict } from './problems';
 import { FLUENCY_TARGET_MS, fadeStep, supportOf } from './support';
 import { gradedToday, isDue, median, newCardState, noteGraded, practice, repeatAnswer, retrievability, review } from './scheduler';
@@ -184,6 +185,8 @@ export interface Entry {
   preview?: boolean;
   /** Filler from the plan, on a card that is not due. Counted for the kid like a graded answer; FSRS never changes. */
   fill?: boolean;
+  /** A riddle chest on the Adventure map: practice on a fact the kid has met, with a story. It never reviews and a miss queues no retry. */
+  riddle?: boolean;
   problem: Problem;
 }
 
@@ -285,6 +288,15 @@ export class SessionRunner {
       }
     }
     return this.queue.slice(before);
+  }
+
+  /** Adds a riddle chest question (practice only) for a card the kid has met. Returns the entry, or null when the card has no story. */
+  appendRiddle(cardId: string, rng: Rng = this.rng): Entry | null {
+    const problem = riddleProblem(cardId, rng);
+    if (!problem) return null;
+    const entry: Entry = { id: this.mintId(), cardId, kind: 'practice', isNew: false, riddle: true, problem };
+    this.queue.push(entry);
+    return entry;
   }
 
   private mintId(): string {
@@ -427,7 +439,7 @@ export class SessionRunner {
     const tries = this.retries.get(entry.cardId) ?? 0;
     const slow = correct && rating === Rating.Hard;
     const learningSkill = correct && entry.kind === 'graded' && def.kind === 'skill' && cardLevel(prev, this.baseline, this.pace) < 3;
-    if ((!correct || slow || learningSkill) && tries < MAX_RETRIES) {
+    if (!entry.riddle && (!correct || slow || learningSkill) && tries < MAX_RETRIES) {
       this.retries.set(entry.cardId, tries + 1);
       const insertAt = Math.min(this.queue.length, at + 1 + this.retryGap);
       this.queue.splice(insertAt, 0, {

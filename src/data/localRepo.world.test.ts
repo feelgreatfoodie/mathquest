@@ -20,7 +20,7 @@ describe('LocalRepo world mirror', () => {
   it('loadWorld is null before the first save, and a save reads back unchanged', async () => {
     const repo = new LocalRepo();
     expect(await repo.loadWorld('kidw0000000000000001')).toBeNull();
-    const w = worldReducer(newWorld(1), { t: 'chest', cardId: 'mul:2x3' }, 5);
+    const w = worldReducer(newWorld(1), { t: 'chest' }, 5);
     await repo.saveWorld('kidw0000000000000001', toDoc(w));
     expect(await repo.loadWorld('kidw0000000000000001')).toEqual(toDoc(w));
     expect(store.has('mathquest:v1:world:kidw0000000000000001')).toBe(true);

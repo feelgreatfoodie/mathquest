@@ -5,7 +5,9 @@ import { finishRun } from '../../ui/finishRun';
 import { reportFailure } from '../../ui/failures';
 import { loadRunner, type SaveExtra } from '../../ui/runShared';
 import { newId } from '../../data/repo';
-import { CHECKPOINT_EVERY, addRun, loadTrip, resolveTrip, saveTrip, type TripState, type TripTotals } from './trip';
+import { CHECKPOINT_EVERY, addRun, loadTrip, openChest, openedSpots, resolveTrip, saveTrip, type TripState, type TripTotals } from './trip';
+import { chestGems, type TripSpot } from './chests';
+import { planRegion, spotsFor } from './tripPlan';
 import { queueCheckpoint } from './tripWrite';
 import { HoldButton } from '../../ui/early/HoldButton';
 import { chest as chestSound, defeat, unlockSounds } from '../../ui/early/sounds';
@@ -17,11 +19,12 @@ import { ownedItems } from '../shop/shopState';
 import type { GameModeProps } from '../modes/types';
 import { BOSS_WIN, bossPlan, bossReady, bossReward } from './boss';
 import { TILE, drawScene, viewFor, type Scene } from './draw';
-import { MAX_VISIBLE, planEntities, retryEntity, type Entity } from './encounters';
+import { MAX_VISIBLE, retryEntity, type Entity } from './encounters';
 import { MAPS, findTiles, heroStart, isWalkable, tileAt, type Point, type RegionId, type WalkCtx } from './maps';
 import { approach } from './pathfind';
 import { NEXT_REGION, PREV_REGION, REGION_NAMES, furthestRegion, gateInfo, lairMessage, lairPicture, regionProgress } from './regions';
 import { fromDoc, settleHero, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
+import { lifetimeChests } from '../../engine/chestLedger';
 
 const SPEED = 4; // tiles a second
 const BOOT_SPEED = 6;
@@ -110,6 +113,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const [overlay, setOverlay] = useState<null | 'win' | 'lose'>(null);
   const [hud, setHud] = useState<Hud>({ left: 0, lit: false });
   const [keys, setKeys] = useState(0);
+  const [chestHud, setChestHud] = useState({ open: 0, total: 0 });
   const [, bump] = useState(0);
 
   // The first tap unlocks audio on iOS, so a pre-reader's first question can be spoken.
@@ -140,11 +144,14 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     return merged;
   }, []);
 
+  /** A key opens doors: the Key item from the shop, or a key from a chest or a boss (kept, not used up). */
+  const hasKey = useCallback((): boolean => gearRef.current.key || (worldRef.current?.keys ?? 0) > 0, []);
+
   const walkCtx = useCallback((): WalkCtx => {
     const w = worldRef.current!;
     const next = NEXT_REGION[w.region];
-    return { gateOpen: next ? gateInfo(next, liveCards(), kidRef.current.settings, reached()).open : false, hasKey: gearRef.current.key, hasBridgeKit: gearRef.current.bridge };
-  }, [liveCards, reached]);
+    return { gateOpen: next ? gateInfo(next, liveCards(), kidRef.current.settings, reached()).open : false, hasKey: hasKey(), hasBridgeKit: gearRef.current.bridge };
+  }, [liveCards, reached, hasKey]);
 
   const refreshHud = useCallback(() => {
     const r = runnerRef.current;
@@ -178,22 +185,56 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   );
 
   // ---- entities ----
+  /** The trip's chest spots in the land the hero stands in. */
+  const spotsHere = useCallback((): TripSpot[] => {
+    const w = worldRef.current;
+    const trip = tripRef.current;
+    const r = runnerRef.current;
+    return w && trip && r ? spotsFor(r, trip.tripId, w.region, learner, bossIds.current) : [];
+  }, [learner]);
+
+  /** The opened chests of this trip in this land, for the drawing. */
+  const openedHere = useCallback((): Point[] => {
+    const w = worldRef.current;
+    const trip = tripRef.current;
+    if (!w || !trip) return [];
+    return openedSpots(trip)
+      .filter((id) => id.startsWith(`${w.region}:`))
+      .map((id) => {
+        const [x, y] = id.slice(w.region.length + 1).split(',').map(Number);
+        return { x: x!, y: y! };
+      });
+  }, []);
+
+  const refreshChestHud = useCallback(() => {
+    const trip = tripRef.current;
+    if (!trip) return;
+    const spots = spotsHere();
+    const open = spots.filter((s) => openedSpots(trip).includes(s.id)).length;
+    setChestHud({ open, total: spots.length });
+  }, [spotsHere]);
+
   const placeEntities = useCallback(() => {
-    const r = runnerRef.current!;
     const w = worldRef.current!;
-    const pendingIds = new Set(r.pending().map((e) => e.id));
-    const entries = r.queue.filter((e) => (e.kind === 'teach' ? r.queue.some((g) => g.kind === 'graded' && g.cardId === e.cardId && pendingIds.has(g.id)) : pendingIds.has(e.id)));
-    entsRef.current = planEntities({
-      entries,
-      map: MAPS[w.region],
+    const trip = tripRef.current!;
+    const { entities } = planRegion({
+      runner: runnerRef.current!,
+      cards: liveCards(),
+      settings: kidRef.current.settings,
+      learner,
+      tripId: trip.tripId,
+      opened: openedSpots(trip),
+      region: w.region,
       hero: { x: hero.current.x, y: hero.current.y },
-      openedChests: w.openedChests,
+      bossIds: bossIds.current,
       rng: Math.random,
       ctx: walkCtx(),
-      skip: [...bossIds.current],
+      now: Date.now(),
     });
-    for (const q of r.queue) known.current.add(q.id);
-  }, [walkCtx]);
+    entsRef.current = entities;
+    for (const q of runnerRef.current!.queue) known.current.add(q.id);
+    refreshChestHud();
+  }, [walkCtx, liveCards, learner, refreshChestHud]);
 
   const revealWaiting = useCallback(() => {
     const ents = entsRef.current;
@@ -451,11 +492,19 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     (entity: Entity, fb: Feedback) => {
       const r = runnerRef.current!;
       entsRef.current = entsRef.current.filter((e) => e.id !== entity.id);
-      const entry = r.queue.find((q) => q.id === entity.id)!;
       if (entity.kind === 'chest') {
-        touchWorld({ t: 'chest', cardId: entity.cardId });
         chestSound();
-        if (fb.verdict === 'correct' && entry.kind === 'graded') void grant(1);
+        // Each chest pays once on a trip: the spot is written to the trip first, so a second open of the same spot pays nothing.
+        const trip = tripRef.current;
+        if (entity.spotId && trip && openChest(kidRef.current.id, trip, entity.spotId)) {
+          touchWorld({ t: 'chest' });
+          if (entity.key && worldRef.current!.keys === 0) {
+            touchWorld({ t: 'key' });
+            setKeys(worldRef.current!.keys);
+          }
+          if (fb.verdict === 'correct') void grant(chestGems(trip.tripId, entity.spotId));
+          refreshChestHud();
+        }
       } else if (fb.verdict === 'correct') {
         defeat();
       }
@@ -472,7 +521,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       pausedRef.current = false;
       setModal(null);
     },
-    [touchWorld, grant, walkCtx, revealWaiting, refreshHud],
+    [touchWorld, grant, walkCtx, revealWaiting, refreshHud, refreshChestHud],
   );
 
   const resolveBoss = useCallback(
@@ -637,8 +686,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         gateOpen: walkCtxCache(),
         campLit: hudLit.current,
         bossDefeated: w.bossesDefeated.includes(w.region),
-        hasKey: gearRef.current.key,
+        hasKey: hasKey(),
         hasBridgeKit: gearRef.current.bridge,
+        openedChests: openedHere(),
         lantern: gearRef.current.lantern,
         time,
         marker: markerRef.current,
@@ -677,8 +727,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         region: worldRef.current!.region,
         hero: { x: hero.current.x, y: hero.current.y },
         moving: !!hero.current.moving || pathRef.current.length > 0,
-        entities: entsRef.current.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, shown: e.shown, cardId: e.cardId })),
+        entities: entsRef.current.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, shown: e.shown, cardId: e.cardId, ...(e.spotId ? { spotId: e.spotId } : {}), ...(e.key ? { key: true } : {}) })),
         world: worldRef.current,
+        trip: tripRef.current ? { tripId: tripRef.current.tripId, opened: openedSpots(tripRef.current) } : null,
+        spots: spotsHere().map((s) => ({ id: s.id, x: s.x, y: s.y, key: s.key })),
+        lifetime: lifetimeChests(worldRef.current!.openedChests),
         paused: pausedRef.current,
       }),
       answerOf: (id: string) => {
@@ -800,6 +853,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         <span className="ow-hearts" aria-hidden="true">{[0, 1, 2].map((i) => <i key={i}>♥</i>)}</span>
         <span className="ow-stat" aria-label={`${kid.game.gems} gems`}><UiIcon name="gem" size={30} /><b>{kid.game.gems}</b></span>
         <span className="ow-stat" aria-label={`${keys} keys`} data-testid="ow-keys"><KeyIcon /><b>{keys}</b></span>
+        <span className="ow-stat ow-chests" aria-label={`${chestHud.open} of ${chestHud.total} chests opened`} data-testid="ow-chests"><UiIcon name="chest" size={30} /><b>{learner === 'prereader' ? `${chestHud.open}/${chestHud.total}` : `${chestHud.open} of ${chestHud.total}`}</b></span>
         <span className="ow-remaining" role="status" aria-label={`${waiting.length} questions left`} data-testid="ow-left">
           {waiting.slice(0, 8).map((e) => <Sprite key={e.id} name={entsRef.current.find((x) => x.id === e.id)?.look ?? 'slime'} size={26} />)}
           {waiting.length > 8 ? <b>+{waiting.length - 8}</b> : null}
