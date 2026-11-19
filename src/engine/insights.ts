@@ -2,7 +2,7 @@ import { dayKey } from './game';
 import { factBaseline } from './grading';
 import { GROUP_UNLOCK_SHARE, LEVEL_LABELS, cardLevel, groupProgress, groupSteady, moduleCoverage, unlockedGroups, type Level } from './mastery';
 import { learnerOf, modulesOf, paceOf, type CardMap, type CardState, type KidSettings, type SessionLog } from './models';
-import { MODULES, getCardDef, type FactCardDef, type ModuleDef } from './modules';
+import { MODULES, cardLabel, getCardDef, type FactCardDef, type ModuleDef } from './modules';
 import { addId, subId } from './modules/early';
 import { factId } from './modules/legacy';
 import { median } from './scheduler';
@@ -267,8 +267,7 @@ export interface Balance {
 function factLabel(id: string): string {
   const def = getCardDef(id);
   if (!def || def.kind !== 'fact') return id;
-  const op = def.track === 'add10' ? '+' : def.track === 'sub10' ? '−' : '×';
-  return `${def.a} ${op} ${def.b}`;
+  return cardLabel(id);
 }
 
 export function practiceBalance(input: InsightInput, top = 5): Balance {

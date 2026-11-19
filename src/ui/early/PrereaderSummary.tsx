@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { HeroFigure } from '../HeroFigure';
 import type { GameDelta } from '../../engine/game';
 import type { CardMap, Kid } from '../../engine/models';
-import { getCardDef } from '../../engine/modules';
+import { cardLabel, getCardDef } from '../../engine/modules';
 import { word } from '../../engine/modules/early';
 import { summaryCounts } from '../../engine/runLabel';
 import type { RunSummary } from '../../engine/session';
@@ -62,10 +62,10 @@ function Dots({ n }: { n: number }) {
 function DotCard({ id, faster }: { id: string; faster: boolean }) {
   const def = getCardDef(id);
   if (!def || def.kind !== 'fact') return null;
-  const op = def.track === 'sub10' ? '−' : '+';
+  const label = cardLabel(id);
   return (
-    <div className="sum-dotcard" aria-label={`${def.a} ${op} ${def.b}`}>
-      <div className="sum-dotcard-n">{def.a} {op} {def.b}</div>
+    <div className="sum-dotcard" aria-label={label}>
+      <div className="sum-dotcard-n">{label}</div>
       <div className="sum-dotcard-d"><Dots n={def.a} /><Dots n={def.b} /></div>
       {faster ? <span className="sum-bolt"><UiIcon name="bolt" size={44} /></span> : null}
     </div>

@@ -60,7 +60,7 @@ export function fadeStep(card: Fade | undefined | null, a: FadeAnswer): Required
 
 // ---- strategy cues ----
 
-export type CueKind = 'double' | 'counton' | 'make10';
+export type CueKind = 'double' | 'neardouble' | 'counton' | 'make10' | 'split10';
 
 export interface StrategyCue {
   kind: CueKind;
@@ -68,9 +68,11 @@ export interface StrategyCue {
   text: string;
   /** What the voice says. */
   speech: string;
-  /** counton: the bigger number (shown as a numeral) and the smaller one (shown as dots). */
+  /** counton and split10: the bigger number (shown as a numeral) and the smaller one. */
   big?: number;
   small?: number;
+  /** split10: how many more make the bigger number ten. */
+  gap?: number;
 }
 
 /**
@@ -78,14 +80,24 @@ export interface StrategyCue {
  *   doubles      "4 + 4, double!"
  *   make 10      a ten-frame with the gap highlighted, for sums of 9 and 10
  *   count on     the bigger number as a numeral, dots only for the smaller one (smaller 1 to 3, bigger 4 or more)
- * Subtraction has none. Returns null when no strategy fits.
+ * A problem that names its strategy (doubles, near doubles, make ten to 20) uses it. Subtraction has none. Returns null when no strategy fits.
  */
-export function strategyCue(p: Pick<Problem, 'visual'>): StrategyCue | null {
+export function strategyCue(p: Pick<Problem, 'visual' | 'strategy' | 'gap'>): StrategyCue | null {
   const v = p.visual;
-  if (!v || v.op !== '+') return null;
+  // A missing addend already shows its ten-frame with the gap: that picture is the strategy.
+  if (!v || v.op !== '+' || p.gap) return null;
   const { a, b } = v;
   const big = Math.max(a, b);
   const small = Math.min(a, b);
+  if (p.strategy === 'double') return { kind: 'double', text: `${a} + ${b}, double!`, speech: 'A double!' };
+  if (p.strategy === 'neardouble') return { kind: 'neardouble', text: `${small} + ${small}, and 1 more!`, speech: `Double ${small}, and one more!`, big, small };
+  if (p.strategy === 'split10') {
+    const gap = 10 - big;
+    const rest = small - gap;
+    return gap > 0
+      ? { kind: 'split10', text: `${big} + ${small} = ${big} + ${gap} + ${rest}`, speech: `Make ten. ${big} plus ${gap} is ten. Then ${rest} more.`, big, small, gap }
+      : { kind: 'split10', text: `10 + ${small}`, speech: `Ten and ${small} more.`, big, small, gap: 0 };
+  }
   if (a === b && a >= 1) return { kind: 'double', text: `${a} + ${b}, double!`, speech: 'A double!' };
   if (a + b === 9 || a + b === 10) return { kind: 'make10', text: 'Make 10!', speech: 'Fill up the ten frame.' };
   if (big >= 4 && small >= 1 && small <= 3) return { kind: 'counton', text: `Start at ${big}`, speech: `Start at ${big}. Count on ${small}.`, big, small };

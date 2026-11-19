@@ -2,13 +2,13 @@ import type { Problem, Rng } from '../problemBase';
 
 export type ModuleId =
   | 'add10' | 'sub10' // Phase 1
-  | 'count10' | 'bonds10' // Phase 2
+  | 'count10' | 'bonds10' | 'missing10' | 'doubles' // Phase 2
   | 'add20' | 'sub20' | 'add2d' | 'sub2d' // Phase 3
   | 'facts' | 'multidigit' | 'fractions'; // live, same ids as the old Track
 
 /** Every id a settings doc may mention, in registry order. */
 export const MODULE_IDS: readonly ModuleId[] = [
-  'add10', 'sub10', 'count10', 'bonds10', 'add20', 'sub20', 'add2d', 'sub2d', 'facts', 'multidigit', 'fractions',
+  'add10', 'sub10', 'count10', 'bonds10', 'missing10', 'doubles', 'add20', 'sub20', 'add2d', 'sub2d', 'facts', 'multidigit', 'fractions',
 ];
 
 export type Audience = 'prereader' | 'reader' | 'any';
@@ -66,5 +66,7 @@ export interface ModuleDef {
   /** Bars before pace. Grading multiplies them by `paceOf()`. */
   baseBars(def: CardDef, ctx: { baselineMs: number }): Thresholds;
   input: InputKind;
+  /** The biggest number key on the pad, once a fact of this module reaches the pad. A missing value reads as 10. */
+  padMax?: number;
   presentation: 'symbolic' | 'visual-first';
 }
