@@ -3,7 +3,7 @@ import type { Kid } from '../engine/models';
 import { audioPolicy } from './audioPolicy';
 import { setMuted } from './early/sounds';
 import { canHear, setVoicePolicy, speak, unlockSpeech } from './early/useSpeech';
-import { UiIcon } from './sprites';
+import { PixelIcon } from './pixel';
 
 // One kid preference on this device (never in Firestore), shared by Picture Run, the pre-reader home and end screen,
 // Dungeon and Adventure. A parent sets two things per kid: voice ('on', 'off' or 'kid') and sounds ('on' or 'off').
@@ -65,10 +65,9 @@ export function MuteButton({ muted, locked, onToggle, big = false, chimesOnly = 
           {muted ? <path d="M4 4l16 16" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" fill="none" /> : null}
         </svg>
       ) : (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-          <path d="M3 9v6h4l5 4V5L7 9z" />
-          {muted ? <path d="M15 9l6 6M21 9l-6 6" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" fill="none" /> : <path d="M15 8.5a5 5 0 0 1 0 7M17.5 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" fill="none" />}
-        </svg>
+        <span className={`px-speaker${muted ? ' is-muted' : ''}`} aria-hidden="true">
+          <PixelIcon name="speaker" size={size} />
+        </span>
       )}
     </button>
   );
@@ -91,7 +90,7 @@ export function HearButton({ text, muted, disabled = false, big = false, classNa
         void speak(text, { hear: true });
       }}
     >
-      <UiIcon name="speaker" size={big ? 72 : 44} />
+      <PixelIcon name="speaker" size={big ? 72 : 44} />
     </button>
   );
 }

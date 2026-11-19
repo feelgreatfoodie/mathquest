@@ -22,6 +22,21 @@ const PIN_HASH = createHash('sha256').update(`mathquest:local:${PIN}`).digest('h
 
 async function seedDemoFamily(page: Page) {
   await page.addInitScript((pinHash) => {
+    // The voice and WebAudio are stubbed so a Picture Run question does not wait on a real voice.
+    const w = window as unknown as Record<string, unknown>;
+    class Utter {
+      text: string; lang = ''; rate = 1; volume = 1; voice: unknown = null;
+      onend: (() => void) | null = null; onerror: (() => void) | null = null;
+      constructor(t: string) { this.text = t; }
+    }
+    w.SpeechSynthesisUtterance = Utter;
+    Object.defineProperty(window, 'speechSynthesis', { configurable: true, value: { speak(u: Utter) { setTimeout(() => u.onend?.(), 15); }, cancel() {}, getVoices() { return []; } } });
+    w.AudioContext = class {
+      currentTime = 0; destination = {};
+      resume() { return Promise.resolve(); }
+      createOscillator() { return { type: '', frequency: { value: 0 }, connect() {}, start() {}, stop() {} }; }
+      createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
+    };
     let a = 1234567;
     Math.random = () => {
       a = (a + 0x6d2b79f5) | 0;
@@ -81,7 +96,7 @@ for (const s of SIZES) {
       }
     });
 
-    test('picker, home, question', async ({ page }) => {
+    test('picker, home, question, miss, teach, end', async ({ page }) => {
       await seedDemoFamily(page);
       await page.goto('/');
       await page.locator('.kid-card', { hasText: 'Pip' }).waitFor();
@@ -89,8 +104,21 @@ for (const s of SIZES) {
       await page.locator('.kid-card', { hasText: 'Pip' }).click();
       await shot(page, s.tag, 'home-pip');
       await page.getByRole('button', { name: 'Start Quest' }).click();
+      const teach = page.getByRole('button', { name: 'Let me try one!' });
+      if (await teach.isVisible().catch(() => false)) {
+        await shot(page, s.tag, 'teach-pip');
+        await teach.click();
+      }
       await page.locator('.keypad').waitFor();
       await shot(page, s.tag, 'question-pip');
+      for (const d of '9999') await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
+      await page.locator('.key-go').click();
+      await page.locator('.feedback.bad').waitFor();
+      await shot(page, s.tag, 'miss-pip');
+      await page.getByRole('button', { name: 'Got it' }).click();
+      await holdQuit(page);
+      await page.locator('.summary').waitFor();
+      await shot(page, s.tag, 'end-pip');
       await page.goto('/');
       await page.getByRole('button', { name: /(grown-ups|parent) area/i }).click();
       for (const d of PIN) await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).click();
@@ -114,6 +142,27 @@ for (const s of SIZES) {
       await page.getByRole('button', { name: 'Play' }).click();
       await page.locator('.early-numerals').waitFor();
       await shot(page, s.tag, 'question-wren');
+      await page.locator('.choice[data-answer="false"]').first().click();
+      await page.waitForTimeout(300);
+      await shot(page, s.tag, 'miss-wren');
+      for (let guard = 0; guard < 600; guard++) {
+        if (await page.locator('.big-stars').count()) break;
+        const right = page.locator('.choice[data-answer="true"]');
+        if (await right.count()) await right.first().click({ force: true, timeout: 500 }).catch(() => undefined);
+        await page.waitForTimeout(60);
+      }
+      await page.locator('.big-stars').waitFor({ timeout: 10_000 });
+      await page.waitForTimeout(3500);
+      await shot(page, s.tag, 'end-wren');
     });
   });
+}
+
+/** Holds the Home button until the run ends. */
+async function holdQuit(page: Page) {
+  const b = (await page.locator('.hold-btn').first().boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(1600);
+  await page.mouse.up();
 }
