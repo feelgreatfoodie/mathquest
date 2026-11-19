@@ -61,7 +61,7 @@ export function Keypad({ onDigit, onBack, onSubmit, canSubmit = false, showGo = 
             <button
               key={f}
               type="button"
-              className={`field-btn ${field === f ? 'is-active' : ''}`}
+              className={`field-btn px-frame px-btn ${field === f ? 'is-active px-gold' : ''}`}
               onClick={() => onField(f)}
               disabled={disabled}
               aria-pressed={field === f}
@@ -73,21 +73,18 @@ export function Keypad({ onDigit, onBack, onSubmit, canSubmit = false, showGo = 
       ) : null}
       <div className="keypad">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((d) => (
-          <button key={d} type="button" className="key" onClick={() => tapDigit(d)} disabled={disabled}>
+          <button key={d} type="button" className="key px-frame" onClick={() => tapDigit(d)} disabled={disabled}>
             {d}
           </button>
         ))}
-        <button type="button" className="key key-back" onClick={onBack} disabled={disabled} aria-label="Delete">
-          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="M21 5H9l-6 7 6 7h12z" />
-            <path d="M18 9l-6 6M12 9l6 6" />
-          </svg>
+        <button type="button" className="key key-back px-frame" onClick={onBack} disabled={disabled} aria-label="Delete">
+          DEL
         </button>
-        <button type="button" className="key" onClick={() => tapDigit(0)} disabled={disabled}>
+        <button type="button" className="key px-frame" onClick={() => tapDigit(0)} disabled={disabled}>
           0
         </button>
         {showGo ? (
-          <button type="button" className="key key-go" onClick={onSubmit} disabled={disabled || !canSubmit}>
+          <button type="button" className="key key-go px-frame px-go" onClick={onSubmit} disabled={disabled || !canSubmit}>
             GO
           </button>
         ) : (

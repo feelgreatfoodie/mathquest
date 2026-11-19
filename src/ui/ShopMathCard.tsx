@@ -1,3 +1,4 @@
+import { PixelIcon } from './pixel';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Repo } from '../data/repo';
 import { SHOP_TIPS_PER_DAY, shopTipsToday } from '../engine/game';
@@ -46,7 +47,7 @@ export function ShopMathEntry({ kid, repo, onGame }: Props) {
         setOpen(p);
       }}
     >
-      <UiIcon name="gem" size={learner === 'prereader' ? 48 : 28} /> {learner === 'prereader' ? '' : 'Shop math'}
+      <PixelIcon name="gem" size={learner === 'prereader' ? 48 : 28} /> {learner === 'prereader' ? '' : 'Shop math'}
     </button>
   );
 }

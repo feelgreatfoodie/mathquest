@@ -8,3 +8,5 @@ export { PixelHeart } from './heart';
 export { ShopStall, VaultDoor } from './shopScenes';
 export { readTheme, writeTheme, themeKey, type Theme } from './theme';
 export { readCrt, writeCrt, applyCrt, crtKey } from './crt';
+export { TorchRow, DungeonWalls, HpBar } from './dungeon';
+export { PixelPlay, PixelMap } from './art';

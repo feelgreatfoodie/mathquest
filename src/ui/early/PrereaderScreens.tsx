@@ -1,9 +1,9 @@
+import { PixelIcon, PixelMap, PixelPlay } from '../pixel';
 import { useState } from 'react';
 import { GoalJar, goalName } from '../GoalJar';
-import { CampRow } from '../CampRow';
+import { CampScene } from '../CampScene';
 import { ShopMathEntry } from '../ShopMathCard';
 import type { Repo } from '../../data/repo';
-import { HeroFigure } from '../HeroFigure';
 import type { Kid, KidGame } from '../../engine/models';
 import { modesOnOf } from '../../engine/models';
 import type { GameModeId } from '../../game/modes/types';
@@ -32,11 +32,10 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
   return (
     <div className="screen center early-home" aria-label={`${kid.name}'s home`}>
       <div className="early-home-top">
-        <HoldButton onHold={onBack}><UiIcon name="house" size={44} /></HoldButton>
+        <HoldButton onHold={onBack}><PixelIcon name="house" size={44} /></HoldButton>
       </div>
       <div className="early-home-mute"><MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big chimesOnly={mute.chimesOnly} /></div>
-      <HeroFigure game={kid.game} size={220} className="bob" />
-      <CampRow game={kid.game} size={64} />
+      <CampScene game={kid.game} size={200} className="px-camp-wide" />
       <GoalJar game={kid.game} learner="prereader" onClick={() => void speak(`Saving for the ${goalName(kid.game.goal ?? '')}! You have ${kid.game.gems}.`)} />
       <ShopMathEntry kid={kid} repo={repo} onGame={onTipGame ?? (() => undefined)} />
       <div className="early-home-row">
@@ -52,7 +51,7 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
             onStart('prereader');
           }}
         >
-          <UiIcon name="play" size={150} />
+          <PixelPlay size={150} />
         </button>
         {adventure ? (
           <button
@@ -68,7 +67,7 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
               onStart('overworld');
             }}
           >
-            <UiIcon name="map" size={120} />
+            <PixelMap size={120} />
           </button>
         ) : null}
         {ready ? (
@@ -85,7 +84,7 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
               setShop(true);
             }}
           >
-            <UiIcon name="chest" size={96} />
+            <PixelIcon name="chest" size={96} />
             <span className="pv-glow" aria-hidden="true"><UiIcon name="sparkle" size={44} /><UiIcon name="sparkle" size={32} /></span>
           </button>
         ) : null}
@@ -100,12 +99,12 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
             setShop(true);
           }}
         >
-          <UiIcon name="chest" size={96} />
-          <span className="shop-btn-gems"><UiIcon name="gem" size={36} /><span className="tally-num">{kid.game.gems}</span></span>
+          <PixelIcon name="chest" size={96} />
+          <span className="shop-btn-gems"><PixelIcon name="gem" size={36} /><span className="tally-num">{kid.game.gems}</span></span>
         </button>
       </div>
       <div className="flames" role="img" aria-label={`${kid.game.streakDays} day streak`}>
-        {Array.from({ length: flames }, (_, i) => <UiIcon key={i} name="flame" size={44} />)}
+        {Array.from({ length: flames }, (_, i) => <PixelIcon key={i} name="flame" size={44} />)}
         {kid.game.streakDays > MAX_FLAMES ? <span className="flame-count">{kid.game.streakDays}</span> : null}
       </div>
     </div>

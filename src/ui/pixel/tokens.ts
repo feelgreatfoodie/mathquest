@@ -64,6 +64,25 @@ export const GROWNUPS_LIGHT = {
   info: '#1d4ed8',
 } as const;
 
+/** style-2: the Dungeon scene and the stone tablet that holds the question. */
+export const DUNGEON = {
+  wall: '#3b1d6e',
+  wallDark: '#2e1658',
+  floor: '#4b5563',
+  floorDark: '#374151',
+} as const;
+
+/** The dark inset inside a tablet or a feedback box, and the text colors used on it. */
+export const INSET = {
+  fill: '#141726',
+  text: '#f8fafc',
+  muted: '#b6bdd8',
+  gold: '#fbbf24',
+  good: '#4ade80',
+  info: '#60a5fa',
+  bad: '#fca5a5',
+} as const;
+
 export const FONTS = {
   display: "'Press Start 2P', ui-monospace, monospace",
   body: "'Atkinson Hyperlegible', system-ui, -apple-system, sans-serif",
@@ -110,6 +129,17 @@ export const PAIRS: readonly Pair[] = [
   { name: 'tagline on sky top', fg: TITLE.tagline, bg: SKY[0] },
   { name: 'tagline on sky band 2', fg: TITLE.tagline, bg: SKY[1] },
   { name: 'white on sky band 3', fg: '#f8fafc', bg: SKY[2] },
+  // style-2: the question tablet and its dark inset
+  { name: 'tablet text on stone', fg: FILLS.stone.text, bg: FILLS.stone.fill },
+  { name: 'answer slot gold on inset', fg: INSET.gold, bg: INSET.fill },
+  { name: 'inset text', fg: INSET.text, bg: INSET.fill },
+  { name: 'inset muted text', fg: INSET.muted, bg: INSET.fill },
+  { name: 'inset good text', fg: INSET.good, bg: INSET.fill },
+  { name: 'inset info text', fg: INSET.info, bg: INSET.fill },
+  { name: 'inset miss text', fg: INSET.bad, bg: INSET.fill },
+  { name: 'white on dungeon wall', fg: '#f8fafc', bg: DUNGEON.wall },
+  { name: 'gold on dungeon wall', fg: TITLE.gold, bg: DUNGEON.wall },
+  { name: 'white on dungeon floor', fg: '#f8fafc', bg: DUNGEON.floorDark },
   // style-3: status colors and the Grown-ups light theme
   ...Object.entries(STATUS).map(([k, s]) => ({ name: `status ${k} text on fill`, fg: s.text, bg: s.fill })),
   { name: 'light theme text on panel', fg: GROWNUPS_LIGHT.text, bg: GROWNUPS_LIGHT.panel },
