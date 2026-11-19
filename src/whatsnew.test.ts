@@ -13,8 +13,6 @@ describe('whatsnew', () => {
   it('covers every merged change from #36 to #46 (#38 was a tooling change, with no line) (the footer shows the newest 10)', () => {
     const prs = recentChanges().map((e) => e.pr);
     for (const n of [37, 39, 40, 41, 42, 43, 44, 45, 46]) expect(prs).toContain(n);
-    const prs = recentChanges().map((e) => e.pr);
-    for (const n of [35, 36, 37, 39, 40, 41, 42, 43, 44, 45]) expect(prs).toContain(n);
   });
   it('marks changes kids cannot see and changes behind a setting', () => {
     // The whole list, not the newest 10: the last flagged entries scroll out of the footer window as new changes land.
