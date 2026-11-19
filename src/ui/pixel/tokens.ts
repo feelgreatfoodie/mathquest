@@ -38,16 +38,41 @@ export const TITLE = {
 } as const;
 
 /**
- * style-3, the Grown-ups area. Color has meaning: green is strong, amber needs work, grey is not started. Each level has a fill
- * and the text on it. The five levels follow the mastery levels 0 to 4 of the grids (lv0 to lv4 in styles.css).
+ * style-3, the Grown-ups area mastery colors: one blue ramp. Weak facts are bright, fluent facts fade into the page, and coral
+ * marks a fact missed 3 or more times. Each level has a fill, the number color on it and a border. Not started has no fill: it is a
+ * dashed outline on the panel. The levels follow the mastery levels 0 to 4 of the grids (lv0 to lv4 in styles.css), and `missed`
+ * is the .leech class, which sits on top of whatever level the fact is at. Reviewing keeps Flynn's fill #2B7BE0 and its number is
+ * near-black, because white on that fill is 4.19:1 and the grid numbers are 10 to 13 px.
  */
+export interface Status {
+  /** null: no fill, the panel shows through. */
+  fill: string | null;
+  text: string;
+  border: string;
+  dashed?: true;
+}
+
 export const STATUS = {
-  notStarted: { fill: '#3a3d4d', text: '#e5e7f0' },
-  needsWork: { fill: '#d97706', text: '#1a1300' },
-  needsWorkNear: { fill: '#fbbf24', text: '#1a1300' },
-  strong: { fill: '#4ade80', text: '#052e16' },
-  strongest: { fill: '#22c55e', text: '#052e16' },
-} as const;
+  notStarted: { fill: null, text: '#9aa3cc', border: '#5a6594', dashed: true },
+  missed: { fill: '#ff8a5c', text: '#4a1b0c', border: '#ff8a5c' },
+  learning: { fill: '#62b4ff', text: '#042c53', border: '#62b4ff' },
+  reviewing: { fill: '#2b7be0', text: '#000814', border: '#2b7be0' },
+  solid: { fill: '#1c4585', text: '#b5d4f4', border: '#1c4585' },
+  fluent: { fill: '#131a33', text: '#6584bd', border: '#28335c' },
+} as const satisfies Record<string, Status>;
+
+/** The same ramp on the light theme, built by the same rule: needs work is the most saturated, fluent is the closest to the page. */
+export const STATUS_LIGHT = {
+  notStarted: { fill: null, text: '#4a5070', border: '#7a83ab', dashed: true },
+  missed: { fill: '#c8431d', text: '#ffffff', border: '#c8431d' },
+  learning: { fill: '#1250a8', text: '#ffffff', border: '#1250a8' },
+  reviewing: { fill: '#3f86e8', text: '#000814', border: '#3f86e8' },
+  solid: { fill: '#93bdf0', text: '#04121f', border: '#93bdf0' },
+  fluent: { fill: '#dce8f8', text: '#2c4a7e', border: '#afc3e6' },
+} as const satisfies Record<string, Status>;
+
+/** What the not-started cells sit on: the panel of each theme. */
+export const PANEL = { dark: '#232842', light: '#ffffff' } as const;
 
 /** The Grown-ups light theme. It only recolors the Grown-ups area; kid screens stay on the dark pixel look. */
 export const GROWNUPS_LIGHT = {
@@ -141,7 +166,8 @@ export const PAIRS: readonly Pair[] = [
   { name: 'gold on dungeon wall', fg: TITLE.gold, bg: DUNGEON.wall },
   { name: 'white on dungeon floor', fg: '#f8fafc', bg: DUNGEON.floorDark },
   // style-3: status colors and the Grown-ups light theme
-  ...Object.entries(STATUS).map(([k, s]) => ({ name: `status ${k} text on fill`, fg: s.text, bg: s.fill })),
+  ...Object.entries(STATUS).map(([k, t]) => ({ name: `status ${k} text on fill`, fg: t.text, bg: t.fill ?? PANEL.dark })),
+  ...Object.entries(STATUS_LIGHT).map(([k, t]) => ({ name: `light theme status ${k} text on fill`, fg: t.text, bg: t.fill ?? PANEL.light })),
   { name: 'light theme text on panel', fg: GROWNUPS_LIGHT.text, bg: GROWNUPS_LIGHT.panel },
   { name: 'light theme text on page', fg: GROWNUPS_LIGHT.text, bg: GROWNUPS_LIGHT.bg },
   { name: 'light theme text on inset', fg: GROWNUPS_LIGHT.text, bg: GROWNUPS_LIGHT.bg2 },

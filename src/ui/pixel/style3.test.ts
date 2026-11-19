@@ -1,29 +1,84 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { GROWNUPS_LIGHT, MIN_CONTRAST, PAIRS, STATUS, contrast } from './tokens';
+import { GROWNUPS_LIGHT, MIN_CONTRAST, PANEL, PAIRS, STATUS, STATUS_LIGHT, contrast } from './tokens';
 import { readTheme, themeKey, writeTheme } from './theme';
 
 const css = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
 const varOf = (name: string) => new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`).exec(css)?.[1]?.toLowerCase();
 const block = css.slice(css.indexOf('style-3: Grown-ups area'));
 
-describe('style-3: status colors', () => {
-  it('green is strong, amber needs work, grey is not started, each at 4.5:1 or better', () => {
-    for (const [k, s] of Object.entries(STATUS)) expect(contrast(s.text, s.fill), k).toBeGreaterThanOrEqual(MIN_CONTRAST);
-    const names = PAIRS.map((p) => p.name).join('|');
-    for (const k of Object.keys(STATUS)) expect(names).toContain(`status ${k}`);
+const KEYS = ['notStarted', 'missed', 'learning', 'reviewing', 'solid', 'fluent'] as const;
+const VAR: Record<(typeof KEYS)[number], string> = { notStarted: 'st-none', missed: 'st-missed', learning: 'st-learning', reviewing: 'st-reviewing', solid: 'st-solid', fluent: 'st-fluent' };
+const lightRule = /\.screen\.parent\[data-theme='light'\] \{[^}]*\}/.exec(css)?.[0] ?? '';
+const lightVar = (name: string) => new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`).exec(lightRule)?.[1]?.toLowerCase();
+
+describe('style-3: mastery colors, one blue ramp', () => {
+  for (const [theme, table, panel] of [['dark', STATUS, PANEL.dark], ['light', STATUS_LIGHT, PANEL.light]] as const) {
+    it(`${theme}: every number is at least 4.5:1 on its fill, and every fill has a pair in PAIRS`, () => {
+      for (const k of KEYS) {
+        const t = table[k];
+        expect(contrast(t.text, t.fill ?? panel), `${theme} ${k}`).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      }
+      const names = PAIRS.map((p) => p.name);
+      for (const k of KEYS) expect(names.filter((n) => n.includes(`status ${k} text on fill`) && (theme === 'light') === n.startsWith('light theme')), `${theme} ${k}`).toHaveLength(1);
+    });
+    it(`${theme}: Reviewing is not white on #2b7be0 (4.19:1 fails AA at grid size)`, () => {
+      expect(contrast('#ffffff', STATUS.reviewing.fill)).toBeLessThan(MIN_CONTRAST);
+      expect(table.reviewing.text).not.toBe('#ffffff');
+    });
+    it(`${theme}: the ramp gets darker from Learning to Fluent, each step at least 1.4:1 apart`, () => {
+      const order = ['learning', 'reviewing', 'solid', 'fluent'] as const;
+      const fills = order.map((k) => table[k].fill);
+      for (let i = 0; i < fills.length - 1; i++) expect(contrast(fills[i]!, fills[i + 1]!), `${order[i]} to ${order[i + 1]}`).toBeGreaterThanOrEqual(1.4);
+    });
+  }
+  it('dark ramp keeps the fills Flynn approved', () => {
+    expect(STATUS.missed.fill).toBe('#ff8a5c');
+    expect(STATUS.learning.fill).toBe('#62b4ff');
+    expect(STATUS.reviewing.fill).toBe('#2b7be0');
+    expect(STATUS.solid.fill).toBe('#1c4585');
+    expect(STATUS.fluent.fill).toBe('#131a33');
+    expect(STATUS.fluent.border).toBe('#28335c');
+    expect(STATUS.notStarted.border).toBe('#5a6594');
+    expect(STATUS.notStarted.fill).toBeNull();
   });
-  it('styles.css matches the STATUS table and maps lv0 to lv4 onto it', () => {
-    expect(varOf('st-none')).toBe(STATUS.notStarted.fill);
-    expect(varOf('st-none-text')).toBe(STATUS.notStarted.text);
-    expect(varOf('st-work')).toBe(STATUS.needsWork.fill);
-    expect(varOf('st-work-near')).toBe(STATUS.needsWorkNear.fill);
-    expect(varOf('st-strong')).toBe(STATUS.strong.fill);
-    expect(varOf('st-strongest')).toBe(STATUS.strongest.fill);
-    expect(block).toContain('.lv0 { background: var(--st-none)');
-    expect(block).toContain('.lv1 { background: var(--st-work)');
-    expect(block).toContain('.lv3 { background: var(--st-strong)');
-    expect(block).toContain('.lv4 { background: var(--st-strongest)');
+  it('light fluent is not near-white and stays apart from the panel', () => {
+    expect(STATUS_LIGHT.fluent.fill).not.toBe('#ffffff');
+    expect(contrast(STATUS_LIGHT.fluent.border, PANEL.light)).toBeGreaterThanOrEqual(1.5);
+  });
+  it('styles.css matches both tables', () => {
+    for (const k of KEYS) {
+      const v = VAR[k];
+      const d = STATUS[k];
+      const l = STATUS_LIGHT[k];
+      if (d.fill) expect(varOf(v), v).toBe(d.fill);
+      expect(varOf(`${v}-text`), `${v}-text`).toBe(d.text);
+      expect(lightVar(`${v}-text`), `light ${v}-text`).toBe(l.text);
+      if (l.fill) expect(lightVar(v), `light ${v}`).toBe(l.fill);
+    }
+    expect(varOf('st-none-border')).toBe(STATUS.notStarted.border);
+    expect(varOf('st-fluent-border')).toBe(STATUS.fluent.border);
+    expect(lightVar('st-fluent-border')).toBe(STATUS_LIGHT.fluent.border);
+    expect(lightVar('st-none-border')).toBe(STATUS_LIGHT.notStarted.border);
+  });
+  it('maps lv0 to lv4 and leech onto the variables, with no other mastery color left', () => {
+    expect(block).toContain('.lv0 { background: transparent; color: var(--st-none-text); border: 1px dashed var(--st-none-border)');
+    expect(block).toContain('.lv1 { background: var(--st-learning)');
+    expect(block).toContain('.lv2 { background: var(--st-reviewing)');
+    expect(block).toContain('.lv3 { background: var(--st-solid)');
+    expect(block).toContain('.lv4 { background: var(--st-fluent)');
+    expect(block).toContain('.leech { background: var(--st-missed)');
+    expect(css.match(/^\.lv[0-4] \{/gm)).toHaveLength(5);
+    expect(css).not.toMatch(/outline: 3px solid #fb923c/);
+    for (const old of ['#d97706', '#4ade80', '#3b3f8c', '#a7f3d0']) expect(block.slice(0, block.indexOf('.ins-state.locked'))).not.toContain(old);
+  });
+  it('the Grown-ups legends list Missed 3+ times first and Not started last', () => {
+    const parent = readFileSync(new URL('../screens/Parent.tsx', import.meta.url), 'utf8');
+    const insights = readFileSync(new URL('../InsightsPanel.tsx', import.meta.url), 'utf8');
+    expect(parent).not.toContain('swatch lv1 leech');
+    expect(parent.match(/swatch leech/g)).toHaveLength(1); // one shared GridLegend for both grids
+    expect(parent).toContain('([1, 2, 3, 4, 0] as Level[])');
+    expect(insights).toContain('([1, 2, 3, 4, 0] as Level[])');
   });
 });
 

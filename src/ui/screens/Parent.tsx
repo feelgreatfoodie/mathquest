@@ -797,12 +797,7 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
           under {fmtSec(fastBar)}. Pace {pace}x.
         </p>
         <Heatmap cards={cards} baseline={baseline} pace={pace} />
-        <div className="legend">
-          {([0, 1, 2, 3, 4] as Level[]).map((l) => (
-            <span key={l} className="legend-item"><span className={`swatch ${LEVEL_CLASS[l]}`} />{LEVEL_LABELS[l]}</span>
-          ))}
-          <span className="legend-item"><span className="swatch lv1 leech" />Missed 3+ times</span>
-        </div>
+        <GridLegend />
         <div className="two-col">
           <div>
             <h3>Keeps slipping</h3>
@@ -1119,11 +1114,11 @@ const PACE_OPTIONS = [
 
 function GridLegend() {
   return (
-    <div className="legend">
-      {([0, 1, 2, 3, 4] as Level[]).map((l) => (
+    <div className="legend" data-testid="grid-legend">
+      <span className="legend-item"><span className="swatch leech" />Missed 3+ times</span>
+      {([1, 2, 3, 4, 0] as Level[]).map((l) => (
         <span key={l} className="legend-item"><span className={`swatch ${LEVEL_CLASS[l]}`} />{LEVEL_LABELS[l]}</span>
       ))}
-      <span className="legend-item"><span className="swatch lv1 leech" />Missed 3+ times</span>
     </div>
   );
 }
