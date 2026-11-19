@@ -7,6 +7,8 @@ import type { CardMap, CardState, Family, Kid, KidAvatar, KidGame, KidSettings, 
 /** Storage boundary. Firestore in production; localStorage for offline demos and dev. */
 export interface Repo {
   readonly mode: 'firestore' | 'local';
+  /** Who the signed-in parent is, for choices kept on this device (the light theme): the account uid, or 'local' offline. */
+  readonly parentKey?: string;
   getFamily(): Promise<Family | null>;
   /** Merges the given fields into the family doc, so a field this code does not know (tourSeen) is kept. */
   saveFamily(family: Family): Promise<void>;

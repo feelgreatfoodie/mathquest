@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type FocusEvent } from 'react';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { HEROES, levelFor } from '../../engine/game';
 import { itemById } from '../../game/shop/catalog';
-import { gemHistory } from '../../engine/gemHistory';
+import { gemChangeLabel, gemDeltaText, gemHistory } from '../../engine/gemHistory';
+import { PixelIcon, readTheme, writeTheme, type Theme } from '../pixel';
 import { GEM_SPEEDS, earnedTodayOf, gemFullRateOf, gemSpeedOf, gemTier } from '../../engine/gems';
 import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
@@ -184,6 +185,9 @@ export function ParkedRounds({ kids }: { kids: Kid[] }) {
 
 export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut, afterPause }: ParentProps) {
   const [askSignOut, setAskSignOut] = useState(false);
+  // The light theme is each parent's own choice, kept on this device. It recolors the Grown-ups area only.
+  const parentKey = repo.parentKey ?? 'local';
+  const [theme, setTheme] = useState<Theme>(() => readTheme(parentKey));
   const resumed = afterPause && onSignOut ? () => setAskSignOut(true) : undefined;
   const [selected, setSelected] = useState<string | 'add'>(kids[0]?.id ?? 'add');
   const [changingPin, setChangingPin] = useState(false);
@@ -235,10 +239,23 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
     );
 
   return (
-    <div className="screen parent" onFocus={keepFocusVisible}>
+    <div className="screen parent" data-theme={theme} onFocus={keepFocusVisible}>
       <header className="parent-head">
         <h1 className="pixel">Grown-ups area</h1>
         <div className="row">
+          <button
+            type="button"
+            className="btn btn-ghost btn-small theme-toggle"
+            data-testid="theme-toggle"
+            aria-pressed={theme === 'light'}
+            onClick={() => {
+              const next: Theme = theme === 'light' ? 'dark' : 'light';
+              setTheme(next);
+              writeTheme(parentKey, next);
+            }}
+          >
+            Light theme: {theme === 'light' ? 'On' : 'Off'}
+          </button>
           <button type="button" ref={tourButton} className="btn btn-ghost btn-small tour-button" data-testid="tour-button" onClick={() => setTour('on')}><span className="tour-q" aria-hidden="true">?</span> Tour</button>
           <PauseEveryone repo={repo} kids={kids} {...(resumed ? { onResumed: resumed } : {})} />
           <button type="button" className="btn btn-ghost btn-small" onClick={() => setChangingPin(true)}>Change PIN</button>
@@ -568,20 +585,16 @@ function useLiveKid(repo: Repo, kid: Kid): Kid {
   return live;
 }
 
-function signed(n: number): string {
-  return `${n > 0 ? '+' : '−'}${Math.abs(n)}`;
-}
-
 function GemHistory({ changes }: { changes: ReturnType<typeof gemHistory> }) {
   return (
     <section className="panel">
-      <h2>Gem history</h2>
+      <h2><PixelIcon name="gem" size={24} className="head-icon" /> Gem history</h2>
       {changes.length ? (
         <ul className="gem-history">
           {changes.map((c, i) => (
-            <li key={`${c.kind}-${c.at}-${i}`} className={c.gems > 0 ? 'gain' : 'spend'}>
-              <span className="gem-delta">{signed(c.gems)}</span>
-              <span>{c.kind === 'run' ? 'Quest finished' : `Bought ${HEROES.find((h) => h.id === c.heroId)?.name ?? itemById(c.heroId ?? '')?.name ?? c.heroId}`}</span>
+            <li key={`${c.kind}-${c.at}-${i}`} className={c.gems > 0 ? 'gain' : c.gems < 0 ? 'spend' : 'free'}>
+              <span className="gem-delta">{gemDeltaText(c)}</span>
+              <span>{gemChangeLabel(c, HEROES.find((h) => h.id === c.heroId)?.name ?? itemById(c.heroId ?? '')?.name ?? c.heroId)}</span>
               <span className="muted">{new Date(c.at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
             </li>
           ))}
@@ -599,7 +612,7 @@ const fmtDay = (ms: number) => new Date(ms).toLocaleDateString([], { month: 'sho
 function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
   return (
     <section className="panel vault-history" aria-label="Vault history" data-testid="vault-history">
-      <h2>Vault</h2>
+      <h2><PixelIcon name="vault" size={24} className="head-icon" /> Vault</h2>
       <ul>
         {deposits.map((d) => (
           <li key={d.id} data-status={d.status}>

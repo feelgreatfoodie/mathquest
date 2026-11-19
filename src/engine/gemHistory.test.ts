@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gemHistory } from './gemHistory';
+import { gemChangeLabel, gemDeltaText, gemHistory } from './gemHistory';
 import type { PurchaseLog, SessionLog } from './models';
 
 const run = (id: string, endedAt: number, gems: number): SessionLog => ({
@@ -24,5 +24,26 @@ describe('gemHistory', () => {
 
   it('skips runs that earned no gems', () => {
     expect(gemHistory([run('s0', 10, 0)], [], 20)).toEqual([]);
+  });
+
+  it('labels a free hero as free and never shows -0', () => {
+    const [c] = gemHistory([], [buy('p0', 10, 'knight', 0)], 20);
+    expect(gemDeltaText(c!)).toBe('free');
+    expect(gemChangeLabel(c!, 'Knight')).toBe('Bought Knight (free)');
+    for (const x of [gemDeltaText(c!), gemChangeLabel(c!, 'Knight')]) expect(x).not.toMatch(/[-−]0\b/);
+  });
+
+  it('labels a paid purchase with its cost and a run with a plus', () => {
+    const [c] = gemHistory([], [buy('p1', 10, 'wizard', 25)], 20);
+    expect(gemChangeLabel(c!, 'Wizard')).toBe('Bought Wizard (-25 gems)');
+    expect(gemDeltaText(c!)).toBe('−25');
+    const [r] = gemHistory([run('s1', 20, 6)], [], 20);
+    expect(gemDeltaText(r!)).toBe('+6');
+    expect(gemChangeLabel(r!)).toBe('Quest finished');
+  });
+
+  it('falls back to the id when the name is unknown', () => {
+    const [c] = gemHistory([], [buy('p2', 10, 'mystery', 5)], 20);
+    expect(gemChangeLabel(c!)).toBe('Bought mystery (-5 gems)');
   });
 });

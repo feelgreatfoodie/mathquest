@@ -9,6 +9,7 @@ import { speak } from './early/useSpeech';
 import { GoalJar, goalName } from './GoalJar';
 import { Sprite, UiIcon } from './sprites';
 import { PrereaderVault, ReaderVault } from './VaultPanel';
+import { ShopStall, VaultDoor } from './pixel';
 import { useDeposits, type VaultApi } from './vaultApi';
 
 export type OnGame = (delta: GameDelta) => Promise<boolean>;
@@ -92,6 +93,7 @@ function ReaderShop({ kid, onGame, vault, openVault, onClose }: Omit<Props, 'lea
     <div className="modal" role="dialog" aria-modal="true" aria-label="Hero shop">
       <div className="panel shop">
         <h2 className="pixel">{full ? 'Shop' : 'Hero Shop'}</h2>
+        {onVault ? <VaultDoor /> : <ShopStall />}
         <p className="muted">You have {kid.game.gems} gems. Earn gems by finishing quests.</p>
         {tabs.length ? (
           <div className="shop-tabs" role="tablist" aria-label="Shop sections">
@@ -251,6 +253,7 @@ function PrereaderShop({ kid, onGame, vault, openVault, onClose }: Omit<Props, '
   const entries = entriesFor(full && tab !== 'vault' ? tab : 'hero');
   return (
     <div className="screen center pshop" aria-label="Hero shop">
+      {onVault ? <VaultDoor /> : <ShopStall />}
       <div className="pshop-top">
         <button type="button" className="pshop-btn pshop-home" aria-label="Home" onClick={onClose}><UiIcon name="house" size={64} /></button>
         {full ? (

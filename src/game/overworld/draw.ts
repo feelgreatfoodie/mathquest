@@ -293,6 +293,8 @@ export interface Scene {
   time: number;
   /** The tile the last tap pointed at. */
   marker: Point | null;
+  /** True under prefers-reduced-motion: the water and grass hold their first frame. */
+  still?: boolean;
 }
 
 const variantOf = (x: number, y: number) => (x * 7 + y * 13) % VARIANTS;
@@ -317,8 +319,16 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
   const y0 = Math.max(0, Math.floor(top / t));
   const x1 = Math.min(s.map.w - 1, Math.ceil((left + width) / t));
   const y1 = Math.min(s.map.h - 1, Math.ceil((top + height) / t));
-  const tile = (name: Tile, x: number, y: number) =>
-    g.drawImage(at, ORDER.indexOf(name) * TILE, variantOf(x, y) * TILE, TILE, TILE, Math.round(x * t - left), Math.round(y * t - top), t, t);
+  // Two frames for water and grass: the tile swaps to its next variant twice a second (water) and once every 1.5 seconds on a
+  // scatter of grass tiles. Nothing moves when the player asks for reduced motion.
+  const frame = s.still ? 0 : Math.floor(s.time * 2) % 2;
+  const sway = s.still ? 0 : Math.floor(s.time / 1.5) % 2;
+  const tile = (name: Tile, x: number, y: number) => {
+    let v = variantOf(x, y);
+    if (name === 'water' || name === 'bridge') v = (v + frame) % VARIANTS;
+    else if (name === 'grass' && (x * 3 + y * 5) % 4 === 0) v = (v + sway) % VARIANTS;
+    g.drawImage(at, ORDER.indexOf(name) * TILE, v * TILE, TILE, TILE, Math.round(x * t - left), Math.round(y * t - top), t, t);
+  };
   const sprite = (name: string, x: number, y: number, dy = 0, flip = false, size = 1) => {
     const dx = Math.round(x * t - left + (t * (1 - size)) / 2);
     const dyy = Math.round(y * t - top + dy * scale + t * (1 - size));
@@ -343,6 +353,16 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
       if (k === 'camp' && x === firstCamp(s.map)?.x && y === firstCamp(s.map)?.y) campfire(g, x * t - left, y * t - top, t, s.campLit, s.time);
       if (k === 'gate' && !s.gateOpen) lock(g, x * t - left, y * t - top, t);
       if (k === 'torch') flame(g, x * t - left, y * t - top, t, s.time + x * 0.7);
+    }
+
+  // Soft shadows: trees and rocks cast a 2 pixel band on the ground tile below, drawn before the chests, monsters and hero.
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) {
+      const k = tileAt(s.map, x, y);
+      if (k !== 'tree' && k !== 'rock') continue;
+      const below = tileAt(s.map, x, y + 1);
+      if (below === 'tree' || below === 'rock' || below === 'wall' || below === 'water') continue;
+      shadow(g, x * t - left, (y + 1) * t - top, t);
     }
 
   // Chests, then monsters, then the hero (sorted by row so lower things draw over higher ones).
@@ -389,6 +409,15 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
     g.fillStyle = grad;
     g.fillRect(0, 0, width, height);
   }
+}
+
+/** A soft shadow on the ground under a tree or a rock: two stepped bands, the second one narrower and lighter. */
+function shadow(g: G, x: number, y: number, t: number) {
+  const u = t / TILE;
+  g.fillStyle = 'rgba(8, 12, 24, 0.26)';
+  g.fillRect(Math.round(x + 1 * u), Math.round(y), Math.round(11 * u), Math.round(1 * u));
+  g.fillStyle = 'rgba(8, 12, 24, 0.14)';
+  g.fillRect(Math.round(x + 2 * u), Math.round(y + 1 * u), Math.round(9 * u), Math.round(1 * u));
 }
 
 function firstCamp(map: TileMap): Point | undefined {
