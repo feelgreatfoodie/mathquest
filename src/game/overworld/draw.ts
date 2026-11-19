@@ -1,7 +1,7 @@
 import { ITEM_SPRITES } from '../../ui/itemSprites';
 import { SPRITES } from '../../ui/sprites';
 import type { Entity } from './encounters';
-import { tileAt, type Point, type RegionId, type Tile, type TileMap } from './maps';
+import { doorNeed, tileAt, type Point, type RegionId, type Tile, type TileMap } from './maps';
 import type { Facing } from './worldState';
 
 // Canvas 2D drawing for the Overworld. Every tile and sprite is original and made in code: 12 by 12 pixel tiles painted
@@ -9,7 +9,7 @@ import type { Facing } from './worldState';
 
 export const TILE = 12;
 const VARIANTS = 3;
-const ORDER: Tile[] = ['grass', 'path', 'tree', 'water', 'rock', 'bridge', 'gate', 'back', 'chest', 'spawn', 'boss', 'camp', 'start', 'door', 'span', 'wall', 'torch'];
+const ORDER: Tile[] = ['grass', 'path', 'tree', 'water', 'rock', 'bridge', 'gate', 'back', 'chest', 'spawn', 'boss', 'camp', 'start', 'door', 'span', 'wall', 'torch', 'exit', 'rdoor'];
 
 type G = CanvasRenderingContext2D;
 const px = (g: G, c: string, x: number, y: number, w = 1, h = 1) => {
@@ -226,6 +226,22 @@ function paint(g: G, tile: Tile, v: number, region: RegionId = 'meadow') {
       px(g, '#5b3a1a', 2, 1, 8, 1);
       px(g, '#facc15', 8, 6, 1, 1);
       break;
+    case 'exit':
+      // The way out of a lair: the same sill as the gate back, in every region.
+      px(g, '#c8a165', 0, 0, 12, 12);
+      px(g, '#6b7280', 0, 0, 12, 2);
+      px(g, '#6b7280', 0, 10, 12, 2);
+      px(g, '#fbbf24', 4, 5, 4, 2);
+      break;
+    case 'rdoor':
+      // A closed room door: a plank door in a stone frame. The open door is drawn as a path tile.
+      px(g, '#4b5563', 0, 0, 12, 12);
+      px(g, '#8a5a2b', 1, 1, 10, 11);
+      px(g, '#5b3a1a', 1, 1, 10, 1);
+      px(g, '#5b3a1a', 5, 1, 2, 11);
+      px(g, '#facc15', 3, 6, 1, 1);
+      px(g, '#facc15', 8, 6, 1, 1);
+      break;
   }
 }
 
@@ -295,6 +311,8 @@ export interface Scene {
   marker: Point | null;
   /** True under prefers-reduced-motion: the water and grass hold their first frame. */
   still?: boolean;
+  /** Lair only: rooms cleared so far. A room door whose number is at most this draws open. */
+  roomsCleared?: number;
 }
 
 const variantOf = (x: number, y: number) => (x * 7 + y * 13) % VARIANTS;
@@ -345,7 +363,10 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
   for (let y = y0; y <= y1; y++)
     for (let x = x0; x <= x1; x++) {
       const k = tileAt(s.map, x, y);
-      if (k === 'gate' && s.gateOpen) tile('back', x, y);
+      // A lair has no grass to stand on: spawn tiles and doors that are open show the floor of the region.
+      if (s.map.lair && k === 'spawn') tile(s.map.id === 'meadow' ? 'path' : 'grass', x, y);
+      else if (k === 'rdoor' && (s.roomsCleared ?? 0) >= doorNeed(s.map, x, y)) tile('path', x, y);
+      else if (k === 'gate' && s.gateOpen) tile('back', x, y);
       else if (k === 'span' && s.hasBridgeKit) tile('bridge', x, y);
       else if (k === 'door' && s.hasKey) tile('path', x, y);
       else tile(k, x, y);
