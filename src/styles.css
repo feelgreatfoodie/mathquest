@@ -883,6 +883,7 @@ legend { padding: 0 6px; color: var(--muted); }
 .ow-dots { display: grid; grid-template-columns: repeat(5, 18px); gap: 8px; }
 .ow-dots i { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--gold); background: transparent; }
 .ow-dots i.on { background: var(--gold); }
+.ow-count { font-size: 32px; font-weight: 800; color: var(--gold); }
 .ow-msg .icon-btn { position: absolute; right: 6px; top: 6px; color: var(--text); }
 .ow-dpad { position: absolute; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); width: 204px; height: 204px; display: grid; grid-template-areas: '. up .' 'left . right' '. down .'; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px); gap: 6px; opacity: 0.9; touch-action: none; }
 .ow-dir { width: 64px; height: 64px; border-radius: 16px; border: 3px solid var(--line); background: var(--panel-2); color: var(--text); display: flex; align-items: center; justify-content: center; touch-action: none; }

@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { FACTS } from '../src/engine/modules/facts';
+import { getModule } from '../src/engine/modules';
 
 /**
  * Adventure fixes at 820x1180: the castle's closed door, the lair gate with its second unlock rule, the camp-lit message (no guide), and a
@@ -12,6 +13,8 @@ const KID = 'kidaf100000000000001';
 const DAY = 86_400_000;
 const CASTLE = [...FACTS.groups![3]!.cardIds, ...FACTS.groups![4]!.cardIds];
 
+const PIP_CASTLE = getModule('sub10')!.groups![1]!.cardIds;
+const PIP = { learner: 'prereader', modules: { add10: true, sub10: true, facts: false }, tracks: { facts: false, multidigit: false, fractions: false }, sessionSize: 10, maxNew: 4, factGroupsUnlocked: 1, paceMultiplier: 3 };
 const READER = { modes: { overworld: true }, tracks: { facts: true, multidigit: false, fractions: false }, sessionSize: 4, maxNew: 0, factGroupsUnlocked: 5, paceMultiplier: 3 };
 const PRE = { learner: 'prereader', modules: { add10: true }, tracks: { facts: false, multidigit: false, fractions: false }, sessionSize: 10, maxNew: 4, factGroupsUnlocked: 1, paceMultiplier: 3 };
 
@@ -124,21 +127,35 @@ test('a profile with 1 of 10 reviewing and 8 of 10 steady: the lair opens and th
   await expect(page.getByTestId('ow-msg')).toHaveCount(0);
 });
 
-test('a locked lair (pre-reader) shows an icon and dots with the voice line, and no sentence', async ({ page }) => {
+test('a locked lair (pre-reader with addition and subtraction) shows a dragon, tokens and a count, and the voice says it is sleeping', async ({ page }) => {
   const now = Date.now();
-  const specs: Spec[] = CASTLE.slice(0, 3).map((id) => ({ id, stability: 0.6, lastResults: [true, true] }));
-  await seed(page, { settings: PRE, cards: cardsOf(now, specs), world: castleWorld(), name: 'Pip' });
+  const specs: Spec[] = PIP_CASTLE.slice(0, 9).map((id) => ({ id, stability: 0.6, lastResults: [true, true] }));
+  await seed(page, { settings: PIP, cards: cardsOf(now, specs), world: castleWorld(), name: 'Pip' });
   await openAdventure(page, 'Pip', true);
   await ow(page, (o) => o.tapTile(32, 4));
   const lair = page.getByTestId('ow-lair-dots');
   await expect(lair).toBeVisible();
-  await expect(lair).toHaveAttribute('aria-label', '3 of 10 ready');
-  await expect(lair.locator('.ow-dots i')).toHaveCount(10);
-  await expect(lair.locator('.ow-dots i.on')).toHaveCount(3);
+  await expect(lair).toHaveAttribute('aria-label', `9 of ${PIP_CASTLE.length}`);
+  await expect(page.getByTestId('ow-lair-count')).toHaveText(`9/${PIP_CASTLE.length}`);
+  await expect(lair.locator('.ow-dots i')).toHaveCount(12);
+  await expect(lair.locator('.ow-dots i.on')).toHaveCount(Math.floor((9 / PIP_CASTLE.length) * 12));
   const words = ((await page.getByTestId('ow-msg').innerText()).replace(/Close/g, '').trim().split(/\s+/).filter(Boolean));
   expect(words.length).toBeLessThanOrEqual(2);
-  expect(await spoken(page)).toContain('Wake the dragon! Answer the facts.');
+  expect(await spoken(page)).toContain('The dragon is sleeping. Answer more to wake it!');
+  expect(await spoken(page)).not.toContain('Wake the dragon! Answer the facts.');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/lair-locked-prereader-820x1180.png` });
+});
+
+test('a pre-reader with addition and subtraction wakes the Castle lair and fights with picture choices on their own cards', async ({ page }) => {
+  const now = Date.now();
+  const specs: Spec[] = PIP_CASTLE.slice(0, Math.ceil(PIP_CASTLE.length * 0.8)).map((id) => ({ id, stability: 0.6, lastResults: [true, true] }));
+  await seed(page, { settings: PIP, cards: cardsOf(now, specs), world: castleWorld(), name: 'Pip' });
+  await openAdventure(page, 'Pip', true);
+  await ow(page, (o) => o.tapTile(32, 4));
+  await expect(page.locator('.question-modal')).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByTestId('ow-msg')).toHaveCount(0);
+  await expect(page.locator('.question-modal .keypad')).toHaveCount(0);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/boss-question-prereader-820x1180.png` });
 });
 
 test('a lair that was already won pays nothing again: no fight, no gems, no key, also after a reload', async ({ page }) => {
