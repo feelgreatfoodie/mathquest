@@ -275,7 +275,12 @@ for (const { w, h } of PHONES) {
       const footer = page.locator('.version-footer');
       await footer.scrollIntoViewIfNeeded();
       const sha = execSync('git rev-parse --short HEAD', { encoding: 'utf8' }).trim();
-      await expect(footer).toContainText(`Version ${sha} · built `);
+      // vite reads the sha once at dev-server start. A reused server (reuseExistingServer) can be older than HEAD, so the
+      // footer sha must be HEAD or an ancestor of it, which still proves it came from git and not from a constant.
+      const shown = (await footer.innerText()).match(/Version ([0-9a-f]{7,}) · built /)?.[1] ?? '';
+      expect(shown, 'footer shows a short sha').not.toBe('');
+      expect(() => execSync(`git merge-base --is-ancestor ${shown} ${sha}`), `footer sha ${shown} is HEAD ${sha} or older`).not.toThrow();
+      await expect(footer).toContainText(' · built ');
       await expect(footer).toContainText(/built .*\d/);
       await expectFits(page, 'version footer');
       await shot(page, w, 'parent-version-footer', false);
