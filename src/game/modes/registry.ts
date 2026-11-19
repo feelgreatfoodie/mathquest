@@ -2,6 +2,7 @@ import { learnerOf, modesOnOf, type Kid } from '../../engine/models';
 import { DungeonMode } from './DungeonMode';
 import { PrereaderMode } from './PrereaderMode';
 import { OverworldMode } from './OverworldMode';
+import { LightningMode } from './LightningMode';
 import type { GameModeDef, GameModeId, ModeLearner } from './types';
 
 /** All modes, in picker order. Both of today's runs are modes; nothing about how they play changed. */
@@ -10,6 +11,8 @@ export const MODES: readonly GameModeDef[] = [
   { id: 'prereader', name: 'Picture Run', learners: ['prereader'], inputs: ['choices'], status: 'live', Component: PrereaderMode },
   // The Overworld loads its map, renderer and sprites in a separate chunk, only when a kid opens Adventure.
   { id: 'overworld', name: 'Adventure', learners: ['reader', 'prereader'], inputs: ['keypad', 'fraction', 'choices'], status: 'beta', Component: OverworldMode },
+  // Practice only: facts the kid is still learning, mixed with known ones, behind a reveal that shrinks. Never changes the review schedule.
+  { id: 'lightning', name: 'Lightning Round', learners: ['reader', 'prereader'], inputs: ['keypad', 'choices'], status: 'live', Component: LightningMode },
 ];
 
 /** The modes this kid has on, in picker order. A mode a parent has not turned on is never listed. */

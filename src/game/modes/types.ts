@@ -6,7 +6,7 @@ import type { RunSummary } from '../../engine/session';
 import type { RunInfo } from '../../ui/runShared';
 
 /** Every mode that is registered. Later modes (overworld, ghost, tower, coop) add an id here. */
-export type GameModeId = 'dungeon' | 'prereader' | 'overworld';
+export type GameModeId = 'dungeon' | 'prereader' | 'overworld' | 'lightning';
 
 export type ModeLearner = 'reader' | 'prereader';
 

@@ -338,6 +338,21 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
               reportFailure('The sound setting was not saved.', e, save);
             }
           }}
+          onLightningFloor={async (ms) => {
+            const save = async () => {
+              await repo.setKidLightningFloor(kid.id, ms);
+              onKids(kids.map((x) => {
+                if (x.id !== kid.id) return x;
+                const { lightningFloorMs: _old, ...rest } = x.settings;
+                return { ...x, settings: ms === null ? rest : { ...rest, lightningFloorMs: ms } };
+              }));
+            };
+            try {
+              await save();
+            } catch (e) {
+              reportFailure('The Lightning Round setting was not saved.', e, save);
+            }
+          }}
           onPinSet={async () => {
             const save = async () => {
               await repo.setKidFlags(kid.id, { hasPin: true });
@@ -626,7 +641,7 @@ function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
   );
 }
 
-function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudio, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onResumed?: () => void; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
+function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudio, onLightningFloor, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onResumed?: () => void; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onLightningFloor: (ms: number | null) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   // The live build: this bundle's, or a newer one a log shows. A log older than it came from a device still on an old bundle.
@@ -836,7 +851,7 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
                 <tr key={s.id}>
                   <td data-label="When">{new Date(s.startedAt).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</td>
                   <td data-label="Mode" data-testid="run-mode" data-mode={runLabel(s, learnerOf(kid.settings)).mode}>
-                    {runLabel(s, learnerOf(kid.settings)).mode === 'overworld' ? <UiIcon name="map" size={18} /> : null} {runLabel(s, learnerOf(kid.settings)).text}
+                    {runLabel(s, learnerOf(kid.settings)).mode === 'overworld' ? <UiIcon name="map" size={18} /> : runLabel(s, learnerOf(kid.settings)).mode === 'lightning' ? <UiIcon name="bolt" size={18} /> : null} {runLabel(s, learnerOf(kid.settings)).text}
                     {fillLine(s) ? <div className="muted" data-testid="run-counts">{fillLine(s)}</div> : null}
                     {isOldBuild(s, liveBuild) ? <div className="muted" data-testid="run-old-build">old app version</div> : null}
                   </td>
@@ -921,6 +936,35 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
           Game modes: Adventure (walk a map, meet monsters and chests, fight a boss)
           <span className="hint">On by default. {learnerOf(settings) === 'prereader' ? 'Picture Run stays. Adventure adds a second button on Home; questions are the same picture questions with 3 big choices.' : 'The Dungeon run stays. Adventure adds a second choice on Home.'} Questions come from the same review schedule.</span>
         </label>
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={modesOnOf(settings).lightning}
+            data-testid="setting-lightning"
+            onChange={(e) => setSettings({ ...settings, modes: { ...settings.modes, lightning: e.target.checked } })}
+          />
+          Lightning Round (taped-problem flashcards for the facts that need work)
+          <span className="hint">On by default. About 3 minutes: the fact is shown and read, the player answers before a ring closes, and the ring gets shorter as a fact gets easy. About 1 new fact for every 9 known ones. Practice only: it never changes the review schedule or the daily limit. At most 3 gems a round.</span>
+        </label>
+        <details className="advanced" data-testid="lightning-advanced">
+          <summary>Advanced: Lightning Round delay floor</summary>
+          <label>
+            Shortest reveal delay
+            <select
+              value={settings.lightningFloorMs ?? ''}
+              data-testid="setting-lightning-floor"
+              onChange={(e) => {
+                const ms = e.target.value === '' ? null : Number(e.target.value);
+                setSettings(ms === null ? (({ lightningFloorMs: _f, ...rest }) => rest)(settings) : { ...settings, lightningFloorMs: ms });
+                void onLightningFloor(ms);
+              }}
+            >
+              <option value="">Default ({learnerOf(settings) === 'prereader' ? '2' : '1'} s)</option>
+              {[1000, 1500, 2000, 3000, 4000].map((n) => <option key={n} value={n}>{n / 1000} s</option>)}
+            </select>
+            <span className="hint">The shortest time a fact shows before its answer. Saves as soon as you pick. Pre-readers never go below 2 s.</span>
+          </label>
+        </details>
         <label>
           Voice
           <select

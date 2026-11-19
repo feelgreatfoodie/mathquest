@@ -70,6 +70,23 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
             <PixelMap size={120} />
           </button>
         ) : null}
+        {modesOnOf(kid.settings).lightning ? (
+          <button
+            type="button"
+            className="shop-btn lightning-btn"
+            aria-label="Lightning Round"
+            data-testid="home-lightning"
+            data-mode="lightning"
+            onClick={() => {
+              unlockSounds();
+              unlockSpeech();
+              void speak('Lightning!');
+              onStart('lightning');
+            }}
+          >
+            <PixelIcon name="bolt" size={96} />
+          </button>
+        ) : null}
         {ready ? (
           <button
             type="button"

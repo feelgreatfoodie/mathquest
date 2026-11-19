@@ -144,6 +144,10 @@ export class FirestoreRepo implements Repo {
     if (Object.keys(update).length) await updateDoc(doc(this.kids(), kidId), update);
   }
 
+  async setKidLightningFloor(kidId: string, ms: number | null): Promise<void> {
+    await updateDoc(doc(this.kids(), kidId), { 'settings.lightningFloorMs': ms === null ? deleteField() : ms });
+  }
+
   async setKidFlags(kidId: string, flags: { hasPin?: boolean; avatar?: KidAvatar }): Promise<void> {
     const update: Record<string, unknown> = {};
     if (flags.hasPin !== undefined) update.hasPin = flags.hasPin;

@@ -42,6 +42,8 @@ export interface CardState {
   supportRun?: number;
   /** Right answers still owed before the fact may move up to the pad again, after a miss on the pad. Absent reads as 0. */
   supportHold?: number;
+  /** Lightning Round: how long (ms) this fact shows before the answer is revealed. 1000 to 4000. Absent reads as the ladder's start. Read it through `delayOf` in lightning.ts. */
+  lightningDelayMs?: number;
 }
 
 /** What a pre-reader sees for one fact: counting dots, numerals with 4 close choices, or a number pad. */
@@ -90,7 +92,12 @@ export interface KidSettings {
    * the Dungeon run and Adventure, and a pre-reader the picture run and Adventure. Adventure is off only when this is
    * exactly false. Read it through `modesOnOf`. The kid's last pick lives on the device (`lastMode.ts`), because a kid token cannot write settings.
    */
-  modes?: Partial<Record<'dungeon' | 'prereader' | 'overworld', boolean>>;
+  modes?: Partial<Record<ModeKey, boolean>>;
+  /**
+   * Lightning Round delay floor in ms (1000 to 4000), an advanced parent setting. Written alone as `settings.lightningFloorMs`.
+   * A missing value reads as the learner's own floor (readers 1000, pre-readers 2000). Read it through `floorOf` in lightning.ts.
+   */
+  lightningFloorMs?: number;
   /** Sound effects: on unless this is false. A missing value reads as on. Read it through `soundOf`. */
   sound?: boolean;
   /**
@@ -110,6 +117,9 @@ export interface KidSettings {
 }
 
 export type Learner = 'prereader' | 'reader';
+
+/** The modes a parent can switch (settings.modes keys). */
+export type ModeKey = 'dungeon' | 'prereader' | 'overworld' | 'lightning';
 
 export interface KidGame {
   xp: number;
@@ -241,7 +251,7 @@ export interface SessionLog {
   xpCredited?: number;
 }
 
-export type SessionMode = 'dungeon' | 'overworld' | 'prereader';
+export type SessionMode = 'dungeon' | 'overworld' | 'prereader' | 'lightning';
 
 /** The mode of a stored log: a missing value is the Dungeon for a reader and the picture run for a pre-reader. */
 export function sessionModeOf(log: Pick<SessionLog, 'mode'>, learner: Learner): SessionMode {
@@ -304,11 +314,13 @@ export function soundOf(settings: { sound?: boolean } | undefined | null): boole
  * A pre-reader has the picture run and no Dungeon. A reader has the Dungeon unless `modes.dungeon` is false and
  * Adventure is on. Old docs with no `modes` field read as on.
  */
-export function modesOnOf(settings: Pick<KidSettings, 'modes' | 'learner'> | undefined | null): Record<'dungeon' | 'prereader' | 'overworld', boolean> {
+export function modesOnOf(settings: Pick<KidSettings, 'modes' | 'learner'> | undefined | null): Record<ModeKey, boolean> {
   const overworld = settings?.modes?.overworld !== false;
-  if (settings?.learner === 'prereader') return { dungeon: false, prereader: true, overworld };
+  // Lightning Round is on for both learners unless `modes.lightning` is exactly false. It never replaces the Dungeon or Picture Run.
+  const lightning = settings?.modes?.lightning !== false;
+  if (settings?.learner === 'prereader') return { dungeon: false, prereader: true, overworld, lightning };
   const dungeon = settings?.modes?.dungeon !== false || !overworld;
-  return { dungeon, prereader: false, overworld };
+  return { dungeon, prereader: false, overworld, lightning };
 }
 
 export function learnerOf(settings: { learner?: Learner } | undefined | null): Learner {

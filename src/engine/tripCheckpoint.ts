@@ -20,6 +20,10 @@ export function creditCheckpoint(
   const xpDelta = Math.min(2000, Math.max(0, earned - credited));
   const grow = (a: number | undefined, b: number): number => Math.max(a ?? 0, b);
   const closes = log.finished === true;
+  // The same path saves a Lightning Round. Its one gemGrant lands with the closing write only: a closed doc takes no more writes,
+  // so a replay of the close cannot pay twice, and a checkpoint before it (hidden, pagehide, every 10 answers) carries XP alone.
+  const mode = log.mode ?? 'overworld';
+  const lightning = mode === 'lightning';
   const { gems: _gems, ...rest } = log;
   const session: Omit<SessionLog, 'gems'> = {
     ...rest,
@@ -33,12 +37,17 @@ export function creditCheckpoint(
     xp: grow(stored?.xp, log.xp),
     bestCombo: grow(stored?.bestCombo, log.bestCombo),
     ...(grow(stored?.practiceCorrect, log.practiceCorrect ?? 0) ? { practiceCorrect: grow(stored?.practiceCorrect, log.practiceCorrect ?? 0) } : {}),
-    mode: 'overworld',
+    mode,
     finished: closes,
     xpCredited: credited + xpDelta,
   };
-  if (closes) session.endedBy = 'camp';
+  if (closes) {
+    if (!lightning) session.endedBy = 'camp';
+    else delete session.endedBy;
+  }
   else if (log.endedBy === 'left') session.endedBy = 'left';
   else delete session.endedBy;
-  return { delta: { ...delta, xp: xpDelta }, session, storedGems: stored?.gems ?? 0 };
+  const out: GameDelta = { ...delta, xp: xpDelta };
+  if (lightning && !closes) delete out.gemGrant;
+  return { delta: out, session, storedGems: stored?.gems ?? 0 };
 }

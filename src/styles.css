@@ -1538,6 +1538,8 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 /* All style-2 motion sits behind the reduced-motion setting. */
 @media (prefers-reduced-motion: reduce) {
   .px-flicker, .px-treasure-screen .stat { animation: none; }
+  .lr-ring.is-running .lr-ring-fg { animation-timing-function: linear; }
+  .lr-bolt.is-flash, .lr-choice.is-guide { animation: none; }
   .px-arena .monster.hit svg, .px-arena .monster.shake, .px-arena .hero-sprite.lunge, .px-arena .combo-badge { animation: none; }
   .key:active, .choice:active, .numpad-key:active, .mode-card.px-frame:active { transform: none; }
 }
@@ -1549,3 +1551,36 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 @media (max-width: 480px) { .early-numerals { font-size: 44px; gap: 10px; min-height: 64px; } }
 @media (max-width: 480px) { .px-torches { gap: 2px; padding: 6px; } }
 @media (max-height: 720px) { .keypad { gap: 6px; } }
+
+/* Lightning Round: built from the pixel tokens and parts (px-frame, PixelButton, PixelIcon). No new fonts, no emoji. */
+.lr-screen { gap: 12px; align-items: center; }
+.lr-screen .run-top { width: 100%; }
+.lr-card { width: min(560px, calc(100% - 16px)); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 12px 16px; position: relative; }
+.lr-ring-wrap { position: relative; width: 96px; height: 96px; }
+.lr-ring { transform: rotate(-90deg); }
+.lr-ring-bg { fill: none; stroke: var(--px-edge); stroke-width: 10; }
+.lr-ring-fg { fill: none; stroke: #facc15; stroke-width: 10; stroke-dasharray: 100; stroke-dashoffset: 0; }
+.lr-ring.is-running .lr-ring-fg { animation: lr-ring var(--lr-ms, 3000ms) steps(24, end) forwards; }
+.lr-ring.is-hit .lr-ring-fg { stroke: #22c55e; }
+.lr-ring.is-miss .lr-ring-fg { stroke: #94a3b8; stroke-dashoffset: 100; }
+@keyframes lr-ring { to { stroke-dashoffset: 100; } }
+.lr-bolt { position: absolute; inset: 0; display: grid; place-items: center; }
+.lr-bolt.is-flash { animation: lr-flash 0.38s steps(4, end); }
+@keyframes lr-flash { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
+.lr-card .math { font-size: clamp(40px, 11vw, 64px); }
+.lr-copy { margin: 0; font-size: 18px; min-height: 1.2em; }
+.lr-typed { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.lr-typed-box { min-width: 140px; text-align: center; font-family: var(--pixel); font-size: 32px; padding: 6px 14px; background: var(--px-neutral-dark); color: #fde68a; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); }
+.lr-choices { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 8px; width: calc(100% + 32px); max-width: 520px; margin: 0 -16px; padding: 0 8px; box-sizing: border-box; }
+.lr-choice { min-width: 120px; min-height: 120px; margin: 0; }
+.lr-choice-num { font-family: var(--pixel); font-size: 36px; }
+.lr-choice.is-guide { animation: lr-pulse 0.8s steps(2) infinite; }
+@keyframes lr-pulse { 50% { transform: translateY(-6px); } }
+.lr-panel { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 18px; max-width: 520px; width: calc(100% - 16px); box-sizing: border-box; }
+.lr-faster { list-style: none; margin: 0; padding: 0; font-size: 18px; }
+.lr-end-buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.lr-bolts { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.lr-bolts .is-dim { opacity: 0.25; }
+.lr-gems { display: flex; gap: 8px; justify-content: center; }
+.lr-end-top { justify-content: flex-end; }
+.lightning-btn { position: relative; }
