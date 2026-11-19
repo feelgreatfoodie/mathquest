@@ -32,6 +32,7 @@ import { walkSpeed } from './speed';
 import { doorLabel, lairRetryEntity, miniMap, openedLairSpots } from './lairView';
 import { LAIRS, MAPS, findTiles, heroStart, isWalkable, tileAt, type LairDef, type Point, type RegionId, type TileMap, type WalkCtx } from './maps';
 import { approach } from './pathfind';
+import { MAX_FLAGS, campReducer, flagsIn, fromCampDoc, itemAt, newCamp, placeBlock, tentOf, toCampDoc, type CampDoc, type CampKind } from './camp';
 import { NEXT_REGION, PREV_REGION, REGION_NAMES, furthestRegion, gateInfo, lairMessage, lairPicture, regionProgress } from './regions';
 import { fromDoc, settleHero, toDoc, worldReducer, type Facing, type WorldAction, type WorldState } from './worldState';
 import { lifetimeChests } from '../../engine/chestLedger';
@@ -171,6 +172,15 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const [hud, setHud] = useState<Hud>({ left: 0, lit: false });
   const [keys, setKeys] = useState(0);
   const [chestHud, setChestHud] = useState({ open: 0, total: 0 });
+  // The camp: the tent and flags the kid placed (families/{uid}/kids/{kidId}/world/camp). The tray is open while the kid decorates.
+  const campRef = useRef<CampDoc>(newCamp(0));
+  const [camp, setCamp] = useState<CampDoc>(campRef.current);
+  const [campOpen, setCampOpen] = useState(false);
+  const [campTool, setCampTool] = useState<CampKind | 'pick'>('flag');
+  const campOpenRef = useRef(false);
+  campOpenRef.current = campOpen && !inLair;
+  const campToolRef = useRef<CampKind | 'pick'>('flag');
+  campToolRef.current = campTool;
   const [, bump] = useState(0);
 
   // The first tap unlocks audio on iOS, so a pre-reader's first question can be spoken.
@@ -331,11 +341,18 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           stored = null; // a world that will not load starts fresh; the next save repairs it
         }
         if (!alive) return;
+        let storedCamp: unknown = null;
+        try {
+          storedCamp = await repo.loadCamp(kidRef.current.id);
+        } catch {
+          storedCamp = null; // an unreadable camp starts empty; the next placement repairs it
+        }
         const w0 = fromDoc(stored, Date.now());
         const w = settleHero(w0);
         runnerRef.current = runner;
         // The trip: resume an open one under 24 h old, else start a new one (and close the expired one as 'left').
-        const { trip, close } = resolveTrip(loadTrip(kidRef.current.id), Date.now(), newId);
+        const storedTrip = loadTrip(kidRef.current.id);
+        const { trip, close } = resolveTrip(storedTrip, Date.now(), newId);
         tripRef.current = trip;
         baseRef.current = trip.totals;
         cpAnswered.current = trip.totals.answered;
@@ -345,7 +362,15 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         cardsRef.current = cards;
         startedAt.current = at;
         worldRef.current = w;
+        campRef.current = fromCampDoc(storedCamp, Date.now());
+        setCamp(campRef.current);
         reachedRef.current = furthestRegion(w.region, ...w.bossesDefeated);
+        // A new trip in a land that has a tent starts at the tent (a trip being resumed keeps the saved place).
+        const tent = trip !== storedTrip ? tentOf(campRef.current.placed, w.region) : undefined;
+        if (tent) {
+          w.x = tent.x;
+          w.y = tent.y;
+        }
         hero.current = { ...hero.current, x: w.x, y: w.y, fx: w.x, fy: w.y, facing: w.facing };
         setRegion(w.region);
         setKeys(w.keys);
@@ -366,6 +391,46 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
 
   // ---- game actions ----
   const say = useCallback((m: Msg | null) => setMsg(m), []);
+
+  /** Saves one land's camp doc (world/camp_<land>). world/main is never written for a placement. */
+  const saveCamp = useCallback(
+    async (region: RegionId) => {
+      try {
+        await repo.saveCamp(kidRef.current.id, toCampDoc(campRef.current), region);
+      } catch (e) {
+        reportFailure('Your camp was not saved.', e, () => repo.saveCamp(kidRef.current.id, toCampDoc(campRef.current), region));
+      }
+    },
+    [repo],
+  );
+
+  /** A tap on the map while the camp tray is open: place the picked item, or pick one up. Never runs inside a lair. */
+  const campTap = useCallback(
+    (p: Point) => {
+      const w = worldRef.current;
+      if (!w || lairRef.current) return;
+      const tool = campToolRef.current;
+      const here = itemAt(campRef.current.placed, w.region, p.x, p.y);
+      let next = campRef.current;
+      if (tool === 'pick' || (here && here.kind === tool)) {
+        if (!here) return;
+        next = campReducer(next, { t: 'remove', region: w.region, x: p.x, y: p.y }, Date.now());
+      } else {
+        const item = { region: w.region, kind: tool, x: p.x, y: p.y };
+        const why = placeBlock(next.placed, item);
+        if (why) {
+          if (learner !== 'prereader') say({ text: why === 'flags' ? `You can put ${MAX_FLAGS} flags in each land. Pick one up first.` : why === 'taken' ? 'Something is already there.' : 'Pick a plain grass tile.' });
+          return;
+        }
+        next = campReducer(next, { t: 'place', item }, Date.now());
+      }
+      if (next === campRef.current) return;
+      campRef.current = next;
+      setCamp(next);
+      void saveCamp(w.region);
+    },
+    [learner, say, saveCamp],
+  );
 
   const sendCheckpoint = useCallback(
     (trip: TripState, totals: TripTotals, region: string, end?: 'left') => {
@@ -593,6 +658,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       intent.current = null;
       markerRef.current = null;
       setInLair(true);
+      setCampOpen(false); // placing is overworld only
       refreshLair();
       refreshChestHud();
       refreshHud();
@@ -1015,6 +1081,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         openedChests: lair ? openedLairSpots(openedSpots(tripRef.current!), lair.def.region, lair.state.seq) : openedHere(),
         ...(lair ? { roomsCleared: lair.cleared } : {}),
         ...(!lair && w.bossesDefeated.includes(w.region) ? { trophy: true } : {}),
+        ...(!lair ? { camp: campRef.current.placed.filter((c) => c.region === w.region) } : {}),
         lantern: gearRef.current.lantern,
         time,
         marker: markerRef.current,
@@ -1093,6 +1160,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         lair: lairState(),
         stats: stats,
         world: worldRef.current,
+        camp: campRef.current,
         trip: tripRef.current ? { tripId: tripRef.current.tripId, opened: openedSpots(tripRef.current) } : null,
         spots: spotsHere().map((s) => ({ id: s.id, x: s.x, y: s.y, key: s.key, ...(s.power ? { power: s.power } : {}) })),
         lifetime: lifetimeChests(worldRef.current!.openedChests),
@@ -1191,6 +1259,12 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     const h = hero.current;
     const { t, left, top } = viewFor(canvas.width, canvas.height, viewScale.current, { x: h.fx, y: h.fy }, map);
     const tile = { x: Math.floor(((e.clientX - rect.left) * ratio + left) / t), y: Math.floor(((e.clientY - rect.top) * ratio + top) / t) };
+    if (campOpenRef.current && !pausedRef.current) {
+      markerRef.current = tile;
+      campTap(tile);
+      bump((n) => n + 1);
+      return;
+    }
     tapTile(tile);
     bump((n) => n + 1);
   };
@@ -1227,6 +1301,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         <HoldButton onHold={() => void finishTrip()} ms={CAMP_HOLD_MS} label="Hold to go to camp">
           <PixelIcon name="house" size={44} />
         </HoldButton>
+        {lairNow ? null : (
+          <button type="button" className={`icon-btn ow-camp-btn${campOpen ? ' is-on' : ''}`} data-testid="camp-btn" aria-label="Decorate your camp" aria-pressed={campOpen} onClick={() => setCampOpen((o) => !o)}>
+            <PixelIcon name="tent" size={44} />
+          </button>
+        )}
         <span className="ow-hearts" aria-hidden="true">{[0, 1, 2].map((i) => <i key={i}><PixelHeart size={24} /></i>)}</span>
         <span className="ow-stat" aria-label={`${kid.game.gems} gems`}><PixelIcon name="gem" size={30} /><b>{kid.game.gems}</b></span>
         <span className="ow-stat" aria-label={`${keys} keys`} data-testid="ow-keys"><KeyIcon /><b>{keys}</b></span>
@@ -1245,6 +1324,24 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       </div>
       <div className="ow-stage" ref={stageRef}>
         <canvas ref={canvasRef} className="ow-canvas" data-testid="ow-canvas" onPointerUp={onCanvasTap} aria-label="The map. Tap a tile to walk there." role="img" />
+        {campOpen && !lairNow ? (
+          <div className="ow-camp-tray" role="group" aria-label="Your camp" data-testid="camp-tray">
+            <button type="button" className={`icon-btn${campTool === 'tent' ? ' is-on' : ''}`} data-testid="camp-tent" aria-label="Tent" aria-pressed={campTool === 'tent'} onClick={() => setCampTool('tent')}>
+              <PixelIcon name="tent" size={40} />
+              <i className="ow-camp-dots" aria-hidden="true"><b className={tentOf(camp.placed, region) ? 'on' : ''} /></i>
+            </button>
+            <button type="button" className={`icon-btn${campTool === 'flag' ? ' is-on' : ''}`} data-testid="camp-flag" aria-label={`Flag, ${flagsIn(camp.placed, region)} of ${MAX_FLAGS} in this land`} aria-pressed={campTool === 'flag'} onClick={() => setCampTool('flag')}>
+              <PixelIcon name="flag" size={40} />
+              <i className="ow-camp-dots" aria-hidden="true">{Array.from({ length: MAX_FLAGS }, (_, i) => <b key={i} className={i < flagsIn(camp.placed, region) ? 'on' : ''} />)}</i>
+            </button>
+            <button type="button" className={`icon-btn${campTool === 'pick' ? ' is-on' : ''}`} data-testid="camp-pick" aria-label="Pick up" aria-pressed={campTool === 'pick'} onClick={() => setCampTool('pick')}>
+              <UiIcon name="close" size={36} />
+            </button>
+            <button type="button" className="icon-btn ow-camp-done" data-testid="camp-done" aria-label="Done" onClick={() => setCampOpen(false)}>
+              <UiIcon name="check" size={36} />
+            </button>
+          </div>
+        ) : null}
         <DoorLabel ref={doorRef} lines={doorLines} prereader={learner === 'prereader'} count={Math.max((stats[region] ?? NO_STATS).beaten, won ? 1 : 0)} />
         {msg ? (
           <div className="ow-msg" role="status" data-testid="ow-msg">
@@ -1263,8 +1360,8 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           </div>
         ) : null}
       </div>
-      {/* The pad sits over the world; a pre-reader's 3 big choices reach the left edge, so the pad hides while one is open. */}
-      {learner === 'prereader' && modal ? null : (
+      {/* The pad sits over the world; a pre-reader's 3 big choices reach the left edge, so the pad hides while one is open. It also hides while the camp tray is open, so every tile can be tapped. */}
+      {learner === 'prereader' && (modal || (campOpen && !lairNow)) ? null : (
         <div className="ow-dpad" role="group" aria-label="Walk">
           {(['up', 'left', 'down', 'right'] as Facing[]).map((d) => (
             <button

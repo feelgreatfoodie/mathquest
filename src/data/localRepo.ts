@@ -2,6 +2,8 @@ import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../e
 import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, maturesAtOf, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import type { CampDoc } from '../game/overworld/camp';
+import type { RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
 import type { GameModeId } from '../game/modes/types';
 import { newId, type Repo } from './repo';
@@ -241,6 +243,14 @@ export class LocalRepo implements Repo {
 
   async saveWorld(kidId: string, world: WorldState): Promise<void> {
     write(`world:${kidId}`, world);
+  }
+
+  async loadCamp(kidId: string): Promise<unknown | null> {
+    return read<unknown | null>(`camp:${kidId}`, null);
+  }
+
+  async saveCamp(kidId: string, camp: CampDoc, _region: RegionId): Promise<void> {
+    write(`camp:${kidId}`, camp);
   }
 
   async setWorldLastMode(kidId: string, mode: GameModeId): Promise<void> {

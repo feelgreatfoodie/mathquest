@@ -1614,3 +1614,17 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .lr-gems { display: flex; gap: 8px; justify-content: center; }
 .lr-end-top { justify-content: flex-end; }
 .lightning-btn { position: relative; }
+
+/* Camp: the HUD button and the place tray (tent, flag, pick up, done). Built from the pixel tent and flag icons; no text on a pre-reader's tray. */
+.ow-camp-btn.is-on, .ow-camp-tray .icon-btn.is-on { --f: var(--px-gold); --d: var(--px-gold-dark); }
+.ow-camp-tray { position: absolute; right: calc(12px + env(safe-area-inset-right)); top: 12px; max-width: calc(100% - 24px); flex-wrap: wrap; justify-content: flex-end; display: flex; gap: 10px; padding: 8px; background: var(--panel); border: 3px solid var(--gold); border-radius: 0; z-index: 3; }
+.ow-camp-tray .icon-btn { position: relative; width: 64px; height: 64px; margin: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 2px; }
+.ow-camp-tray svg { image-rendering: pixelated; }
+.ow-camp-dots { display: flex; gap: 3px; font-style: normal; }
+.ow-camp-dots b { width: 8px; height: 8px; border: 2px solid var(--gold); border-radius: 0; }
+.ow-camp-dots b.on { background: var(--gold); }
+.ow-pre .ow-camp-btn { min-width: 120px; min-height: 120px; }
+.ow-pre .ow-camp-tray { gap: 8px; flex-wrap: nowrap; }
+.ow-pre .ow-camp-tray .icon-btn { width: 104px; height: 104px; }
+.ow-pre .ow-camp-done { display: none; } /* the camp button in the HUD closes the tray; the pre-reader tray keeps 3 keys so it fits 393 px */
+.ow-pre .ow-camp-dots b { width: 14px; height: 14px; }

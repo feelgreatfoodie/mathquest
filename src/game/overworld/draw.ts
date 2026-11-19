@@ -1,5 +1,6 @@
 import { ITEM_SPRITES } from '../../ui/itemSprites';
 import { SPRITES } from '../../ui/sprites';
+import type { Placed } from './camp';
 import type { Entity } from './encounters';
 import { doorNeed, tileAt, type Point, type RegionId, type Tile, type TileMap } from './maps';
 import type { Facing } from './worldState';
@@ -318,6 +319,8 @@ export interface Scene {
   roomsCleared?: number;
   /** A beaten lair leaves a gold cup at the camp. Cosmetic only: it is not an item. */
   trophy?: boolean;
+  /** The tent and flags the kid placed in this land (see camp.ts). Decor only: the hero walks over them. */
+  camp?: Placed[];
 }
 
 const variantOf = (x: number, y: number) => (x * 7 + y * 13) % VARIANTS;
@@ -402,6 +405,11 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
   for (const c of s.openedChests) {
     if (c.x < x0 - 1 || c.x > x1 + 1 || c.y < y0 - 1 || c.y > y1 + 1) continue;
     items.push({ y: c.y, draw: () => chestAt(g, c.x * t - left, c.y * t - top, t, true, false, s.time) });
+  }
+  for (const c of s.camp ?? []) {
+    if (c.x < x0 - 1 || c.x > x1 + 1 || c.y < y0 - 1 || c.y > y1 + 1) continue;
+    // Drawn before the hero of the same row, so the hero walks in front of a tent or a flag.
+    items.push({ y: c.y - 0.5, draw: () => (c.kind === 'tent' ? tentAt(g, c.x * t - left, c.y * t - top, t, s.time, !!s.still) : flagAt(g, c.x * t - left, c.y * t - top, t, s.time, !!s.still)) });
   }
   const h = s.hero;
   const bob = h.frame % 2 === 1 ? -1 : 0;
@@ -488,6 +496,54 @@ function chestAt(g: G, x: number, y: number, t: number, open: boolean, sparkle: 
     g.fillRect(x + 9 * u, y + 2 * u, u, u);
     g.fillRect(x + 2 * u, y + 3 * u, u, u);
   }
+}
+
+/** The camp tent: cloth, a dark door, a red banner on a pole at the peak and a small campfire beside it. */
+function tentAt(g: G, x: number, y: number, t: number, time: number, still: boolean) {
+  const u = t / TILE;
+  const half = [0, 1, 1, 2, 3, 3, 4];
+  half.forEach((h, i) => {
+    const row = 3 + i;
+    g.fillStyle = '#f1e4c3';
+    g.fillRect(x + (4 - h) * u, y + row * u, (2 * h + 1) * u, u);
+    g.fillStyle = '#111827';
+    g.fillRect(x + (4 - h) * u, y + row * u, u, u);
+    g.fillRect(x + (4 + h) * u, y + row * u, u, u);
+  });
+  g.fillStyle = '#92400e';
+  g.fillRect(x + 3 * u, y + 7 * u, 3 * u, 3 * u);
+  g.fillStyle = '#451a03';
+  g.fillRect(x + 4 * u, y + 8 * u, u, 2 * u);
+  g.fillStyle = '#111827';
+  g.fillRect(x + 4 * u, y + 0 * u, u, 3 * u);
+  g.fillStyle = '#ef4444';
+  g.fillRect(x + 5 * u, y + 0 * u, 3 * u, 2 * u);
+  g.fillRect(x + 5 * u, y + 2 * u, 2 * u, u);
+  g.fillStyle = '#b91c1c';
+  g.fillRect(x + 5 * u, y + 1.5 * u, 3 * u, 0.5 * u);
+  // The fire: three stones and a two-colour flame that flickers.
+  g.fillStyle = '#6b7280';
+  g.fillRect(x + 8.5 * u, y + 9.5 * u, 3 * u, 1.5 * u);
+  const f = still ? 0 : Math.sin(time * 9) > 0 ? 1 : 0;
+  g.fillStyle = '#f97316';
+  g.fillRect(x + 9 * u, y + (7 + f * 0.5) * u, 2 * u, (2.5 - f * 0.5) * u);
+  g.fillStyle = '#fde047';
+  g.fillRect(x + 9.5 * u, y + (8 + f * 0.5) * u, u, (1.5 - f * 0.5) * u);
+}
+
+/** A flag on a pole with a small stone base. The pennant lifts a pixel twice a second. */
+function flagAt(g: G, x: number, y: number, t: number, time: number, still: boolean) {
+  const u = t / TILE;
+  const wave = still ? 0 : Math.floor(time * 2) % 2;
+  g.fillStyle = '#6b7280';
+  g.fillRect(x + 3 * u, y + 10 * u, 5 * u, 2 * u);
+  g.fillStyle = '#92400e';
+  g.fillRect(x + 5 * u, y + 2 * u, u, 8 * u);
+  g.fillStyle = '#ef4444';
+  g.fillRect(x + 6 * u, y + (2 + wave * 0.5) * u, 4 * u, 3 * u);
+  g.fillRect(x + 6 * u, y + (5 + wave * 0.5) * u, 2 * u, u);
+  g.fillStyle = '#fde047';
+  g.fillRect(x + 6 * u, y + (2 + wave * 0.5) * u, 4 * u, 0.5 * u);
 }
 
 function lock(g: G, x: number, y: number, t: number) {

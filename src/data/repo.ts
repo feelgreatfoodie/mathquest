@@ -1,4 +1,6 @@
 import type { GameDelta } from '../engine/game';
+import type { CampDoc } from '../game/overworld/camp';
+import type { RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
 import type { GameModeId } from '../game/modes/types';
 import type { VaultDeposit, VaultTerm } from '../game/vault';
@@ -70,6 +72,13 @@ export interface Repo {
   loadWorld(kidId: string): Promise<WorldState | null>;
   /** Writes the whole Overworld save. Only the Overworld calls it; nothing else about the kid changes. */
   saveWorld(kidId: string, world: WorldState): Promise<void>;
+  /**
+   * The camp save, or null before the first one: the tents and flags a kid placed. Firestore keeps one doc per land
+   * (families/{uid}/kids/{kidId}/world/camp_meadow, camp_forest and camp_castle); this returns them joined as one list. Callers read it through `fromCampDoc`.
+   */
+  loadCamp(kidId: string): Promise<unknown | null>;
+  /** Writes the camp doc of one land (the items of `region` only). world/main and the kid doc are untouched. */
+  saveCamp(kidId: string, camp: CampDoc, region: RegionId): Promise<void>;
   /**
    * Stores the kid's last mode pick in world/main. Does nothing when world/main does not exist (the pick then lives on the
    * device only); it never creates the doc. Only that one field changes.

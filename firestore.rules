@@ -308,6 +308,13 @@ service cloud.firestore {
         && (!('d14' in v) || (v.d14 is int && v.d14 >= 0 && v.d14 <= 10));
     }
 
+    // The Lightning Round delay floor the parent sets, settings.lightningFloorMs, when present, is a whole number of ms from 1000 to 4000
+    // (the Parent screen offers the same range). A write without it passes. Applies to the parent branches; kids never write settings.
+    function lightningFloorOk() {
+      let f = request.resource.data.get('settings', {}).get('lightningFloorMs', 1000);
+      return f is int && f >= 1000 && f <= 4000;
+    }
+
     // game.hero may change only to a hero the kid owns after the write (a buy equips the new hero in the same
     // write). An unchanged hero passes, so a stored doc that already disagrees can still be saved.
     function heroChangeOk() {
@@ -422,6 +429,42 @@ service cloud.firestore {
         && (!('lastMode' in w) || w.lastMode in ['dungeon', 'prereader', 'overworld']);
     }
 
+    // The camp: one doc per land, world/camp_meadow, world/camp_forest and world/camp_castle (the tents and flags a kid placed in that land).
+    // 3 fields: placed, version, updatedAt. placed is a list of at most 4 entries (at most 1 tent and 3 flags), each exactly
+    // { region, kind, x, y }: region is the land of the doc, x a whole number 0..39, y a whole number 0..29 (the map size). Rules cannot loop,
+    // and a single doc of 12 entries passes the 1000-expression limit (7 fit), so the 4 slots of one land are checked one by one.
+    // Every index is read only inside a branch that has already checked the list size (n > i && ...). A slot that is missing a field, or holds
+    // something that is not a map, makes the rule error, and an error denies the write.
+    function campLandOf(campId) {
+      return {'camp_meadow': 'meadow', 'camp_forest': 'forest', 'camp_castle': 'castle'}.get(campId, '');
+    }
+    function campEntry(e, land) {
+      return e.size() == 4 && e.region == land && e.kind in ['tent', 'flag']
+        && e.x is int && e.x >= 0 && e.x < 40 && e.y is int && e.y >= 0 && e.y < 30;
+    }
+    function campSlot(p, n, land, i) {
+      return n <= i || campEntry(p[i], land);
+    }
+    function campTent(p, n, i) {
+      return n > i && p[i].kind == 'tent' ? 1 : 0;
+    }
+    function campOk(campId) {
+      let c = request.resource.data;
+      let land = campLandOf(campId);
+      let p = c.get('placed', null);
+      let n = p.size();
+      let tents = campTent(p, n, 0) + campTent(p, n, 1) + campTent(p, n, 2) + campTent(p, n, 3);
+      return land != ''
+        && c.keys().hasOnly(['placed', 'version', 'updatedAt'])
+        && c.keys().hasAll(['placed', 'version', 'updatedAt'])
+        && c.version == 1
+        && c.updatedAt is number
+        && p is list && n <= 4
+        && campSlot(p, n, land, 0) && campSlot(p, n, land, 1) && campSlot(p, n, land, 2) && campSlot(p, n, land, 3)
+        && tents <= 1
+        && (n < 4 || tents == 1);
+    }
+
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
     // touches them.
     match /parents/{document=**} {
@@ -456,8 +499,8 @@ service cloud.firestore {
       match /kids/{kidId} {
         allow read: if isParent(uid) || isKid(uid, kidId);
         allow delete: if isParent(uid);
-        allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId && vaultSettingsOk();
-        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && vaultSettingsOk())
+        allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId && vaultSettingsOk() && lightningFloorOk();
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && vaultSettingsOk() && lightningFloorOk())
           || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk() || kidVaultKeysOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && kidHeroGrowthOk() && kidRaiseOk());
 
         match /cards/{cardId} {
@@ -483,6 +526,13 @@ service cloud.firestore {
           allow read: if isParent(uid) || isKid(uid, kidId);
           allow create, update: if (isParent(uid) || isKid(uid, kidId)) && docId == 'main' && smallDoc() && worldOk();
           allow delete: if isParent(uid);
+        }
+
+        // The camp: world/camp_meadow, world/camp_forest and world/camp_castle, the tent and flags a kid placed in each land. Same owners as
+        // world/main: the kid token for this kidId and the parent read and write them, a sibling's token, another family and anonymous
+        // clients match no rule. They never touch world/main or the kid doc. Read and delete come from the world/{docId} rule above.
+        match /world/{campId} {
+          allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc() && campOk(campId);
         }
 
         // The gem vault: one doc per deposit. Parent and kid read. A deposit is created only with the gems it takes, a payout
