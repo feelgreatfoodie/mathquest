@@ -15,6 +15,12 @@ export interface Repo {
   createKid(kid: Kid): Promise<void>;
   /** Writes `settings` and nothing else. Fails when the kid was removed. */
   saveKidSettings(kidId: string, settings: KidSettings): Promise<void>;
+  /**
+   * Pauses or resumes play for the named kids in one batch, as the single field `settings.pause` and nothing else
+   * (a stale copy of the other settings can never be written back). `until` is an absolute server-clock time in ms;
+   * `{}` pauses until a parent resumes; `null` resumes. `setAt` is the server's stamp.
+   */
+  setKidPause(kidIds: string[], pause: { until?: number } | null): Promise<void>;
   /** Writes `settings.voice` and `settings.sounds` (only the ones given) and nothing else in settings. */
   setKidAudio(kidId: string, audio: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }): Promise<void>;
   /** Writes the named flags and nothing else. `avatar` is the picker hero and color; only the parent sets it. */
@@ -45,9 +51,9 @@ export interface Repo {
   listPurchases(kidId: string, max: number): Promise<PurchaseLog[]>;
   /**
    * Calls `onKid` with the stored kid now and after every change, from any client. Returns the unsubscribe.
-   * `onKid(null)` means the kid was removed. The local repo polls storage every `pollMs` (default 1500).
+   * `onKid(null)` means the kid was removed. `meta.live` is true when the snapshot came from the server (not the cache or a pending local write). The local repo polls storage every `pollMs` (default 1500).
    */
-  watchKid(kidId: string, onKid: (kid: Kid | null) => void, opts?: { onError?: (e: Error) => void; pollMs?: number }): () => void;
+  watchKid(kidId: string, onKid: (kid: Kid | null, meta?: { live: boolean }) => void, opts?: { onError?: (e: Error) => void; pollMs?: number }): () => void;
   deleteKid(kidId: string): Promise<void>;
   loadCards(kidId: string): Promise<CardMap>;
   saveCards(kidId: string, cards: CardState[]): Promise<void>;

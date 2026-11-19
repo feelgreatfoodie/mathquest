@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { learnerOf, type CardMap, type Kid } from '../../engine/models';
 import type { Entry, Feedback, SessionRunner } from '../../engine/session';
 import { finishRun } from '../../ui/finishRun';
+import { usePauseState, usePauseStop } from '../../ui/usePause';
 import { reportFailure } from '../../ui/failures';
 import { loadRunner, type SaveExtra } from '../../ui/runShared';
 import { newId } from '../../data/repo';
@@ -360,6 +361,21 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       window.removeEventListener('pagehide', away);
     };
   }, [flushWorld, checkpoint]);
+
+  // A grown-up's pause: no question is cut off. With no question or result on screen, the trip is checkpointed and the world
+  // saved (the same path as going to the background), then the break screen takes over. A question left open for
+  // PAUSE_GRACE_MS is checkpointed and left too.
+  const leaveForPause = useCallback(() => {
+    if (finishing.current) return;
+    void flushWorld();
+    checkpoint();
+    onExit();
+  }, [flushWorld, checkpoint, onExit]);
+  usePauseStop(leaveForPause);
+  const { paused: pauseOn } = usePauseState();
+  useEffect(() => {
+    if (pauseOn && !modal && !overlay) leaveForPause();
+  }, [pauseOn, modal, overlay, leaveForPause]);
 
   const grant = useCallback(
     async (base: number) => {

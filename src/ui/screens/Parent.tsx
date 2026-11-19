@@ -8,6 +8,7 @@ import { factBaseline, factThresholds } from '../../engine/grading';
 import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups, type Level } from '../../engine/mastery';
 import { makeKid } from '../../engine/newKid';
 import { RATE_MAX, VAULT_TERMS, maturesAtOf, owedOf, payoutOf, rateOf, vaultBalance, vaultOn, type VaultDeposit, type VaultTerm } from '../../game/vault';
+import { PauseCard, PauseEveryone, SignOutAsk } from '../PauseControls';
 import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modesOnOf, modulesOf, paceOf, shop2On, shopMathOn, soundsOf, voiceOf, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
@@ -148,6 +149,8 @@ interface ParentProps {
   onFamily: (f: Family) => void;
   onExit: () => void;
   onSignOut?: () => void;
+  /** The grown-up came from a kid's break screen (a kid session cannot resume itself). Resume then asks to sign out, and Back is a sign-out. */
+  afterPause?: boolean;
 }
 
 /** Rounds the server refused 3 times. They stay on this device, are never retried, and the parent sees their date and values. */
@@ -178,7 +181,9 @@ export function ParkedRounds({ kids }: { kids: Kid[] }) {
   );
 }
 
-export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut }: ParentProps) {
+export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut, afterPause }: ParentProps) {
+  const [askSignOut, setAskSignOut] = useState(false);
+  const resumed = afterPause && onSignOut ? () => setAskSignOut(true) : undefined;
   const [selected, setSelected] = useState<string | 'add'>(kids[0]?.id ?? 'add');
   const [changingPin, setChangingPin] = useState(false);
   const kid = kids.find((k) => k.id === selected);
@@ -213,11 +218,17 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
       <header className="parent-head">
         <h1 className="pixel">Parent area</h1>
         <div className="row">
+          <PauseEveryone repo={repo} kids={kids} {...(resumed ? { onResumed: resumed } : {})} />
           <button type="button" className="btn btn-ghost btn-small" onClick={() => setChangingPin(true)}>Change PIN</button>
           {onSignOut ? <button type="button" className="btn btn-ghost btn-small" onClick={onSignOut}>Sign out</button> : null}
-          <button type="button" className="btn btn-small" onClick={onExit}>Back to game</button>
+          {afterPause && onSignOut ? (
+            <button type="button" className="btn btn-small" data-testid="back-to-kid-signin" onClick={onSignOut}>Back to kid sign-in</button>
+          ) : (
+            <button type="button" className="btn btn-small" onClick={onExit}>Back to game</button>
+          )}
         </div>
       </header>
+      {askSignOut && onSignOut ? <SignOutAsk onYes={onSignOut} onStay={() => setAskSignOut(false)} /> : null}
       <LockBanner />
       <ParkedRounds kids={kids} />
       <nav className="tabs" aria-label="Players">
@@ -251,10 +262,12 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
           key={kid.id}
           repo={repo}
           kid={kid}
+          {...(resumed ? { onResumed: resumed } : {})}
           onSettings={async (settings) => {
             const save = async () => {
               await repo.saveKidSettings(kid.id, settings);
-              onKids(kids.map((x) => (x.id === kid.id ? { ...x, settings } : x)));
+              // The stored pause is not the settings screen's to change: keep the copy this list already has.
+              onKids(kids.map((x) => (x.id === kid.id ? { ...x, settings: x.settings.pause ? { ...settings, pause: x.settings.pause } : (({ pause: _p, ...rest }) => rest)(settings) } : x)));
             };
             try {
               await save();
@@ -576,7 +589,7 @@ function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
   );
 }
 
-function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onAudio, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
+function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudio, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onResumed?: () => void; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   // The live build: this bundle's, or a newer one a log shows. A log older than it came from a device still on an old bundle.
@@ -649,6 +662,7 @@ function KidDetail({ repo, kid: kidProp, onSettings, onAvatar, onAudio, onPinSet
 
   return (
     <div className="detail">
+      <PauseCard repo={repo} kid={kid} {...(onResumed ? { onResumed } : {})} />
       <section className="panel summary-row">
         <div className="stat stat-xp">
           <span className="stat-value">{kid.game.xp}</span>

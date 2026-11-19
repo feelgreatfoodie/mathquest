@@ -3,6 +3,7 @@ import { HeroFigure } from '../../ui/HeroFigure';
 import { learnerParams } from '../../engine/models';
 import type { Feedback, SessionRunner } from '../../engine/session';
 import { finishRun } from '../../ui/finishRun';
+import { usePauseStop } from '../../ui/usePause';
 import { loadRunner } from '../../ui/runShared';
 import { HoldButton } from '../../ui/early/HoldButton';
 import { defeat } from '../../ui/early/sounds';
@@ -59,6 +60,9 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
     await finishRun({ repo, kid, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit, extra: { mode: 'dungeon' } });
   }, [kid, repo, onDone, onExit, onSynced]);
 
+  // A pause lets this question finish, then the run saves through finishRun and the break screen takes over.
+  const pausedRef = usePauseStop(() => void finish());
+
   const next = useCallback(() => {
     const r = runnerRef.current;
     if (!r) return;
@@ -69,9 +73,9 @@ export function DungeonMode({ repo, kid, onDone, onExit, onSynced }: GameModePro
       setHits(0);
       defeat(); // the monster of the block is down
     }
-    if (r.done()) void finish();
+    if (r.done() || pausedRef.current) void finish();
     else rerender();
-  }, [finish]);
+  }, [pausedRef, finish]);
 
   const onAnswered = useCallback((fb: Feedback) => {
     setFeedback(fb);

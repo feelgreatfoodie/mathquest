@@ -3,6 +3,7 @@ import { MODULE_IDS, type ModuleId } from './modules/types';
 import { DEFAULT_GAME as GAME_DEFAULTS } from './gameDefaults';
 import { slotOf } from '../game/shop/catalog';
 import type { VaultPointer, VaultSettings } from '../game/vault';
+import { pauseOf, type KidPause } from './pause';
 
 /** ts-fsrs Card, flattened to JSON-safe numbers (epoch ms) for Firestore and localStorage. */
 export interface StoredFsrs {
@@ -100,6 +101,12 @@ export interface KidSettings {
   voice?: 'on' | 'off' | 'kid';
   /** Chimes, ticks and hit sounds: 'on' or 'off'. A missing value reads as on. Read it through `soundsOf`. */
   sounds?: 'on' | 'off';
+  /**
+   * A grown-up's pause: play is blocked on every device of this kid. Only a parent writes it, as the one field
+   * `settings.pause` (a kid token cannot write `settings`). `setAt` is the server's stamp. Absent means not paused.
+   * Read it through `pauseOf` and `isPaused` in pause.ts.
+   */
+  pause?: KidPause;
 }
 
 export type Learner = 'prereader' | 'reader';
@@ -399,7 +406,11 @@ export function normalizeKid(raw: Kid): Kid {
   // The stored inventory wins over any items, equipped or goal left in game.
   const inv = inventory && typeof inventory === 'object' ? (inventory as unknown as Record<string, unknown>) : {};
   const merged = { ...base, ...(inventory ? { items: inv.items, equipped: inv.equipped, goal: inv.goal } : {}) };
-  return { ...rest, game: normalizeGame(merged) };
+  if (!rest.settings || typeof rest.settings !== 'object') return { ...rest, game: normalizeGame(merged) };
+  // A stored pause carries a server Timestamp; the app reads it as milliseconds. A malformed pause reads as none.
+  const { pause: stored, ...others } = rest.settings;
+  const pause = pauseOf({ pause: stored });
+  return { ...rest, settings: pause ? { ...others, pause } : others, game: normalizeGame(merged) };
 }
 
 /**
