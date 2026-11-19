@@ -1,7 +1,7 @@
 import { ITEM_SPRITES } from '../../ui/itemSprites';
 import { SPRITES } from '../../ui/sprites';
 import type { Entity } from './encounters';
-import { tileAt, type Point, type RegionId, type Tile, type TileMap } from './maps';
+import { doorNeed, tileAt, type Point, type RegionId, type Tile, type TileMap } from './maps';
 import type { Facing } from './worldState';
 
 // Canvas 2D drawing for the Overworld. Every tile and sprite is original and made in code: 12 by 12 pixel tiles painted
@@ -9,7 +9,7 @@ import type { Facing } from './worldState';
 
 export const TILE = 12;
 const VARIANTS = 3;
-const ORDER: Tile[] = ['grass', 'path', 'tree', 'water', 'rock', 'bridge', 'gate', 'back', 'chest', 'spawn', 'boss', 'camp', 'start', 'door', 'span', 'wall', 'torch'];
+const ORDER: Tile[] = ['grass', 'path', 'tree', 'water', 'rock', 'bridge', 'gate', 'back', 'chest', 'spawn', 'boss', 'camp', 'start', 'door', 'span', 'wall', 'torch', 'exit', 'rdoor'];
 
 type G = CanvasRenderingContext2D;
 const px = (g: G, c: string, x: number, y: number, w = 1, h = 1) => {
@@ -226,6 +226,22 @@ function paint(g: G, tile: Tile, v: number, region: RegionId = 'meadow') {
       px(g, '#5b3a1a', 2, 1, 8, 1);
       px(g, '#facc15', 8, 6, 1, 1);
       break;
+    case 'exit':
+      // The way out of a lair: the same sill as the gate back, in every region.
+      px(g, '#c8a165', 0, 0, 12, 12);
+      px(g, '#6b7280', 0, 0, 12, 2);
+      px(g, '#6b7280', 0, 10, 12, 2);
+      px(g, '#fbbf24', 4, 5, 4, 2);
+      break;
+    case 'rdoor':
+      // A closed room door: a plank door in a stone frame. The open door is drawn as a path tile.
+      px(g, '#4b5563', 0, 0, 12, 12);
+      px(g, '#8a5a2b', 1, 1, 10, 11);
+      px(g, '#5b3a1a', 1, 1, 10, 1);
+      px(g, '#5b3a1a', 5, 1, 2, 11);
+      px(g, '#facc15', 3, 6, 1, 1);
+      px(g, '#facc15', 8, 6, 1, 1);
+      break;
   }
 }
 
@@ -295,6 +311,10 @@ export interface Scene {
   marker: Point | null;
   /** True under prefers-reduced-motion: the water and grass hold their first frame. */
   still?: boolean;
+  /** Lair only: rooms cleared so far. A room door whose number is at most this draws open. */
+  roomsCleared?: number;
+  /** A beaten lair leaves a gold cup at the camp. Cosmetic only: it is not an item. */
+  trophy?: boolean;
 }
 
 const variantOf = (x: number, y: number) => (x * 7 + y * 13) % VARIANTS;
@@ -345,12 +365,16 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
   for (let y = y0; y <= y1; y++)
     for (let x = x0; x <= x1; x++) {
       const k = tileAt(s.map, x, y);
-      if (k === 'gate' && s.gateOpen) tile('back', x, y);
+      // A lair has no grass to stand on: spawn tiles and doors that are open show the floor of the region.
+      if (s.map.lair && k === 'spawn') tile(s.map.id === 'meadow' ? 'path' : 'grass', x, y);
+      else if (k === 'rdoor' && (s.roomsCleared ?? 0) >= doorNeed(s.map, x, y)) tile('path', x, y);
+      else if (k === 'gate' && s.gateOpen) tile('back', x, y);
       else if (k === 'span' && s.hasBridgeKit) tile('bridge', x, y);
       else if (k === 'door' && s.hasKey) tile('path', x, y);
       else tile(k, x, y);
       if (k === 'boss' && !s.bossDefeated) sprite('boss', x, y, Math.sin(s.time * 2) * 0.6);
       if (k === 'camp' && x === firstCamp(s.map)?.x && y === firstCamp(s.map)?.y) campfire(g, x * t - left, y * t - top, t, s.campLit, s.time);
+      if (k === 'camp' && s.trophy && x === trophySpot(s.map)?.x && y === trophySpot(s.map)?.y) trophyCup(g, x * t - left, y * t - top, t);
       if (k === 'gate' && !s.gateOpen) lock(g, x * t - left, y * t - top, t);
       if (k === 'torch') flame(g, x * t - left, y * t - top, t, s.time + x * 0.7);
     }
@@ -423,6 +447,27 @@ function shadow(g: G, x: number, y: number, t: number) {
 function firstCamp(map: TileMap): Point | undefined {
   for (let y = 0; y < map.h; y++) for (let x = 0; x < map.w; x++) if (tileAt(map, x, y) === 'camp') return { x, y };
   return undefined;
+}
+
+/** The tile that holds the cup: the second camp tile when the camp has two (the Meadow's), else the first. */
+function trophySpot(map: TileMap): Point | undefined {
+  const first = firstCamp(map);
+  if (!first) return undefined;
+  return tileAt(map, first.x + 1, first.y) === 'camp' ? { x: first.x + 1, y: first.y } : first;
+}
+
+/** A small gold cup on two handles, on a dark plinth. */
+function trophyCup(g: G, x: number, y: number, t: number) {
+  const u = t / TILE;
+  g.fillStyle = '#92400e';
+  g.fillRect(x + 3 * u, y + 9 * u, 6 * u, 2 * u);
+  g.fillRect(x + 5 * u, y + 7 * u, 2 * u, 2 * u);
+  g.fillStyle = '#fbbf24';
+  g.fillRect(x + 3 * u, y + 2 * u, 6 * u, 5 * u);
+  g.fillRect(x + 1.5 * u, y + 3 * u, 1.5 * u, 2 * u);
+  g.fillRect(x + 9 * u, y + 3 * u, 1.5 * u, 2 * u);
+  g.fillStyle = '#fef3c7';
+  g.fillRect(x + 4 * u, y + 3 * u, 1 * u, 3 * u);
 }
 
 function chestAt(g: G, x: number, y: number, t: number, open: boolean, sparkle: boolean, time: number) {

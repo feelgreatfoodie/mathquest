@@ -5,7 +5,9 @@ export type Rng = () => number;
 /** Render tokens; the UI turns these into big readable math. */
 export type Token =
   | { t: 'num'; v: number }
-  | { t: 'op'; v: '×' | '+' | '−' }
+  | { t: 'op'; v: '×' | '+' | '−' | '=' }
+  /** The empty slot of a missing-number form ("? × 8 = 56"). MathView draws the answer there instead of after the "=". */
+  | { t: 'blank' }
   | { t: 'frac'; w?: number; n: number; d: number };
 
 export type Answer =

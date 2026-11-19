@@ -68,6 +68,8 @@ type Ow = {
   tapTile(x: number, y: number): void;
   teleport(x: number, y: number): void;
 };
+type Lair = { lair: null | { region: string; cleared: number; size: number; bossDone: boolean; fight: null | { correct: number; answered: number; result: string } } };
+/** The castle boss tile is (4, 1) inside the lair; (4, 2) is the tile beside it. */
 const ow = <T,>(page: Page, f: (o: Ow) => T) => page.evaluate((src) => new Function('o', `return (${src})(o)`)((window as unknown as { __ow: Ow }).__ow) as T, f.toString());
 const spoken = (page: Page) => page.evaluate(() => (window as unknown as { __spoken: string[] }).__spoken);
 const gems = (page: Page) => page.evaluate((k) => JSON.parse(localStorage.getItem('mathquest:v1:kids')!).find((x: { id: string }) => x.id === k).game.gems as number, KID);
@@ -123,6 +125,10 @@ test('a profile with 1 of 10 reviewing and 8 of 10 steady: the lair opens and th
   await seed(page, { settings: READER, cards: cardsOf(now, specs), world: castleWorld() });
   await openAdventure(page);
   await ow(page, (o) => o.tapTile(32, 4));
+  await expect(page.getByTestId('lair-hud')).toBeVisible();
+  expect(((await ow(page, (o) => o.state())) as unknown as Lair).lair!.region).toBe('castle');
+  await ow(page, (o) => o.teleport(4, 2));
+  await ow(page, (o) => o.tapTile(4, 1));
   await expect(page.locator('.question-modal')).toBeVisible({ timeout: 25_000 });
   await expect(page.getByTestId('ow-msg')).toHaveCount(0);
 });
@@ -152,22 +158,34 @@ test('a pre-reader with addition and subtraction wakes the Castle lair and fight
   await seed(page, { settings: PIP, cards: cardsOf(now, specs), world: castleWorld(), name: 'Pip' });
   await openAdventure(page, 'Pip', true);
   await ow(page, (o) => o.tapTile(32, 4));
+  await expect(page.getByTestId('lair-hud')).toBeVisible();
+  await ow(page, (o) => o.teleport(4, 2));
+  await ow(page, (o) => o.tapTile(4, 1));
   await expect(page.locator('.question-modal')).toBeVisible({ timeout: 25_000 });
   await expect(page.getByTestId('ow-msg')).toHaveCount(0);
   await expect(page.locator('.question-modal .keypad')).toHaveCount(0);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/boss-question-prereader-820x1180.png` });
 });
 
-test('a lair that was already won pays nothing again: no fight, no gems, no key, also after a reload', async ({ page }) => {
+test('a lair that was already won can be entered again: a replay win pays 3 gems and no second key, also after a reload', async ({ page }) => {
   const now = Date.now();
   const specs: Spec[] = CASTLE.map((id) => ({ id, stability: 5, lastResults: [true, true] }));
   await seed(page, { settings: READER, cards: cardsOf(now, specs), world: castleWorld({ bossesDefeated: ['castle'], keys: 1 }) });
   await openAdventure(page);
-  for (let i = 0; i < 2; i++) {
+  for (let round = 0; round < 2; round++) {
     await ow(page, (o) => o.tapTile(32, 4));
-    await expect(page.getByTestId('ow-msg')).toContainText('The lair is quiet');
-    await expect(page.locator('.question-modal')).toHaveCount(0);
-    expect(await gems(page)).toBe(5);
+    await expect(page.getByTestId('ow-msg')).toHaveCount(0); // no "already won" block
+    await expect(page.getByTestId('lair-hud')).toBeVisible();
+    await ow(page, (o) => o.teleport(4, 2));
+    await ow(page, (o) => o.tapTile(4, 1));
+    for (let i = 0; i < 5; i++) {
+      await expect(page.locator('.question-modal .keypad .key:not([disabled])').first()).toBeVisible({ timeout: 25_000 });
+      await typeAnswer(page, (await ow(page, (o) => o.modalAnswer()))!);
+      await page.waitForTimeout(1200);
+    }
+    await expect(page.getByTestId('boss-win')).toBeVisible();
+    await page.getByTestId('boss-continue').click();
+    expect(await gems(page)).toBe(5 + 3 * (round + 1));
     expect((await ow(page, (o) => o.state())).world.keys).toBe(1);
     await openAdventure(page); // a reload goes back to the picker; the saved world is what the next open reads
   }

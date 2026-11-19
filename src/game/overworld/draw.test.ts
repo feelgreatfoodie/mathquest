@@ -42,3 +42,27 @@ describe('camp lit: no guide to the campfire is drawn', () => {
     expect(draw.calls.filter((c) => c.startsWith('moveTo') || c.startsWith('lineTo') || c.startsWith('closePath'))).toEqual([]);
   });
 });
+
+describe('camp trophy', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function drawCamp(trophy: boolean | undefined) {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(recorder().g as never);
+    const map = MAPS.meadow;
+    const camp = findTiles(map, 'camp')[0]!;
+    const scene = {
+      map, hero: { x: camp.x, y: camp.y, facing: 'down', frame: 0 }, heroSprite: 'knight', entities: [], gateOpen: true,
+      campLit: false, bossDefeated: true, hasKey: false, hasBridgeKit: false, openedChests: [], lantern: false, time: 1, marker: null,
+      ...(trophy === undefined ? {} : { trophy }),
+    } as unknown as Scene;
+    const draw = recorder();
+    drawScene(draw.g, 640, 480, 4, scene);
+    return draw.fills;
+  }
+
+  it('draws a gold cup at the camp for a beaten region and nothing without it', () => {
+    expect(drawCamp(true).filter((c) => c === '#92400e').length).toBeGreaterThan(0);
+    expect(drawCamp(false).filter((c) => c === '#92400e')).toEqual([]);
+    expect(drawCamp(undefined).filter((c) => c === '#92400e')).toEqual([]);
+  });
+});

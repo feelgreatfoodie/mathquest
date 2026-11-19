@@ -18,7 +18,7 @@ import type { GameModeProps } from './types';
 /** What the voice reads for a card: the problem's own speech, else the tokens ("seven times eight" reads as "7 times 8"). */
 export function speechOf(p: Problem): string {
   if (p.speech) return p.speech;
-  return p.tokens.map((t) => (t.t === 'num' ? String(t.v) : t.t === 'op' ? (t.v === '×' ? 'times' : t.v === '+' ? 'plus' : 'minus') : `${t.n} over ${t.d}`)).join(' ');
+  return p.tokens.map((t) => (t.t === 'num' ? String(t.v) : t.t === 'op' ? (t.v === '×' ? 'times' : t.v === '+' ? 'plus' : 'minus') : t.t === 'blank' ? 'what' : `${t.n} over ${t.d}`)).join(' ');
 }
 
 /** Pre-readers get 3 choices: the answer and 2 close ones from the problem's own choices, smallest first. */

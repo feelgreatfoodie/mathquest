@@ -22,6 +22,12 @@ export interface Entity {
   key?: boolean;
   /** Monsters past MAX_VISIBLE wait off the map. */
   shown: boolean;
+  /** Lair only: the room it stands in (index into `LAIRS[region].rooms`). */
+  room?: number;
+  /** Lair only: the monster at its room's exit door. */
+  guard?: true;
+  /** Lair only: a riddle trap. */
+  trap?: true;
 }
 
 export const MAX_VISIBLE = 6;

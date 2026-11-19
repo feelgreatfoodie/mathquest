@@ -10,7 +10,7 @@ import { LEVEL_LABELS, cardLevel, groupFloor, moduleCoverage, unlockedFactGroups
 import { makeKid } from '../../engine/newKid';
 import { RATE_MAX, VAULT_TERMS, maturesAtOf, owedOf, payoutOf, rateOf, vaultBalance, vaultOn, type VaultDeposit, type VaultTerm } from '../../game/vault';
 import { PauseCard, PauseEveryone, SignOutAsk } from '../PauseControls';
-import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, learnerOf, modesOnOf, modulesOf, paceOf, shop2On, shopMathOn, soundsOf, voiceOf, withModule, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
+import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, bossTimerOf, bossTimerPreOn, learnerOf, modesOnOf, modulesOf, paceOf, shop2On, shopMathOn, soundsOf, voiceOf, withModule, type BossTimer, type CardMap, type Family, type Kid, type KidAvatar, type KidSettings, type Learner, type PurchaseLog, type SessionLog } from '../../engine/models';
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
@@ -1028,6 +1028,22 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
           </select>
           <span className="hint">After {gemFullRateOf(learner, settings)} gems today, new gems come at half speed. After {2 * gemFullRateOf(learner, settings)}, a quarter. Runs always earn at least 1.</span>
         </label>
+        <label>
+          Boss timer
+          <select value={bossTimerOf(settings)} data-testid="setting-boss-timer" onChange={(e) => setSettings({ ...settings, bossTimer: e.target.value as BossTimer })}>
+            <option value="easier">Easier (50% more time)</option>
+            <option value="normal">Normal</option>
+            <option value="harder">Harder (25% less time)</option>
+          </select>
+          <span className="hint">How long a lair boss fight lasts. Answer 5 of 6 before time runs out to win. A lost fight sends the player back to the lair door.</span>
+        </label>
+        {learner === 'prereader' ? (
+          <label className="check">
+            <input type="checkbox" checked={bossTimerPreOn(settings)} data-testid="setting-boss-timer-pre" onChange={(e) => setSettings({ ...settings, bossTimerPre: e.target.checked })} />
+            Boss timer for picture players
+            <span className="hint">Off: the boss always ends in a win after 6 answers. On: twice the time, and 4 of 6 wins.</span>
+          </label>
+        ) : null}
         {MODULES.filter((m) => m.status === 'live' && m.groups && m.id !== 'facts' && modulesOf(settings)[m.id]).map((m) => (
           <label key={m.id}>
             Start {m.name} at

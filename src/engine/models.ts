@@ -114,6 +114,24 @@ export interface KidSettings {
    * Read it through `pauseOf` and `isPaused` in pause.ts.
    */
   pause?: KidPause;
+  /** Lair boss countdown: 'easier' (x1.5), 'normal' (x1) or 'harder' (x0.75). A missing value reads as 'normal'. Read it through `bossTimerOf`. */
+  bossTimer?: BossTimer;
+  /** A pre-reader's boss countdown: off until a parent turns it on (then a gentle x2 budget). A missing value reads as off. Read it through `bossTimerPreOn`. */
+  bossTimerPre?: boolean;
+}
+
+export type BossTimer = 'easier' | 'normal' | 'harder';
+
+/** What each boss timer choice multiplies the budget by, after the 30 to 90 s clamp (see `bossBudgetMs`). */
+export const BOSS_TIMER_FACTORS: Record<BossTimer, number> = { easier: 1.5, normal: 1, harder: 0.75 };
+
+export function bossTimerOf(settings: { bossTimer?: unknown } | undefined | null): BossTimer {
+  const v = settings?.bossTimer;
+  return v === 'easier' || v === 'harder' ? v : 'normal';
+}
+
+export function bossTimerPreOn(settings: { bossTimerPre?: unknown } | undefined | null): boolean {
+  return settings?.bossTimerPre === true;
 }
 
 export type Learner = 'prereader' | 'reader';
@@ -249,9 +267,15 @@ export interface SessionLog {
   endedBy?: 'camp' | 'left';
   /** Adventure only: the XP already added to the kid's game for this trip. A checkpoint credits only what is above this. */
   xpCredited?: number;
+  /** Lair only (mode 'lair', one small log per boss fight, answered 0): true when the kid won. */
+  bossWon?: boolean;
+  /** Lair only: right answers in the fight. */
+  bossCorrect?: number;
+  /** Lair only: the time the fight took, in ms of clock that ran (a hidden tab does not count). */
+  bossMs?: number;
 }
 
-export type SessionMode = 'dungeon' | 'overworld' | 'prereader' | 'lightning';
+export type SessionMode = 'dungeon' | 'overworld' | 'prereader' | 'lightning' | 'lair';
 
 /** The mode of a stored log: a missing value is the Dungeon for a reader and the picture run for a pre-reader. */
 export function sessionModeOf(log: Pick<SessionLog, 'mode'>, learner: Learner): SessionMode {

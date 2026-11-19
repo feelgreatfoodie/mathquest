@@ -4,17 +4,18 @@
 // Legend: . grass   , path   T tree   ~ water   # rock   = bridge   G gate to the next region   g gate back
 //         C chest spot   s spawn zone (grass where monsters appear)   B boss lair door   H camp   @ hero start
 //         D door (needs the key item)   b span (needs the bridge kit item)   W castle wall   i wall torch
+//         Lair maps only: X exit back to the overworld   1 2 3 room door (opens when that many rooms are cleared)
 //         The same characters look different per region (see draw.ts): the Forest paints grass as moss and ~ as a stream,
 //         the Castle paints . as stone floor, ~ as a moat and = as a drawbridge.
 
 export type RegionId = 'meadow' | 'forest' | 'castle';
 export const REGION_IDS: readonly RegionId[] = ['meadow', 'forest', 'castle'];
 
-export type Tile = 'grass' | 'path' | 'tree' | 'water' | 'rock' | 'bridge' | 'gate' | 'back' | 'chest' | 'spawn' | 'boss' | 'camp' | 'start' | 'door' | 'span' | 'wall' | 'torch';
+export type Tile = 'grass' | 'path' | 'tree' | 'water' | 'rock' | 'bridge' | 'gate' | 'back' | 'chest' | 'spawn' | 'boss' | 'camp' | 'start' | 'door' | 'span' | 'wall' | 'torch' | 'exit' | 'rdoor';
 
 const LEGEND: Record<string, Tile> = {
   '.': 'grass', ',': 'path', T: 'tree', '~': 'water', '#': 'rock', '=': 'bridge', G: 'gate', g: 'back',
-  C: 'chest', s: 'spawn', B: 'boss', H: 'camp', '@': 'start', D: 'door', b: 'span', W: 'wall', i: 'torch',
+  C: 'chest', s: 'spawn', B: 'boss', H: 'camp', '@': 'start', D: 'door', b: 'span', W: 'wall', i: 'torch', X: 'exit', 1: 'rdoor', 2: 'rdoor', 3: 'rdoor',
 };
 
 export interface Point {
@@ -27,6 +28,8 @@ export interface TileMap {
   w: number;
   h: number;
   rows: string[];
+  /** A lair interior (see LAIRS). */
+  lair?: true;
 }
 
 /** What changes where the hero can walk: the gate to the next region, the key item and the bridge kit item. */
@@ -34,6 +37,8 @@ export interface WalkCtx {
   gateOpen: boolean;
   hasKey: boolean;
   hasBridgeKit: boolean;
+  /** Lair only: rooms cleared so far. Door '1' opens at 1, '2' at 2, '3' at 3. A missing value reads as 0. */
+  roomsCleared?: number;
 }
 
 const ROWS: Record<RegionId, string[]> = {
@@ -169,7 +174,114 @@ export function isWalkable(map: TileMap, x: number, y: number, ctx: WalkCtx): bo
       return ctx.hasKey;
     case 'span':
       return ctx.hasBridgeKit;
+    case 'exit':
+      return true;
+    case 'rdoor':
+      return (ctx.roomsCleared ?? 0) >= doorNeed(map, x, y);
     default:
       return false;
   }
+}
+
+/** Rooms that must be cleared before a room door ('1', '2' or '3') opens. 0 for any other tile. */
+export function doorNeed(map: TileMap, x: number, y: number): number {
+  const c = map.rows[y]?.[x];
+  return c === '1' || c === '2' || c === '3' ? Number(c) : 0;
+}
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** One region's lair interior. `rooms` are the floor rectangles in play order: room i's exit door is '(i+1)'; the last one holds the boss. */
+export interface LairDef {
+  region: RegionId;
+  map: TileMap;
+  rooms: Rect[];
+}
+
+// Lair interiors, 24 by 18. Each is a chain of rooms joined by short corridors and numbered doors. The hero starts beside the
+// exit tile X in the first room; the boss tile B stands in the last room. Meadow: a cave of 3 rooms. Forest: a hollow of 4. Castle: a dungeon of 4.
+const LAIR_ROWS: Record<RegionId, string[]> = {
+  meadow: [
+    '########################',
+    '########,,,,,,B,,,,,,,##',
+    '########,,,,,,,,,,,,,,##',
+    '########,,,,,,,,,,,,,,##',
+    '########,,,,,,,,,,,,,,##',
+    '#################,######',
+    '#################,######',
+    '#################2######',
+    '#############,,,,,,,,,,#',
+    '#,,,,,,,,,###,,s,s,s,C,#',
+    '#,C,s,s,s,###,s,s,s,s,,#',
+    '#,,s,s,s,,###,,s,s,s,s,#',
+    '#,s,s,s,s,1,,,s,s,s,s,,#',
+    '#,,s,s,s,,###,,s,s,s,s,#',
+    '#,s,s,s,C,###,C,s,s,s,,#',
+    'X@,,,,,,,,###,,,,,,,,,,#',
+    '########################',
+    '########################',
+  ],
+  castle: [
+    'WWWiWWWWWiWWWWWiWWWWWiWW',
+    'W...B....WWWWWWWWWWWWWWW',
+    'W........WWW...........W',
+    'W........WWW.s.s.s.s.sCW',
+    'W........,,3..s.s.s.s..W',
+    'W........WWW.s.s.s.s.s.W',
+    'W........WWW..s.s.s.s..W',
+    'W........WWW...........W',
+    'W........WWWWWWWW2WWWWWW',
+    'WWWWWWWWWWWWWWWWW,WWWWWW',
+    'WWWWWWWWWWWWWWWWW,WWWWWW',
+    'W.......WWWW...........W',
+    'WCs.s.s.WWWW..s.s.s.s.CW',
+    'W..s.s..1,,,.s.s.s.s.s.W',
+    'W.s.s.s.WWWW..s.s.s.s..W',
+    'W..s.s..WWWW.s.s.s.s.s.W',
+    'W...@...WWWW...........W',
+    'WWWWXWWWWWWWWWWWWWWWWWWW',
+  ],
+  forest: [
+    'TTTTTTTTTTTTTTTTTTTTTTTT',
+    'T.......TTT............T',
+    'T.s.s.s.TTT.s.s.s.s.sC.T',
+    'X@.s.s..1,,..s.s.s.s.s.T',
+    'T.s.s.s.TTT.s.s.s.s.s..T',
+    'T..s.sC.TTT..s.s.s.s.s.T',
+    'T.......TTT............T',
+    'TTTTTTTTTTTTTTTT2TTTTTTT',
+    'TTTTTTTTTTTTTTTT,TTTTTTT',
+    'T........TTTTTTT,TTTTTTT',
+    'T........TTT...........T',
+    'T........TTT.s.s.s.s.s.T',
+    'T........TTT..s.s.s.s..T',
+    'T........,,3.s.s.s.s.s.T',
+    'T........TTT..s.s.s.s..T',
+    'T........TTT.s.s.s.s.C.T',
+    'T...B....TTT...........T',
+    'TTTTTTTTTTTTTTTTTTTTTTTT',
+  ],
+};
+
+const LAIR_ROOMS: Record<RegionId, Rect[]> = {
+  meadow: [{ x: 1, y: 9, w: 9, h: 7 }, { x: 13, y: 8, w: 10, h: 8 }, { x: 8, y: 1, w: 14, h: 4 }],
+  forest: [{ x: 1, y: 1, w: 7, h: 6 }, { x: 11, y: 1, w: 12, h: 6 }, { x: 12, y: 10, w: 11, h: 7 }, { x: 1, y: 9, w: 8, h: 8 }],
+  castle: [{ x: 1, y: 11, w: 7, h: 6 }, { x: 12, y: 11, w: 11, h: 6 }, { x: 12, y: 2, w: 11, h: 6 }, { x: 1, y: 1, w: 8, h: 8 }],
+};
+
+function makeLair(id: RegionId): LairDef {
+  const rows = LAIR_ROWS[id];
+  return { region: id, map: { id, w: rows[0]!.length, h: rows.length, rows, lair: true }, rooms: LAIR_ROOMS[id] };
+}
+
+export const LAIRS: Record<RegionId, LairDef> = { meadow: makeLair('meadow'), forest: makeLair('forest'), castle: makeLair('castle') };
+
+/** The room (index into `def.rooms`) a tile is in, or -1 for a corridor, a door or a wall. */
+export function roomOf(def: LairDef, x: number, y: number): number {
+  return def.rooms.findIndex((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h);
 }

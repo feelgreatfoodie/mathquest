@@ -227,13 +227,18 @@ test('holding the camp icon mid-trip quits and saves the answered cards', async 
   expect(logs[0].answered).toBe(1);
 });
 
-test('the boss: a lair that is ready, five questions, a win gives a key and 10 gems', async ({ page }) => {
+test('the boss: a ready lair is entered, the boss tile starts the fight, a win gives a key and 10 gems', async ({ page }) => {
   const now = Date.now();
   const ids = [...FACTS.groups![0]!.cardIds, ...FACTS.groups![1]!.cardIds];
   await seed(page, { settings: { modes: { overworld: true }, factGroupsUnlocked: 2, sessionSize: 4, maxNew: 0 }, cards: dueCards(ids, now, 5 * DAY) });
   await openAdventure(page);
   await page.evaluate(() => (window as unknown as { __ow: Ow }).__ow.teleport(33, 6));
   await page.evaluate(() => (window as unknown as { __ow: Ow }).__ow.tapTile(33, 4));
+  await expect(page.getByTestId('lair-hud')).toBeVisible();
+  // The boss stands in the far room; the doors are walked in the lair specs, so the hero is placed beside it here.
+  await page.evaluate(() => (window as unknown as { __ow: Ow }).__ow.teleport(14, 2));
+  await page.evaluate(() => (window as unknown as { __ow: Ow }).__ow.tapTile(14, 1));
+  // 5 right answers win a fight of 6.
   for (let i = 0; i < 5; i++) {
     await expect(page.locator('.question-modal .keypad .key:not([disabled])').first()).toBeVisible({ timeout: 25_000 });
     const ans = await page.evaluate(() => (window as unknown as { __ow: Ow }).__ow.modalAnswer());
@@ -242,6 +247,7 @@ test('the boss: a lair that is ready, five questions, a win gives a key and 10 g
     await page.waitForTimeout(1200);
   }
   await expect(page.getByTestId('boss-win')).toBeVisible();
+  await page.getByTestId('boss-continue').click();
   await expect(page.getByTestId('ow-keys')).toContainText('1');
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/boss-win-820x1180.png` });
   const gems = await page.evaluate((k) => JSON.parse(localStorage.getItem('mathquest:v1:kids')!)[0].game.gems as number, KID);
