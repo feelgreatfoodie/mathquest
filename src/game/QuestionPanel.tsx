@@ -272,7 +272,7 @@ function FeedbackView({ fb, onContinue }: { fb: Feedback; onContinue: () => void
 const CORRECT_PAUSE_MS = 1200;
 
 function numeral(t: Problem['tokens'][number]): string | number {
-  return t.t === 'frac' ? '' : t.v;
+  return t.t === 'frac' ? '' : t.t === 'blank' ? '?' : t.v;
 }
 
 function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleRef }: QuestionPanelProps) {

@@ -39,6 +39,8 @@ export interface TripState {
   totals: TripTotals;
   /** Chests opened on this trip: spot ids (`land:x,y`). A new trip starts with none. Kept on this device with the trip, so a write from an older app to world/main cannot reset it. */
   chests?: { opened: string[] };
+  /** Lair boss fights logged on this trip: the next log doc is `${tripId}-lair${lairs + 1}`. Absent reads as 0. */
+  lairs?: number;
 }
 
 export const EMPTY_TOTALS: TripTotals = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0, xp: 0, bestCombo: 0, medianMs: 0, missed: [] };

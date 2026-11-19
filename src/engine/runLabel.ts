@@ -4,7 +4,9 @@ import { sessionModeOf, type Learner, type SessionLog, type SessionMode } from '
 
 // How the parent area names a run: the mode, for Adventure the region and whether the trip is still open.
 
-export const MODE_NAMES: Record<SessionMode, string> = { dungeon: 'Dungeon run', prereader: 'Picture run', overworld: 'Adventure', lightning: 'Lightning Round' };
+export const MODE_NAMES: Record<SessionMode, string> = { dungeon: 'Dungeon run', prereader: 'Picture run', overworld: 'Adventure', lightning: 'Lightning Round', lair: 'Lair' };
+
+const REGION_TITLES: Record<string, string> = { meadow: 'Meadow', forest: 'Forest', castle: 'Castle' };
 
 export interface RunLabel {
   mode: SessionMode;
@@ -14,6 +16,10 @@ export interface RunLabel {
 
 export function runLabel(log: SessionLog, learner: Learner): RunLabel {
   const mode = sessionModeOf(log, learner);
+  if (mode === 'lair') {
+    const where = log.region ? REGION_TITLES[log.region] ?? log.region : null;
+    return { mode, text: ['Adventure', ...(where ? [`${where} lair`] : ['Lair']), log.bossWon ? 'boss beaten' : 'driven out'].join(' · ') };
+  }
   if (mode !== 'overworld') return { mode, text: MODE_NAMES[mode] };
   const state = log.finished === true ? 'finished' : log.endedBy === 'left' ? 'left early' : 'in progress';
   const parts = ['Adventure', ...(log.region ? [log.region] : []), `${log.graded} ${log.graded === 1 ? 'answer' : 'answers'}`, state];

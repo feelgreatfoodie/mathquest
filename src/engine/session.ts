@@ -189,6 +189,8 @@ export interface Entry {
   fill?: boolean;
   /** A riddle chest on the Adventure map: practice on a fact the kid has met, with a story. It never reviews and a miss queues no retry. */
   riddle?: boolean;
+  /** A boss form on the lair map ("? × 8 = 56", "7 × 8 − 6"): practice on the card it is built from. It never reviews and a miss queues no retry. */
+  form?: boolean;
   problem: Problem;
 }
 
@@ -297,6 +299,16 @@ export class SessionRunner {
     const problem = riddleProblem(cardId, rng);
     if (!problem) return null;
     const entry: Entry = { id: this.mintId(), cardId, kind: 'practice', isNew: false, riddle: true, problem };
+    this.queue.push(entry);
+    return entry;
+  }
+
+  /**
+   * Adds a boss form question: a problem the caller built for a card the kid has met (see `formProblem`). It is a 'practice'
+   * entry, so grading never calls review() on it, and it has no retry. Every answer still counts for the kid like any other.
+   */
+  appendForm(cardId: string, problem: Problem): Entry {
+    const entry: Entry = { id: this.mintId(), cardId, kind: 'practice', isNew: false, form: true, problem };
     this.queue.push(entry);
     return entry;
   }
@@ -441,7 +453,7 @@ export class SessionRunner {
     const tries = this.retries.get(entry.cardId) ?? 0;
     const slow = correct && rating === Rating.Hard;
     const learningSkill = correct && entry.kind === 'graded' && def.kind === 'skill' && cardLevel(prev, this.baseline, this.pace) < 3;
-    if (!entry.riddle && (!correct || slow || learningSkill) && tries < MAX_RETRIES) {
+    if (!entry.riddle && !entry.form && (!correct || slow || learningSkill) && tries < MAX_RETRIES) {
       this.retries.set(entry.cardId, tries + 1);
       const insertAt = Math.min(this.queue.length, at + 1 + this.retryGap);
       this.queue.splice(insertAt, 0, {
