@@ -48,7 +48,7 @@ describe('LocalRepo camp mirror', () => {
     const before = store.get('mathquest:v1:world:kidc0000000000000001');
     expect(await repo.loadCamp('kidc0000000000000001')).toBeNull();
     const camp = { placed: [{ region: 'meadow' as const, kind: 'flag' as const, x: 3, y: 3 }], version: 1 as const, updatedAt: 9 };
-    await repo.saveCamp('kidc0000000000000001', camp);
+    await repo.saveCamp('kidc0000000000000001', camp, 'meadow');
     expect(await repo.loadCamp('kidc0000000000000001')).toEqual(camp);
     expect(await repo.loadCamp('kidc0000000000000002')).toBeNull();
     expect(store.get('mathquest:v1:world:kidc0000000000000001')).toBe(before);

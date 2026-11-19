@@ -3,9 +3,10 @@ import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestE
 import { deleteDoc, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-// families/{uid}/kids/{kidId}/world/camp: the tent and flags a kid places. Owner-only like world/main. placed is a list of at most 10
-// entries (1 tent plus 3 flags in each of 3 lands), each { region, kind, x, y } with whole-number x 0..39 and y 0..29. world/main keeps its
-// 10 fields. Every refusal test first makes a good write, so each test also fails on a rules file with no world/camp match. Made-up ids.
+// The camp: one doc per land, families/{uid}/kids/{kidId}/world/camp_meadow, camp_forest and camp_castle. Owner-only like world/main. placed is a
+// list of at most 4 entries (at most 1 tent and 3 flags), each { region, kind, x, y }: region is the land of the doc, x a whole number 0..39, y
+// 0..29. world/main keeps its 10 fields. Every refusal test first makes a good write, so each test also fails on a rules file with no camp match.
+// A single doc of 12 entries is past the 1000-expression limit (7 fit), which is why the camp is one doc per land. Made-up ids.
 const RULES = readFileSync(process.env.RULES_FILE ?? 'firestore.rules', 'utf8');
 const FAM = 'fam-camp-parent';
 const OTHER_FAM = 'other-camp-parent';
@@ -15,14 +16,14 @@ const SIB = 'kidcampbbbb';
 let env: RulesTestEnvironment;
 const kidDb = (kidId = KID, fam = FAM) => env.authenticatedContext(`kid_${kidId}`, { role: 'kid', familyUid: fam, kidId }).firestore();
 const parentDb = (uid = FAM) => env.authenticatedContext(uid, { email: `${uid}@example.com`, email_verified: true }).firestore();
-const camp = (db: ReturnType<typeof kidDb>, kidId = KID, fam = FAM) => doc(db, `families/${fam}/kids/${kidId}/world/camp`);
+const camp = (db: ReturnType<typeof kidDb>, land = 'meadow', kidId = KID, fam = FAM) => doc(db, `families/${fam}/kids/${kidId}/world/camp_${land}`);
 const main = (db: ReturnType<typeof kidDb>, kidId = KID, fam = FAM) => doc(db, `families/${fam}/kids/${kidId}/world/main`);
 
-type Item = { region: string; kind: string; x: unknown; y: unknown };
-const tent = (x = 5, y = 5, region = 'meadow'): Item => ({ region, kind: 'tent', x, y });
+type Item = Record<string, unknown>;
+const tent = (x: unknown = 5, y: unknown = 5, region = 'meadow'): Item => ({ region, kind: 'tent', x, y });
 const flag = (x: unknown, y: unknown, region = 'meadow'): Item => ({ region, kind: 'flag', x, y });
-const doc_ = (placed: unknown[], extra: object = {}) => ({ placed, version: 1, updatedAt: 1000, ...extra });
-const flags = (n: number, region: string) => Array.from({ length: n }, (_, i) => flag(2 + i, 3, region));
+const docOf = (placed: unknown, extra: object = {}) => ({ placed, version: 1, updatedAt: 1000, ...extra });
+const flags = (n: number, region = 'meadow') => Array.from({ length: n }, (_, i) => flag(2 + i, 3, region));
 
 const WORLD = { region: 'meadow', x: 4, y: 7, facing: 'down', openedChests: ['#3'], bossesDefeated: [] as string[], keys: 0, version: 1, updatedAt: 1000, lastMode: 'overworld' };
 
@@ -48,106 +49,127 @@ beforeEach(async () => {
   });
 });
 
-describe('world/camp: who may write', () => {
-  it('the owner kid creates, reads and updates it', async () => {
+describe('camp docs: who may write', () => {
+  it('the owner kid creates, reads and updates the doc of each land', async () => {
     const db = kidDb();
-    await assertSucceeds(setDoc(camp(db), doc_([tent(), flag(8, 9)])));
-    await assertSucceeds(getDoc(camp(db)));
+    for (const land of ['meadow', 'forest', 'castle']) {
+      await assertSucceeds(setDoc(camp(db, land), docOf([tent(5, 5, land), flag(8, 9, land)])));
+      await assertSucceeds(getDoc(camp(db, land)));
+    }
     await assertSucceeds(updateDoc(camp(db), { placed: [tent(6, 6)], updatedAt: 2000 }));
     expect(((await getDoc(camp(parentDb()))).data() as { placed: Item[] }).placed[0]!.x).toBe(6);
   });
   it('the parent of the family reads and writes it', async () => {
-    await assertSucceeds(setDoc(camp(parentDb()), doc_([tent()])));
+    await assertSucceeds(setDoc(camp(parentDb()), docOf([tent()])));
     await assertSucceeds(getDoc(camp(parentDb())));
     await assertSucceeds(updateDoc(camp(parentDb()), { placed: [], updatedAt: 3000 }));
   });
   it('a sibling’s kid token is refused, for read and write', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([tent()])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([tent()])));
     await assertFails(getDoc(camp(kidDb(SIB))));
-    await assertFails(setDoc(camp(kidDb(SIB)), doc_([tent()])));
-    await assertFails(setDoc(camp(kidDb(SIB), KID), doc_([tent()])));
+    await assertFails(setDoc(camp(kidDb(SIB)), docOf([tent()])));
+    await assertFails(setDoc(camp(kidDb(SIB), 'meadow', KID), docOf([tent()])));
   });
   it('another family and an anonymous client are refused', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([tent()])));
-    await assertFails(getDoc(camp(parentDb(OTHER_FAM), KID, FAM)));
-    await assertFails(setDoc(camp(parentDb(OTHER_FAM), KID, FAM), doc_([tent()])));
-    await assertFails(setDoc(camp(kidDb(KID, OTHER_FAM), KID, FAM), doc_([tent()])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([tent()])));
+    await assertFails(getDoc(camp(parentDb(OTHER_FAM), 'meadow', KID, FAM)));
+    await assertFails(setDoc(camp(parentDb(OTHER_FAM), 'meadow', KID, FAM), docOf([tent()])));
+    await assertFails(setDoc(camp(kidDb(KID, OTHER_FAM), 'meadow', KID, FAM), docOf([tent()])));
     await assertFails(getDoc(camp(env.unauthenticatedContext().firestore())));
-    await assertFails(setDoc(camp(env.unauthenticatedContext().firestore()), doc_([tent()])));
+    await assertFails(setDoc(camp(env.unauthenticatedContext().firestore()), docOf([tent()])));
   });
   it('only the parent deletes it', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([tent()])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([tent()])));
     await assertFails(deleteDoc(camp(kidDb())));
     await assertSucceeds(deleteDoc(camp(parentDb())));
   });
+  it('only the 3 land ids take a camp write', async () => {
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([])));
+    for (const id of ['camp', 'camp_moon', 'camp_Meadow', 'tent', 'camp_meadow2'])
+      await assertFails(setDoc(doc(kidDb(), `families/${FAM}/kids/${KID}/world/${id}`), docOf([])));
+  });
 });
 
-describe('world/camp: the shape', () => {
-  it('3 flags in one land pass, a 4th is refused', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_(flags(3, 'forest'))));
-    await assertFails(setDoc(camp(kidDb()), doc_(flags(4, 'forest'))));
-    await assertFails(setDoc(camp(parentDb()), doc_(flags(4, 'meadow'))));
+describe('camp docs: the list', () => {
+  it('passes with 0, 1, 2, 3 and 4 entries (3 flags and a tent), in every land', async () => {
+    for (const land of ['meadow', 'forest', 'castle']) {
+      const lists = [[], [tent(5, 5, land)], [flag(1, 1, land), flag(2, 2, land)], flags(3, land), [...flags(3, land), tent(9, 9, land)]];
+      for (const l of lists) await assertSucceeds(setDoc(camp(kidDb(), land), docOf(l)));
+    }
   });
-  it('3 flags in each of the 3 lands plus 1 tent (10 entries) pass, an 11th is refused', async () => {
-    const full = [tent(), ...flags(3, 'castle'), ...flags(3, 'forest'), ...flags(3, 'meadow')];
-    expect(full).toHaveLength(10);
-    await assertSucceeds(setDoc(camp(kidDb()), doc_(full)));
-    await assertFails(setDoc(camp(kidDb()), doc_([...full, flag(20, 20)])));
+  it('the 4 entries may come in any order (the tent first, in the middle or last)', async () => {
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([tent(9, 9), ...flags(3)])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([flag(1, 1), tent(9, 9), flag(2, 2), flag(3, 3)])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([...flags(3), tent(9, 9)])));
   });
-  it('flags out of region order, or a tent after slot 0, are refused (the one order the app writes)', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([tent(), flag(1, 1, 'castle'), flag(2, 2, 'meadow')])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag(2, 2, 'meadow'), flag(1, 1, 'castle')])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag(1, 1, 'castle'), tent()])));
+  it('a 4th flag in a land is refused, with or without a tent in the list', async () => {
+    await assertSucceeds(setDoc(camp(kidDb()), docOf(flags(3))));
+    await assertFails(setDoc(camp(kidDb()), docOf(flags(4))));
+    await assertFails(setDoc(camp(parentDb()), docOf(flags(4, 'meadow'))));
+    await assertFails(setDoc(camp(kidDb(), 'forest'), docOf(flags(4, 'forest'))));
+    await assertFails(setDoc(camp(kidDb()), docOf(flags(5))));
   });
-  it('a 4th flag is refused wherever the tent sits in the list', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([tent(), ...flags(3, 'castle'), ...flags(3, 'meadow')])));
-    await assertFails(setDoc(camp(kidDb()), doc_([tent(), ...flags(3, 'castle'), ...flags(4, 'meadow')])));
-    await assertFails(setDoc(camp(kidDb()), doc_([...flags(4, 'castle')])));
-    await assertFails(setDoc(camp(kidDb()), doc_([tent(), ...flags(4, 'castle')])));
+  it('a 2nd tent in a land is refused, and 3 tents in 3 lands pass', async () => {
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([tent(1, 1)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([tent(1, 1), tent(2, 2)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([tent(1, 1), flag(3, 3), tent(2, 2)])));
+    for (const land of ['meadow', 'forest', 'castle']) await assertSucceeds(setDoc(camp(kidDb(), land), docOf([tent(4, 4, land)])));
   });
-  it('a 2nd tent is refused', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([tent(1, 1)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([tent(1, 1), tent(2, 2, 'forest')])));
+  it('an entry of another land is refused', async () => {
+    await assertSucceeds(setDoc(camp(kidDb(), 'forest'), docOf([flag(1, 1, 'forest')])));
+    await assertFails(setDoc(camp(kidDb(), 'forest'), docOf([flag(1, 1, 'meadow')])));
+    await assertFails(setDoc(camp(kidDb(), 'meadow'), docOf([flag(1, 1), flag(2, 2, 'castle')])));
+    await assertFails(setDoc(camp(kidDb(), 'castle'), docOf([flag(1, 1, 'moon')])));
+  });
+  it('a 5th entry is refused', async () => {
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([...flags(3), tent(9, 9)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([...flags(3), tent(9, 9), flag(7, 7)])));
   });
   it('an out-of-bounds x or y is refused', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([flag(39, 29)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag(40, 3)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag(3, 30)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag(-1, 3)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag(3, -1)])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([flag(39, 29)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(40, 3)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(3, 30)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(-1, 3)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(3, -1)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(1, 1), flag(2, 2), flag(3, 4), flag(100, 3)])));
   });
   it('a non-int x or y is refused', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([flag(3, 4)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag(3.5, 4)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag(3, 4.5)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag('3', 4)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([flag(3, null)])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([flag(3, 4)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(3.5, 4)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(3, 4.5)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag('3', 4)])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(3, null)])));
   });
-  it('an unknown region or kind, a missing or extra entry field, and a non-list placed are refused', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([flag(3, 4)])));
-    await assertFails(setDoc(camp(kidDb()), doc_([{ region: 'moon', kind: 'flag', x: 1, y: 1 }])));
-    await assertFails(setDoc(camp(kidDb()), doc_([{ region: 'meadow', kind: 'castle', x: 1, y: 1 }])));
-    await assertFails(setDoc(camp(kidDb()), doc_([{ region: 'meadow', kind: 'flag', x: 1 }])));
-    await assertFails(setDoc(camp(kidDb()), doc_([{ ...flag(1, 1), color: 'red' }])));
-    await assertFails(setDoc(camp(kidDb()), doc_(['flag'])));
-    await assertFails(setDoc(camp(kidDb()), doc_({ 0: flag(1, 1) } as never)));
+  it('a tent with no region is refused, as is any entry with a missing, extra or wrong-typed field', async () => {
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([tent()])));
+    await assertFails(setDoc(camp(kidDb()), docOf([{ kind: 'tent', x: 5, y: 5 }])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(1, 1), { kind: 'tent', x: 5, y: 5 }])));
+    await assertFails(setDoc(camp(kidDb()), docOf([flag(1, 1), flag(2, 2), { kind: 'tent', x: 5, y: 5 }])));
+    await assertFails(setDoc(camp(kidDb()), docOf([{ region: 'meadow', x: 1, y: 1 }])));
+    await assertFails(setDoc(camp(kidDb()), docOf([{ region: 'meadow', kind: 'flag', x: 1 }])));
+    await assertFails(setDoc(camp(kidDb()), docOf([{ ...flag(1, 1), color: 'red' }])));
+    await assertFails(setDoc(camp(kidDb()), docOf([{ region: 'meadow', kind: 'banner', x: 1, y: 1 }])));
+    await assertFails(setDoc(camp(kidDb()), docOf(['flag'])));
+    await assertFails(setDoc(camp(kidDb()), docOf([null])));
+  });
+  it('placed that is not a list, or is missing, is refused', async () => {
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([])));
+    await assertFails(setDoc(camp(kidDb()), docOf({ 0: flag(1, 1) })));
+    await assertFails(setDoc(camp(kidDb()), docOf('flag')));
+    await assertFails(setDoc(camp(kidDb()), { version: 1, updatedAt: 1 }));
   });
   it('an extra or missing doc field, or a wrong version, is refused', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([])));
-    await assertFails(setDoc(camp(kidDb()), doc_([], { gems: 50 })));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([])));
+    await assertFails(setDoc(camp(kidDb()), docOf([], { gems: 50 })));
     await assertFails(setDoc(camp(kidDb()), { placed: [], version: 1 }));
-    await assertFails(setDoc(camp(kidDb()), { version: 1, updatedAt: 1 }));
-    await assertFails(setDoc(camp(kidDb()), doc_([], { version: 2 })));
-  });
-  it('no other doc id under world takes a write', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([])));
-    await assertFails(setDoc(doc(kidDb(), `families/${FAM}/kids/${KID}/world/tent`), doc_([])));
+    await assertFails(setDoc(camp(kidDb()), docOf([], { version: 2 })));
+    await assertFails(setDoc(camp(kidDb()), docOf([], { updatedAt: 'now' })));
   });
 });
 
 describe('world/main is unchanged', () => {
   it('an old-bundle world/main write passes, and the doc keeps its 10 fields', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([tent()])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([tent()])));
     expect(Object.keys(WORLD)).toHaveLength(10);
     await assertSucceeds(setDoc(main(kidDb()), WORLD));
     const { lastMode: _m, ...old } = WORLD;
@@ -156,13 +178,13 @@ describe('world/main is unchanged', () => {
     expect(Object.keys((await getDoc(main(parentDb()))).data()!)).toHaveLength(9);
   });
   it('world/main refuses a placed field, so the camp cannot ride on it', async () => {
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([tent()])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([tent()])));
     await assertFails(setDoc(main(kidDb()), { ...WORLD, placed: [tent()] }));
     await assertFails(updateDoc(main(kidDb()), { placed: [tent()] }));
   });
   it('a camp write leaves world/main as it was', async () => {
     await assertSucceeds(setDoc(main(kidDb()), WORLD));
-    await assertSucceeds(setDoc(camp(kidDb()), doc_([tent()])));
+    await assertSucceeds(setDoc(camp(kidDb()), docOf([tent()])));
     expect((await getDoc(main(kidDb()))).data()).toEqual(WORLD);
   });
 });

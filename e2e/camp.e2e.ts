@@ -239,3 +239,30 @@ test('Pip: placing is overworld only. Inside a lair there is no camp button and 
   expect(await page.evaluate((k) => localStorage.getItem(`mathquest:v1:world:${k}`), KID)).toBe(before);
   expect(await page.evaluate((k) => localStorage.getItem(`mathquest:v1:camp:${k}`), KID)).toBeNull();
 });
+
+test('Pip: a new trip in a land starts at that land’s tent, and a trip being resumed keeps its place', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await seed(page, 'Pip');
+  await openAdventure(page, 'Pip');
+  await page.getByTestId('camp-btn').click();
+  await page.getByTestId('camp-tent').click();
+  const t = await openTile(page);
+  await clickTile(page, t);
+  await expect.poll(async () => (await state(page)).camp.placed.length).toBe(1);
+  await page.getByTestId('camp-btn').click();
+  // The saved place is 3 tiles from the start. Reload with the same trip: the hero stays where it was saved.
+  const away = { x: heroStart(MAPS.meadow).x + 3, y: heroStart(MAPS.meadow).y };
+  await page.evaluate(([k, x, y]) => {
+    const key = `mathquest:v1:world:${k}`;
+    localStorage.setItem(key, JSON.stringify({ ...JSON.parse(localStorage.getItem(key)!), x, y }));
+  }, [KID, away.x, away.y] as const);
+  await page.reload();
+  await openAdventure(page, 'Pip');
+  await expect.poll(async () => (await state(page)).camp.placed.length).toBe(1);
+  expect((await state(page)).hero).toEqual(away);
+  // A new trip (the old one is gone) starts at the tent.
+  await page.evaluate((k) => localStorage.removeItem(`mathquest:v1:trip:${k}`), KID);
+  await page.reload();
+  await openAdventure(page, 'Pip');
+  await expect.poll(async () => (await state(page)).hero).toEqual({ x: t.x, y: t.y });
+});

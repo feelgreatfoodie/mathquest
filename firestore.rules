@@ -429,66 +429,40 @@ service cloud.firestore {
         && (!('lastMode' in w) || w.lastMode in ['dungeon', 'prereader', 'overworld']);
     }
 
-    // The camp (world/camp): the tent and flags a kid places on the map. 3 fields: placed, version, updatedAt. placed is a list of at most
-    // 10 entries (1 tent plus 3 flags in each of 3 lands), each exactly { region, kind, x, y } with whole-number x in 0..39 and y in 0..29 (the
-    // map size). Rules cannot loop and a count over 10 slots passes the 1000-expression limit, so the list has one fixed order the app writes:
-    // the tent first (only slot 0 may hold it), then the flags sorted by region name. In that order the flags of a land sit side by side,
-    // so "no 4th flag in a land" is "slot i and slot i+3 never both hold a flag of the same land".
-    // An entry has exactly 4 fields: its size is 4 and reading region, kind, x and y all succeed (a missing one fails the rule).
-    // One function per slot keeps the list under the 1000-expression limit with 10 slots. Slot 0 holds a tent or a flag, later slots a
-    // flag. A flag's region is at or after the one before it (sorted), and slot i never matches slot i-3 (no 4th flag in a land).
-    // e: the entry, r: its region (read once by the caller), regs: the 3 land names (built once), prev: the region of the slot before it,
-    // far: the region of the slot 3 before it ('' when there is none to compare).
-    function campFlag(e, r, regs, prev, far) {
-      let x = e.x;
-      let y = e.y;
-      return e.size() == 4 && e.kind == 'flag' && r in regs && r >= prev && r != far
-        && x is int && x >= 0 && x < 40 && y is int && y >= 0 && y < 30;
+    // The camp: one doc per land, world/camp_meadow, world/camp_forest and world/camp_castle (the tents and flags a kid placed in that land).
+    // 3 fields: placed, version, updatedAt. placed is a list of at most 4 entries (at most 1 tent and 3 flags), each exactly
+    // { region, kind, x, y }: region is the land of the doc, x a whole number 0..39, y a whole number 0..29 (the map size). Rules cannot loop,
+    // and a single doc of 12 entries passes the 1000-expression limit (7 fit), so the 4 slots of one land are checked one by one.
+    // Every index is read only inside a branch that has already checked the list size (n > i && ...). A slot that is missing a field, or holds
+    // something that is not a map, makes the rule error, and an error denies the write.
+    function campLandOf(campId) {
+      return {'camp_meadow': 'meadow', 'camp_forest': 'forest', 'camp_castle': 'castle'}.get(campId, '');
     }
-    function campSlot0(e, r, regs) {
-      let x = e.x;
-      let y = e.y;
-      return e.size() == 4 && e.kind in ['tent', 'flag'] && r in regs
-        && x is int && x >= 0 && x < 40 && y is int && y >= 0 && y < 30;
+    function campEntry(e, land) {
+      return e.size() == 4 && e.region == land && e.kind in ['tent', 'flag']
+        && e.x is int && e.x >= 0 && e.x < 40 && e.y is int && e.y >= 0 && e.y < 30;
     }
-    // Slots 6 to 9. r3, r4, r5: the regions of slots 3 to 5, read once by campHead.
-    function campTail(p, n, regs, r3, r4, r5) {
-      let r6 = p[6].region;
-      let r7 = p[7].region;
-      let r8 = p[8].region;
-      let r9 = p[9].region;
-      return (n <= 6 || campFlag(p[6], r6, regs, r5, r3))
-        && (n <= 7 || campFlag(p[7], r7, regs, r6, r4))
-        && (n <= 8 || campFlag(p[8], r8, regs, r7, r5))
-        && (n <= 9 || campFlag(p[9], r9, regs, r8, r6));
+    function campSlot(p, n, land, i) {
+      return n <= i || campEntry(p[i], land);
     }
-    // Slots 0 to 5. r0..r5: the region of each slot, read once ('' for a missing slot or for the tent), shared by the next slot (sorted)
-    // and the slot 3 on (no 4th).
-    function campHead(p, n, regs) {
-      let r0 = p[0].region;
-      let r1 = p[1].region;
-      let r2 = p[2].region;
-      let r3 = p[3].region;
-      let r4 = p[4].region;
-      let r5 = p[5].region;
-      let t = p[0].kind == 'tent';
-      return (n == 0 || campSlot0(p[0], r0, regs))
-        && (n <= 1 || campFlag(p[1], r1, regs, t ? '' : r0, ''))
-        && (n <= 2 || campFlag(p[2], r2, regs, r1, ''))
-        && (n <= 3 || campFlag(p[3], r3, regs, r2, t ? '' : r0))
-        && (n <= 4 || campFlag(p[4], r4, regs, r3, r1))
-        && (n <= 5 || campFlag(p[5], r5, regs, r4, r2))
-        && campTail(p, n, regs, r3, r4, r5);
+    function campTent(p, n, i) {
+      return n > i && p[i].kind == 'tent' ? 1 : 0;
     }
-    function campOk() {
+    function campOk(campId) {
       let c = request.resource.data;
+      let land = campLandOf(campId);
       let p = c.get('placed', null);
-      return c.keys().hasOnly(['placed', 'version', 'updatedAt'])
+      let n = p.size();
+      let tents = campTent(p, n, 0) + campTent(p, n, 1) + campTent(p, n, 2) + campTent(p, n, 3);
+      return land != ''
+        && c.keys().hasOnly(['placed', 'version', 'updatedAt'])
         && c.keys().hasAll(['placed', 'version', 'updatedAt'])
         && c.version == 1
         && c.updatedAt is number
-        && p is list && p.size() <= 10
-        && campHead(p, p.size(), ['meadow', 'forest', 'castle']);
+        && p is list && n <= 4
+        && campSlot(p, n, land, 0) && campSlot(p, n, land, 1) && campSlot(p, n, land, 2) && campSlot(p, n, land, 3)
+        && tents <= 1
+        && (n < 4 || tents == 1);
     }
 
     // The parent registry, its counter and the kid-name claims. Only the Admin SDK in Cloud Functions
@@ -554,12 +528,11 @@ service cloud.firestore {
           allow delete: if isParent(uid);
         }
 
-        // The camp: world/camp, the tent and flags a kid places. Same owners as world/main: the kid token for this kidId and the parent
-        // read and write it, a sibling's token, another family and anonymous clients match no rule. It never touches world/main or the kid doc.
-        match /world/camp {
-          allow read: if isParent(uid) || isKid(uid, kidId);
-          allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc() && campOk();
-          allow delete: if isParent(uid);
+        // The camp: world/camp_meadow, world/camp_forest and world/camp_castle, the tent and flags a kid placed in each land. Same owners as
+        // world/main: the kid token for this kidId and the parent read and write them, a sibling's token, another family and anonymous
+        // clients match no rule. They never touch world/main or the kid doc. Read and delete come from the world/{docId} rule above.
+        match /world/{campId} {
+          allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc() && campOk(campId);
         }
 
         // The gem vault: one doc per deposit. Parent and kid read. A deposit is created only with the gems it takes, a payout

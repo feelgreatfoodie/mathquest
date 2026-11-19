@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_FLAGS, MAX_PLACED, campReducer, canPlaceAt, flagsIn, fromCampDoc, newCamp, placeBlock, sortPlaced, tentOf, toCampDoc, type Placed } from './camp';
+import { MAX_FLAGS, MAX_PLACED, campReducer, canPlaceAt, flagsIn, fromCampDoc, newCamp, placeBlock, tentOf, type Placed } from './camp';
 import { LAIRS, MAPS, REGION_IDS, findTiles, tileAt, type Point, type RegionId } from './maps';
 
 // The camp: a tent and up to 3 flags per land, saved in world/camp. The load filter drops what cannot stand where it was saved.
@@ -62,11 +62,20 @@ describe('placing', () => {
     const f = grass('forest')[0]!;
     expect(campReducer(c, { t: 'place', item: flag('forest', f.x, f.y) }, 3).placed).toHaveLength(4);
   });
-  it('a second tent moves the first, so there is only ever 1 tent', () => {
+  it('a second tent in the same land moves the first, so there is only ever 1 tent per land', () => {
     let c = campReducer(newCamp(1), { t: 'place', item: tent('meadow', g[0]!.x, g[0]!.y) }, 2);
-    c = campReducer(c, { t: 'place', item: tent('forest', grass('forest')[0]!.x, grass('forest')[0]!.y) }, 3);
+    c = campReducer(c, { t: 'place', item: tent('meadow', g[9]!.x, g[9]!.y) }, 3);
     expect(c.placed.filter((p) => p.kind === 'tent')).toHaveLength(1);
-    expect(tentOf(c.placed)!.region).toBe('forest');
+    expect(tentOf(c.placed, 'meadow')).toMatchObject({ x: g[9]!.x, y: g[9]!.y });
+  });
+  it('each land has its own tent: 3 tents in all', () => {
+    let c = newCamp(1);
+    for (const r of REGION_IDS) {
+      const t = grass(r)[0]!;
+      c = campReducer(c, { t: 'place', item: tent(r, t.x, t.y) }, 2);
+    }
+    expect(c.placed.filter((p) => p.kind === 'tent')).toHaveLength(3);
+    for (const r of REGION_IDS) expect(tentOf(c.placed, r)).toBeDefined();
   });
   it('one item per tile, and removing frees the tile', () => {
     let c = campReducer(newCamp(1), { t: 'place', item: flag('meadow', g[0]!.x, g[0]!.y) }, 2);
@@ -74,13 +83,8 @@ describe('placing', () => {
     c = campReducer(c, { t: 'remove', region: 'meadow', x: g[0]!.x, y: g[0]!.y }, 3);
     expect(c.placed).toEqual([]);
   });
-  it('the saved list is in the order the rules require: the tent first, then flags by region name', () => {
-    const c = sortPlaced([flag('meadow', 1, 1), flag('castle', 2, 2), tent('meadow', 3, 3), flag('forest', 4, 4)]);
-    expect(c.map((p) => p.kind + ':' + p.region)).toEqual(['tent:meadow', 'flag:castle', 'flag:forest', 'flag:meadow']);
-    expect(toCampDoc({ ...newCamp(1), placed: [flag('meadow', 1, 1), tent('castle', 2, 2)] }).placed[0]!.kind).toBe('tent');
-  });
   it('a full camp (1 tent and 3 flags in each land) is MAX_PLACED entries', () => {
-    expect(MAX_PLACED).toBe(10);
+    expect(MAX_PLACED).toBe(12);
   });
 });
 
@@ -117,10 +121,12 @@ describe('fromCampDoc: the load-time walkability filter', () => {
     expect(fromCampDoc(docOf([flag('meadow', onlyForest.x, onlyForest.y)]), 1).placed).toEqual([]);
     expect(fromCampDoc(docOf([flag('forest', onlyForest.x, onlyForest.y)]), 1).placed).toHaveLength(1);
   });
-  it('drops a duplicate tile, a 2nd tent and a 4th flag in a land', () => {
+  it('drops a duplicate tile, a 2nd tent in a land and a 4th flag in a land', () => {
     const f = [0, 4, 8, 12].map((i) => flag('meadow', m[i]!.x, m[i]!.y));
     expect(fromCampDoc(docOf(f), 1).placed.filter((p) => p.kind === 'flag')).toHaveLength(3);
     expect(fromCampDoc(docOf([...good, tent('meadow', m[30]!.x, m[30]!.y)]), 1).placed.filter((p) => p.kind === 'tent')).toHaveLength(1);
+    const f0 = grass('forest')[0]!;
+    expect(fromCampDoc(docOf([...good, tent('forest', f0.x, f0.y)]), 1).placed.filter((p) => p.kind === 'tent')).toHaveLength(2);
     expect(fromCampDoc(docOf([good[0], good[0]]), 1).placed).toHaveLength(1);
   });
   it('reads damaged data as an empty camp', () => {
@@ -128,11 +134,13 @@ describe('fromCampDoc: the load-time walkability filter', () => {
     expect(fromCampDoc({ placed: 5, updatedAt: 9 }, 7).updatedAt).toBe(9);
     expect(fromCampDoc(null, 7).updatedAt).toBe(7);
   });
-  it('never returns more than the rules take: at most 10 entries, 1 tent, 3 flags a land', () => {
+  it('never returns more than the rules take: at most 12 entries, 1 tent and 3 flags a land', () => {
     const many = REGION_IDS.flatMap((r) => grass(r).slice(0, 12).map((p, i) => (i === 0 ? tent(r, p.x, p.y) : flag(r, p.x, p.y))));
     const c = fromCampDoc(docOf(many), 1);
     expect(c.placed.length).toBeLessThanOrEqual(MAX_PLACED);
-    expect(c.placed.filter((p) => p.kind === 'tent')).toHaveLength(1);
-    for (const r of REGION_IDS) expect(flagsIn(c.placed, r)).toBeLessThanOrEqual(3);
+    for (const r of REGION_IDS) {
+      expect(flagsIn(c.placed, r)).toBeLessThanOrEqual(3);
+      expect(c.placed.filter((p) => p.kind === 'tent' && p.region === r).length).toBeLessThanOrEqual(1);
+    }
   });
 });

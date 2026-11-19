@@ -351,7 +351,8 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         const w = settleHero(w0);
         runnerRef.current = runner;
         // The trip: resume an open one under 24 h old, else start a new one (and close the expired one as 'left').
-        const { trip, close } = resolveTrip(loadTrip(kidRef.current.id), Date.now(), newId);
+        const storedTrip = loadTrip(kidRef.current.id);
+        const { trip, close } = resolveTrip(storedTrip, Date.now(), newId);
         tripRef.current = trip;
         baseRef.current = trip.totals;
         cpAnswered.current = trip.totals.answered;
@@ -364,6 +365,12 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         campRef.current = fromCampDoc(storedCamp, Date.now());
         setCamp(campRef.current);
         reachedRef.current = furthestRegion(w.region, ...w.bossesDefeated);
+        // A new trip in a land that has a tent starts at the tent (a trip being resumed keeps the saved place).
+        const tent = trip !== storedTrip ? tentOf(campRef.current.placed, w.region) : undefined;
+        if (tent) {
+          w.x = tent.x;
+          w.y = tent.y;
+        }
         hero.current = { ...hero.current, x: w.x, y: w.y, fx: w.x, fy: w.y, facing: w.facing };
         setRegion(w.region);
         setKeys(w.keys);
@@ -385,14 +392,17 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   // ---- game actions ----
   const say = useCallback((m: Msg | null) => setMsg(m), []);
 
-  /** Saves the camp alone (world/camp). world/main is never written for a placement. */
-  const saveCamp = useCallback(async () => {
-    try {
-      await repo.saveCamp(kidRef.current.id, toCampDoc(campRef.current));
-    } catch (e) {
-      reportFailure('Your camp was not saved.', e, () => repo.saveCamp(kidRef.current.id, toCampDoc(campRef.current)));
-    }
-  }, [repo]);
+  /** Saves one land's camp doc (world/camp_<land>). world/main is never written for a placement. */
+  const saveCamp = useCallback(
+    async (region: RegionId) => {
+      try {
+        await repo.saveCamp(kidRef.current.id, toCampDoc(campRef.current), region);
+      } catch (e) {
+        reportFailure('Your camp was not saved.', e, () => repo.saveCamp(kidRef.current.id, toCampDoc(campRef.current), region));
+      }
+    },
+    [repo],
+  );
 
   /** A tap on the map while the camp tray is open: place the picked item, or pick one up. Never runs inside a lair. */
   const campTap = useCallback(
@@ -417,7 +427,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       if (next === campRef.current) return;
       campRef.current = next;
       setCamp(next);
-      void saveCamp();
+      void saveCamp(w.region);
     },
     [learner, say, saveCamp],
   );
@@ -1318,7 +1328,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           <div className="ow-camp-tray" role="group" aria-label="Your camp" data-testid="camp-tray">
             <button type="button" className={`icon-btn${campTool === 'tent' ? ' is-on' : ''}`} data-testid="camp-tent" aria-label="Tent" aria-pressed={campTool === 'tent'} onClick={() => setCampTool('tent')}>
               <PixelIcon name="tent" size={40} />
-              <i className="ow-camp-dots" aria-hidden="true"><b className={tentOf(camp.placed) ? 'on' : ''} /></i>
+              <i className="ow-camp-dots" aria-hidden="true"><b className={tentOf(camp.placed, region) ? 'on' : ''} /></i>
             </button>
             <button type="button" className={`icon-btn${campTool === 'flag' ? ' is-on' : ''}`} data-testid="camp-flag" aria-label={`Flag, ${flagsIn(camp.placed, region)} of ${MAX_FLAGS} in this land`} aria-pressed={campTool === 'flag'} onClick={() => setCampTool('flag')}>
               <PixelIcon name="flag" size={40} />

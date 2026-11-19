@@ -22,6 +22,7 @@ import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { CampDoc } from '../game/overworld/camp';
+import { REGION_IDS, type RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
 import type { GameModeId } from '../game/modes/types';
 import { newId, type Repo } from './repo';
@@ -310,12 +311,22 @@ export class FirestoreRepo implements Repo {
   }
 
   async loadCamp(kidId: string): Promise<unknown | null> {
-    const snap = await getDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'camp'));
-    return snap.exists() ? snap.data() : null;
+    const snaps = await Promise.all(REGION_IDS.map((r) => getDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', `camp_${r}`))));
+    const docs = snaps.filter((s) => s.exists()).map((s) => s.data() as { placed?: unknown; updatedAt?: unknown });
+    if (!docs.length) return null;
+    return {
+      placed: docs.flatMap((d) => (Array.isArray(d.placed) ? d.placed : [])),
+      version: 1,
+      updatedAt: Math.max(0, ...docs.map((d) => (typeof d.updatedAt === 'number' ? d.updatedAt : 0))),
+    };
   }
 
-  async saveCamp(kidId: string, camp: CampDoc): Promise<void> {
-    await setDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', 'camp'), camp);
+  async saveCamp(kidId: string, camp: CampDoc, region: RegionId): Promise<void> {
+    await setDoc(doc(this.db, 'families', this.uid, 'kids', kidId, 'world', `camp_${region}`), {
+      placed: camp.placed.filter((p) => p.region === region).map((p) => ({ region: p.region, kind: p.kind, x: p.x, y: p.y })),
+      version: 1,
+      updatedAt: camp.updatedAt,
+    });
   }
 
   async setWorldLastMode(kidId: string, mode: GameModeId): Promise<void> {
