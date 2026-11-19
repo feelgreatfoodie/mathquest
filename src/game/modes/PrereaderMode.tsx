@@ -7,6 +7,7 @@ import { HoldButton } from '../../ui/early/HoldButton';
 import { unlockSounds } from '../../ui/early/sounds';
 import { stopSpeaking, unlockSpeech } from '../../ui/early/useSpeech';
 import { finishRun } from '../../ui/finishRun';
+import { usePauseStop } from '../../ui/usePause';
 import { loadRunner } from '../../ui/runShared';
 import { MONSTERS, Sprite, UiIcon } from '../../ui/sprites';
 import { QuestionPanel, type QuestionPanelHandle } from '../QuestionPanel';
@@ -87,6 +88,9 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
     await finishRun({ repo, kid, runner: r, startedAt: startedAt.current, onSynced, onDone, onExit, extra: { mode: 'prereader' } });
   }, [kid, repo, onDone, onExit, onSynced]);
 
+  // A pause lets this question finish, then the run saves through finishRun and the break screen takes over.
+  const pausedRef = usePauseStop(() => void finish());
+
   const next = useCallback(() => {
     const r = runnerRef.current;
     if (!r) return;
@@ -94,9 +98,9 @@ export function PrereaderMode({ repo, kid, onDone, onExit, onSynced }: GameModeP
     r.advance();
     setFeedback(null);
     if (Math.floor(r.position / block) !== before) setHits(0);
-    if (r.done()) void finish();
+    if (r.done() || pausedRef.current) void finish();
     else rerender();
-  }, [block, finish]);
+  }, [pausedRef, block, finish]);
 
   const onAnswered = useCallback((fb: Feedback) => {
     setFeedback(fb);

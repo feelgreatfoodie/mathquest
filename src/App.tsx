@@ -19,6 +19,8 @@ import { rememberKids } from './data/deviceKids';
 import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
 import { ParentArea, Setup } from './ui/screens/Parent';
+import { PauseScreen } from './ui/screens/PauseScreen';
+import { PauseContext, usePause } from './ui/usePause';
 import { Run } from './ui/screens/Run';
 import type { GameModeId } from './game/modes/types';
 
@@ -65,6 +67,10 @@ export function App() {
   const [pinError, setPinError] = useState<string | null>(null);
   /** A kid session (custom token) can reach only that kid's data and never the parent area. */
   const [kidSession, setKidSession] = useState(false);
+  // A grown-up who came from a kid's break screen: 'armed' while the kid is signed out and the parent has not signed in yet,
+  // 'active' once the parent has. Active sends the parent to the Parent PIN, and out of the parent area by signing out, so the
+  // parent session never carries on into kid play.
+  const pauseFlow = useRef<'off' | 'armed' | 'active'>('off');
 
   const load = useCallback(async (r: Repo) => {
     try {
@@ -73,7 +79,7 @@ export function App() {
       setKids(ks);
       if (!f?.pinHash) setScreen({ name: 'setup' });
       else if (!ks.length) setScreen({ name: 'pin' });
-      else setScreen({ name: 'picker' });
+      else setScreen(pauseFlow.current === 'active' ? { name: 'pin' } : { name: 'picker' });
     } catch (e) {
       setError((e as Error).message);
       setScreen({ name: 'signin' });
@@ -94,6 +100,7 @@ export function App() {
         setKids([]);
         setFamily(null);
         setKidSession(false);
+        if (pauseFlow.current === 'active') pauseFlow.current = 'off';
         // No session: the kid PIN pad. The Parent link moves to the Google screen and stays there.
         setScreen((s) => (s.name === 'signin' ? s : { name: 'kidsignin' }));
         return;
@@ -101,6 +108,7 @@ export function App() {
       void (async () => {
         const claims = await kidClaims();
         if (claims) {
+          pauseFlow.current = 'off';
           const r = new FirestoreRepo(db, claims.familyUid);
           try {
             const k = await r.getKid(claims.kidId);
@@ -116,6 +124,7 @@ export function App() {
           return;
         }
         setKidSession(false);
+        if (pauseFlow.current === 'armed') pauseFlow.current = 'active';
         // Join the parent registry first. At the cap the message is shown and the account signs out.
         try {
           await registerParent();
@@ -176,8 +185,12 @@ export function App() {
     replay().catch((e) => reportFailure('Your gems and XP from a past run were not saved.', e, replay));
   }, [repo]);
 
+  // A run never starts on a paused kid: the stored pause and the server clock are read again first.
+  const pauseCheckRef = useRef<() => Promise<boolean>>(async () => true);
+
   const startRun = useCallback(
     async (kidId: string, mode?: GameModeId) => {
+      if (!(await pauseCheckRef.current())) return; // the break screen is already showing
       if (guard) {
         await guard.refresh();
         if (guard.stale) return; // the update screen is already showing
@@ -189,6 +202,10 @@ export function App() {
 
   const kid = 'kidId' in screen ? kids.find((k) => k.id === screen.kidId) : undefined;
   const pictureMode = learnerOf((kid ?? (kidSession ? kids[0] : undefined))?.settings) === 'prereader';
+  // The pause on the kid on screen: one listener on that kid doc, settings.pause only.
+  const pauseKid = kid ?? (kidSession ? kids[0] : undefined);
+  const pauseNow = usePause(repo, pauseKid?.id ?? null);
+  pauseCheckRef.current = pauseNow.check;
 
   /** Puts the stored game on screen for one kid. */
   const showGame = useCallback((kidId: string, game: KidGame) => {
@@ -255,12 +272,32 @@ export function App() {
 
   // A release never interrupts a round or replaces the save: the update screen waits for home, and the summary
   // (after the save) carries the prompt.
-  const body = stale && screen.name !== 'run' && screen.name !== 'summary' ? <UpdateScreen picture={pictureMode} /> : renderScreen();
+  // A pause lets the question on screen finish and the run save, then blocks everything but Grown-ups. Run screens stop on
+  // their own at the next question boundary (see usePauseState), so the gate waits on any run screen.
+  const blocked = pauseNow.paused && !!pauseKid && (screen.name === 'home' || screen.name === 'summary');
+  const body = blocked && pauseKid ? (
+    <PauseScreen
+      kid={pauseKid}
+      left={pauseNow.left}
+      total={pauseNow.total}
+      timed={pauseNow.pause?.until !== undefined}
+      onGrownUps={() => {
+        setPinError(null);
+        if (kidSession) {
+          // A kid session cannot see the parent PIN or write settings: Grown-ups goes through the parent sign-in, then the Parent PIN.
+          pauseFlow.current = 'armed';
+          setScreen({ name: 'signin' });
+          void signOutParent();
+        } else setScreen({ name: 'pin' });
+      }}
+      {...(kidSession ? {} : { onSwitch: () => setScreen({ name: 'picker' }) })}
+    />
+  ) : stale && screen.name !== 'run' && screen.name !== 'summary' ? <UpdateScreen picture={pictureMode} /> : renderScreen();
   return (
-    <>
+    <PauseContext.Provider value={pauseNow}>
       {body}
       <FailureToasts picture={pictureMode} />
-    </>
+    </PauseContext.Provider>
   );
 
   function renderScreen() {
@@ -383,7 +420,7 @@ export function App() {
         <PinPad
           title="Parent PIN"
           error={pinError}
-          onCancel={kids.length ? () => { setPinError(null); setScreen({ name: 'picker' }); } : undefined}
+          onCancel={pauseFlow.current === 'active' ? () => { setPinError(null); void signOutParent(); } : kids.length ? () => { setPinError(null); setScreen({ name: 'picker' }); } : undefined}
           onComplete={async (p) => {
             if ((await hashPin(salt, p)) === family?.pinHash) {
               setPinError(null);
@@ -407,6 +444,7 @@ export function App() {
           onFamily={setFamily}
           onExit={() => setScreen(kids.length ? { name: 'picker' } : { name: 'parent' })}
           onSignOut={dataMode === 'firestore' ? () => void signOutParent() : undefined}
+          afterPause={pauseFlow.current === 'active'}
         />
       );
   }

@@ -1,6 +1,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -97,7 +98,35 @@ export class FirestoreRepo implements Repo {
   }
 
   async saveKidSettings(kidId: string, settings: KidSettings): Promise<void> {
-    await updateDoc(doc(this.kids(), kidId), { settings });
+    // Field-level: only the settings that differ from the stored ones are written, each as `settings.<name>`, and a name the
+    // screen dropped is deleted. Nothing else in the map is sent, so a pause set from another phone since this copy was
+    // read (or any other setting changed elsewhere) cannot be overwritten. `pause` is never part of this write.
+    const ref = doc(this.kids(), kidId);
+    await runTransaction(this.db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error('That player was removed.');
+      const stored = ((snap.data() as { settings?: Record<string, unknown> }).settings ?? {}) as Record<string, unknown>;
+      const next = settings as unknown as Record<string, unknown>;
+      const update: Record<string, unknown> = {};
+      for (const [name, value] of Object.entries(next)) {
+        if (name === 'pause' || value === undefined) continue;
+        if (JSON.stringify(value) !== JSON.stringify(stored[name])) update[`settings.${name}`] = value;
+      }
+      for (const name of Object.keys(stored)) if (name !== 'pause' && (!(name in next) || next[name] === undefined)) update[`settings.${name}`] = deleteField();
+      if (Object.keys(update).length) tx.update(ref, update);
+    });
+  }
+
+  async setKidPause(kidIds: string[], pause: { until?: number } | null): Promise<void> {
+    for (let i = 0; i < kidIds.length; i += BATCH_MAX) {
+      const batch = writeBatch(this.db);
+      for (const id of kidIds.slice(i, i + BATCH_MAX)) {
+        batch.update(doc(this.kids(), id), {
+          'settings.pause': pause ? { on: true, ...(pause.until !== undefined ? { until: pause.until } : {}), setAt: serverTimestamp() } : deleteField(),
+        });
+      }
+      await batch.commit();
+    }
   }
 
   async setKidAudio(kidId: string, audio: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }): Promise<void> {
@@ -211,10 +240,10 @@ export class FirestoreRepo implements Repo {
     return snap.docs.map((d) => d.data() as PurchaseLog);
   }
 
-  watchKid(kidId: string, onKid: (kid: Kid | null) => void, opts?: { onError?: (e: Error) => void }): () => void {
+  watchKid(kidId: string, onKid: (kid: Kid | null, meta?: { live: boolean }) => void, opts?: { onError?: (e: Error) => void }): () => void {
     return onSnapshot(
       doc(this.kids(), kidId),
-      (snap) => onKid(snap.exists() ? normalizeKid(snap.data() as Kid) : null),
+      (snap) => onKid(snap.exists() ? normalizeKid(snap.data() as Kid) : null, { live: !snap.metadata.fromCache && !snap.metadata.hasPendingWrites }),
       (e) => opts?.onError?.(e),
     );
   }

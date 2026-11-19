@@ -56,7 +56,21 @@ export class LocalRepo implements Repo {
   }
 
   async saveKidSettings(kidId: string, settings: KidSettings): Promise<void> {
-    this.patchKid(kidId, (k) => ({ ...k, settings }));
+    // A pause set since this copy was read survives, like the Firestore repo.
+    this.patchKid(kidId, (k) => {
+      const { pause: _copy, ...rest } = settings;
+      void _copy;
+      return { ...k, settings: k.settings?.pause ? { ...rest, pause: k.settings.pause } : rest };
+    });
+  }
+
+  async setKidPause(kidIds: string[], pause: { until?: number } | null): Promise<void> {
+    for (const id of kidIds)
+      this.patchKid(id, (k) => {
+        const { pause: _old, ...rest } = k.settings;
+        void _old;
+        return { ...k, settings: pause ? { ...rest, pause: { on: true, ...(pause.until !== undefined ? { until: pause.until } : {}), setAt: Date.now() } } : rest };
+      });
   }
 
   async setKidAudio(kidId: string, audio: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }): Promise<void> {
@@ -155,7 +169,7 @@ export class LocalRepo implements Repo {
     return read<PurchaseLog[]>(`purchases:${kidId}`, []).sort((a, b) => b.at - a.at).slice(0, max);
   }
 
-  watchKid(kidId: string, onKid: (kid: Kid | null) => void, opts?: { onError?: (e: Error) => void; pollMs?: number }): () => void {
+  watchKid(kidId: string, onKid: (kid: Kid | null, meta?: { live: boolean }) => void, opts?: { onError?: (e: Error) => void; pollMs?: number }): () => void {
     let last: string | undefined;
     let stopped = false;
     const tick = () => {
@@ -166,7 +180,7 @@ export class LocalRepo implements Repo {
           const json = JSON.stringify(k);
           if (json === last) return;
           last = json;
-          onKid(k);
+          onKid(k, { live: true });
         },
         (e) => opts?.onError?.(e as Error),
       );

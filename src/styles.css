@@ -1100,3 +1100,21 @@ legend { padding: 0 6px; color: var(--muted); }
 @media (max-height: 800px) and (min-width: 1000px) {
   .early-run:has(.numpad[data-max="20"]) .arena.early-arena { display: none; }
 }
+
+/* Pause: a grown-up stopped play. The break screen and the parent controls. */
+.pause-screen { gap: 18px; text-align: center; }
+.pause-screen .run-top { position: absolute; top: 12px; right: 12px; left: 12px; display: flex; justify-content: space-between; }
+.pause-scene { position: relative; display: flex; align-items: center; justify-content: center; gap: 24px; min-height: 180px; margin-bottom: 12px; }
+.pause-hero { display: inline-block; line-height: 0; transform: rotate(-80deg); opacity: 0.95; }
+.pause-fire { display: inline-block; animation: pause-flicker 1.6s ease-in-out infinite; }
+.pause-zzz { position: absolute; top: -14px; left: 50%; font-size: 22px; opacity: 0.8; animation: pause-float 2.4s ease-in-out infinite; }
+.pause-timer { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--accent, #f5c542); }
+.pause-timer p { color: inherit; margin: 0; }
+.pause-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.pause-screen.is-prereader .pause-actions .btn { min-width: 120px; min-height: 120px; }
+@keyframes pause-flicker { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08) translateY(-2px); } }
+@keyframes pause-float { 0%, 100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(-8px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .pause-fire, .pause-zzz { animation: none; } }
+.pause-card .row { align-items: center; gap: 12px; flex-wrap: wrap; }
+.pause-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.badge-paused { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #f5c542; color: #1b1b1b; font-weight: 700; }
