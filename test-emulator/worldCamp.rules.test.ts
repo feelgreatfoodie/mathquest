@@ -121,9 +121,19 @@ describe('camp docs: the list', () => {
     await assertFails(setDoc(camp(kidDb(), 'meadow'), docOf([flag(1, 1), flag(2, 2, 'castle')])));
     await assertFails(setDoc(camp(kidDb(), 'castle'), docOf([flag(1, 1, 'moon')])));
   });
-  it('a 5th entry is refused', async () => {
+  it('a 5-entry and a 7-entry list are each refused, since a land holds at most 4 (3 flags and a tent)', async () => {
     await assertSucceeds(setDoc(camp(kidDb()), docOf([...flags(3), tent(9, 9)])));
-    await assertFails(setDoc(camp(kidDb()), docOf([...flags(3), tent(9, 9), flag(7, 7)])));
+    const five = [...flags(3), tent(9, 9), flag(7, 7)];
+    const seven = [...flags(3), tent(9, 9), flag(7, 7), flag(8, 8), flag(9, 8)];
+    expect(five).toHaveLength(5);
+    expect(seven).toHaveLength(7);
+    for (const land of ['meadow', 'forest', 'castle']) {
+      await assertFails(setDoc(camp(kidDb(), land), docOf(five.map((e) => ({ ...e, region: land })))));
+      await assertFails(setDoc(camp(kidDb(), land), docOf(seven.map((e) => ({ ...e, region: land })))));
+    }
+    await assertFails(setDoc(camp(parentDb()), docOf(five)));
+    await assertFails(setDoc(camp(parentDb()), docOf(seven)));
+    await assertFails(setDoc(camp(kidDb()), docOf(Array.from({ length: 7 }, (_, i) => flag(i, 1)))));
   });
   it('an out-of-bounds x or y is refused', async () => {
     await assertSucceeds(setDoc(camp(kidDb()), docOf([flag(39, 29)])));
