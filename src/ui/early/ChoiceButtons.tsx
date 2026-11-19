@@ -7,6 +7,8 @@ interface Props {
   guide: boolean;
   picked: number | null;
   disabled: boolean;
+  /** Dot patterns under the numerals, so a kid can match a button by counting. Only a fact on dots shows them. */
+  dots: boolean;
   onChoose: (value: number) => void;
 }
 
@@ -25,8 +27,8 @@ function Dots({ n }: { n: number }) {
   );
 }
 
-/** Four big answer buttons, in a row on a tablet and 2 by 2 on a phone. Each shows the numeral and a dot pattern. */
-export function ChoiceButtons({ choices, answer, guide, picked, disabled, onChoose }: Props) {
+/** Four big answer buttons, in a row on a tablet and 2 by 2 on a phone. Each shows the numeral, and a dot pattern while the fact is on dots. */
+export function ChoiceButtons({ choices, answer, guide, picked, disabled, dots, onChoose }: Props) {
   return (
     <div className="choices" role="group" aria-label="Answers">
       {choices.map((v) => {
@@ -44,7 +46,7 @@ export function ChoiceButtons({ choices, answer, guide, picked, disabled, onChoo
               onClick={() => live && onChoose(v)}
             >
               <span className="choice-num">{v}</span>
-              <Dots n={v} />
+              {dots ? <Dots n={v} /> : null}
             </button>
           </div>
         );

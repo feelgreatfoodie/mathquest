@@ -440,7 +440,7 @@ function PrereaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, hand
       {usePad ? (
         <NumberPad max={CHOICE_MAX_PAD} value={typed} disabled={!!feedback} onKey={onKey} onClear={() => setTyped(null)} onOk={() => typed !== null && choose(typed)} />
       ) : (
-        <ChoiceButtons choices={choices!} answer={answer} guide={missed} picked={picked} disabled={solved} onChoose={choose} />
+        <ChoiceButtons choices={choices!} answer={answer} guide={missed} picked={picked} disabled={solved} dots={level === 'dots' || viewStep === 2 || missed} onChoose={choose} />
       )}
     </>
   );

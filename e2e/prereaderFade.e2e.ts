@@ -91,6 +91,7 @@ for (const vp of TABLETS) {
     await expect(page.locator('.early-question')).toHaveAttribute('data-mode', 'groups');
     await expect(page.getByTestId('help')).toHaveCount(0);
     await bigEnough(page, '.choice', 4, vp.w);
+    await expect(page.locator('.choice-dot').first()).toBeVisible();
     const nums = await page.locator('.choice').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
     expect(new Set(nums).size).toBe(4);
     // All four in one row on a tablet.
@@ -109,6 +110,8 @@ for (const vp of TABLETS) {
     await expect(page.locator('.og-item')).toHaveCount(0);
     await bigEnough(page, '[data-testid="help"]', 1, vp.w);
     await bigEnough(page, '.choice', 4, vp.w);
+    // No dots on the buttons either: the numerals are all there is to match.
+    await expect(page.locator('.choice-dot')).toHaveCount(0);
     await shot(page, `support-numerals-${vp.w}x${vp.h}`);
     // First help: the strategy (count on from the bigger number).
     await page.getByTestId('help').click();
@@ -118,6 +121,7 @@ for (const vp of TABLETS) {
     // Second help: the full dots.
     await page.getByTestId('help').click();
     await expect(page.locator('.og-item')).toHaveCount(7);
+    await expect(page.locator('.choice-dot').first()).toBeVisible();
     await expect(page.getByTestId('help')).toHaveCount(0);
     await shot(page, `support-numerals-help-dots-${vp.w}x${vp.h}`);
   });
