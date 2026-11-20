@@ -1662,6 +1662,11 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
   .early-home .early-home-row { display: grid; grid-template-columns: 1.4fr 1fr; grid-auto-rows: 1fr; }
   .early-home .early-home-row > * { flex: none; }
   .early-home .early-home-row > .play-btn { flex: none; }
+  /* Home and mute are 120 px and sit in their own strip above the banner, so the banner never covers them. */
+  .screen.center.early-home { padding-top: calc(max(10px, env(safe-area-inset-top)) + 128px); }
+  .early-home-top, .early-home-mute { top: max(10px, env(safe-area-inset-top)); z-index: 2; }
+  .early-home-top .hold-btn { width: 120px; height: 120px; }
+  .early-home-top .hold-btn svg { width: 72px; height: 72px; }
 }
 
 /* Reader Home: portrait lets the banner take what is left, landscape puts the banner and week on the left and the actions on the right. */
