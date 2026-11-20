@@ -490,6 +490,7 @@ export function App() {
           {...(screen.setPinFor
             ? { setPinFor: screen.setPinFor, onKidPinSet: (kidId: string) => { setPinError(null); setScreen({ name: 'kidpin', kidId }); } }
             : {})}
+          onPinReset={dataMode === 'firestore' ? (kidId) => { setPinError(null); setScreen({ name: 'kidpin', kidId }); } : undefined}
         />
       );
   }
