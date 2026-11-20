@@ -205,9 +205,15 @@ describe('picture PINs use the same limits and lockout as digits', () => {
     expect(locked).toBeGreaterThanOrEqual(12 - LIMITS.name.max);
   });
   it('a right picture refunds its own entry, like a right digit PIN', async () => {
-    for (let i = 0; i < LIMITS.name.max - 2; i++) await fail(signIn('Pip', 'iiii'));
-    expect(claimsOf(await signIn('Pip', PIC)).claims.kidId).toBe('kid-pip');
+    // 2 wrong then a right, 4 times, keeps the 5-in-a-row count low while the name counter reaches 8 wrong. The 9th wrong plus a right
+    // picture is the 10th try on that counter: it would lock the name unless the right picture refunded its own entry.
+    for (let round = 0; round < 4; round++) {
+      await fail(signIn('Pip', 'iiii'));
+      await fail(signIn('Pip', 'iiii'));
+      expect(claimsOf(await signIn('Pip', PIC)).claims.kidId).toBe('kid-pip');
+    }
     await fail(signIn('Pip', 'iiii'));
+    expect(claimsOf(await signIn('Pip', PIC)).claims.kidId).toBe('kid-pip');
     expect(claimsOf(await signIn('Pip', PIC)).claims.kidId).toBe('kid-pip');
   });
   it('the parent unlock clears a lock made by picture failures', async () => {

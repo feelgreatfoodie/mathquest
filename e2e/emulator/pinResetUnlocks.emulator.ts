@@ -18,8 +18,8 @@ const OLD_PIN = '4821';
 const NEW_PIN = '7305';
 const WRONG = '1111';
 const PICTURE = 'abcd';
-// Sign-in by display name (the legacy path) locks a name after 10 wrong tries in an hour (LIMITS.name in functions/src/core.ts).
-const NAME_LOCK_TRIES = 10;
+// Every name locks after 5 wrong tries in a row (LIMITS.username in functions/src/core.ts), a legacy display name included.
+const NAME_LOCK_TRIES = 5;
 
 const fv = (v: unknown): Record<string, unknown> => {
   if (typeof v === 'boolean') return { booleanValue: v };

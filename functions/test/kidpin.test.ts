@@ -293,17 +293,22 @@ describe('brute-force limits', () => {
   });
 
   it('does not reset the counters on a success', async () => {
-    for (let i = 0; i < LIMITS.name.max - 1; i++) await wrong('Pip', `4.4.4.${i}`);
-    expect(claimsOf(await signIn('Pip', PIN, '4.4.4.100')).claims.kidId).toBe('kid-pip');
-    expect((await wrong('Pip', '4.4.4.101')).code).toBe('permission-denied'); // the 10th failure
+    // A success clears the 5-in-a-row count, so 2 wrong then a success, 5 times, never locks that way. The name counter still
+    // holds all 10 wrong tries: the success refunded only its own entry, so the next try is refused.
+    for (let round = 0; round < 5; round++) {
+      await wrong('Pip', `4.4.4.${round * 2}`);
+      await wrong('Pip', `4.4.4.${round * 2 + 1}`);
+      if (round < 4) expect(claimsOf(await signIn('Pip', PIN, `4.4.4.${100 + round}`)).claims.kidId).toBe('kid-pip');
+    }
     expect((await fail(signIn('Pip', PIN, '4.4.4.102'))).code).toBe('resource-exhausted');
   });
 
   it('counts parallel guesses, so a burst cannot skip the limit', async () => {
+    // 5 wrong in a row lock a name, so exactly 5 of 12 parallel wrong tries are counted and answered, and the rest are refused.
     const results = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => signIn('Pip', '0000', `3.3.3.${i}`)));
     const codes = results.map((r) => (r.status === 'rejected' ? (r.reason as { code: string }).code : 'ok'));
-    expect(codes.filter((c) => c === 'permission-denied')).toHaveLength(LIMITS.name.max);
-    expect(codes.filter((c) => c === 'resource-exhausted')).toHaveLength(12 - LIMITS.name.max);
+    expect(codes.filter((c) => c === 'permission-denied')).toHaveLength(LIMITS.username.max);
+    expect(codes.filter((c) => c === 'resource-exhausted')).toHaveLength(12 - LIMITS.username.max);
   });
 });
 

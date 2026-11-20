@@ -320,6 +320,15 @@ const ipCounter = (d: Deps, ip: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts
 const nameCounter = (d: Deps, nameKey: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/name_${sha(nameKey).slice(0, 32)}`);
 const userCounter = (d: Deps, usernameLower: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/user_${sha(usernameLower).slice(0, 32)}`);
 const deviceCounter = (d: Deps, deviceId: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/dev_${sha(deviceId).slice(0, 32)}`);
+/** Deletes in batches of at most 450: a Firestore batch refuses more than 500 writes, and devices are uncapped. */
+async function deleteAll(d: Deps, refs: FirebaseFirestore.DocumentReference[]): Promise<void> {
+  for (let i = 0; i < refs.length; i += 450) {
+    const batch = d.db.batch();
+    refs.slice(i, i + 450).forEach((r) => batch.delete(r));
+    await batch.commit();
+  }
+}
+
 const usernameRef = (d: Deps, usernameLower: string) => d.db.doc(`usernames/${usernameLower}`);
 const deviceRef = (d: Deps, familyUid: string, deviceId: string) => d.db.doc(`families/${familyUid}/devices/${deviceId}`);
 
@@ -345,7 +354,9 @@ async function familyDeviceIds(d: Deps, familyUid: string, kidId?: string): Prom
 async function clearKidLocks(d: Deps, familyUid: string, nameKey: string, ip: string | undefined, kidId: string): Promise<void> {
   const refs = [familyCounter(d, familyUid), nameCounter(d, nameKey)];
   // The kid's username bucket and the buckets of the devices recorded for this kid.
+  // A legacy kid with no username counts its strikes under its display name, so that bucket goes too.
   const username = (await familyUsernames(d, familyUid)).get(kidId);
+  refs.push(userCounter(d, nameKey));
   if (username) refs.push(userCounter(d, username));
   for (const id of await familyDeviceIds(d, familyUid, kidId)) refs.push(deviceCounter(d, id));
   if (ip) {
@@ -353,9 +364,7 @@ async function clearKidLocks(d: Deps, familyUid: string, nameKey: string, ip: st
     const fams = readCounter((await ipRef.get()).data()).families ?? [];
     if (fams.every((f) => f === familyUid)) refs.push(ipRef);
   }
-  const batch = d.db.batch();
-  refs.forEach((r) => batch.delete(r));
-  await batch.commit();
+  await deleteAll(d, refs);
 }
 
 // ---------- index lookups ----------
@@ -534,20 +543,20 @@ export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: s
   }
   const fam = row ? { familyUid: row.familyUid } : {};
 
+  // Every path counts exactly one strike bucket (5 in a row), so six wrong tries get the same answers whether the name is a
+  // username, a legacy display name of a kid with or without a username, or unknown: nothing shows which names exist.
   const buckets: Bucket[] = [{ ref: ipCounter(d, ip), ...LIMITS.ip, ...fam }];
   if (deviceId) buckets.push({ ref: deviceCounter(d, deviceId), ...LIMITS.device, ...fam });
+  let strikeKey = nameKey;
   if (row && !legacy && usernameKey) {
-    buckets.push({ kind: 'strike', ref: userCounter(d, usernameKey), ...fam });
-  } else if (row) {
-    // The legacy name path. A kid who also has a username counts against that bucket too, so the display name is no way around its lock.
-    buckets.push({ ref: nameCounter(d, nameKey), ...LIMITS.name, ...fam });
-    const own = (await familyUsernames(d, row.familyUid)).get(row.kidId);
-    if (own) buckets.push({ kind: 'strike', ref: userCounter(d, own), ...fam });
+    strikeKey = usernameKey;
   } else {
-    // An unknown name is counted exactly like a known one, in both name spaces.
-    if (usernameKey) buckets.push({ kind: 'strike', ref: userCounter(d, usernameKey) });
-    buckets.push({ ref: nameCounter(d, nameKey), ...LIMITS.name });
+    // The legacy name path, or an unknown name: the 10 per hour name bucket counts both alike.
+    buckets.push({ ref: nameCounter(d, nameKey), ...LIMITS.name, ...fam });
+    // A kid who has a username strikes under it, so the display name is no way around its lock. Otherwise the typed name keys the bucket.
+    if (row) strikeKey = (await familyUsernames(d, row.familyUid)).get(row.kidId) ?? nameKey;
   }
+  buckets.push({ kind: 'strike', ref: userCounter(d, strikeKey), ...fam });
   if (row) buckets.push({ ref: familyCounter(d, row.familyUid), ...LIMITS.family });
 
   const entryId = randomBytes(8).toString('hex');
@@ -705,12 +714,16 @@ export async function kidLockStatus(d: Deps, auth: AuthContext | undefined): Pro
   const lockedPlayers: string[] = [];
   for (const n of names) {
     const byName = readCounter((await nameCounter(d, n.nameKey).get()).data());
-    const byUser = n.username ? readCounter((await userCounter(d, n.username).get()).data()) : null;
-    if (byName.lockedUntil > now || (byUser && byUser.lockedUntil > now)) lockedPlayers.push(n.nameKey);
+    const strikeKeys = n.username ? [n.username, n.nameKey] : [n.nameKey];
+    const byUser = await Promise.all(strikeKeys.map(async (k) => readCounter((await userCounter(d, k).get()).data())));
+    if (byName.lockedUntil > now || byUser.some((c) => c.lockedUntil > now)) lockedPlayers.push(n.nameKey);
   }
   const ipLocked = ipDocs.some((x) => readCounter(x.data()).lockedUntil > now);
   let deviceLocked = false;
-  for (const id of deviceIds) if (readCounter((await deviceCounter(d, id).get()).data()).lockedUntil > now) deviceLocked = true;
+  for (let i = 0; i < deviceIds.length && !deviceLocked; i += 300) {
+    const snaps = await d.db.getAll(...deviceIds.slice(i, i + 300).map((id) => deviceCounter(d, id)));
+    deviceLocked = snaps.some((x) => readCounter(x.data()).lockedUntil > now);
+  }
   const lockedUntil = Math.max(fam.lockedUntil, 0);
   return { locked: fam.lockedUntil > now || lockedPlayers.length > 0 || ipLocked || deviceLocked, failures, lockedUntil, lockedPlayers };
 }
@@ -721,12 +734,11 @@ export async function unlockKidSignIn(d: Deps, auth: AuthContext | undefined): P
   const refs = [
     familyCounter(d, parent.uid),
     ...names.map((n) => nameCounter(d, n.nameKey)),
+    ...names.map((n) => userCounter(d, n.nameKey)),
     ...names.flatMap((n) => (n.username ? [userCounter(d, n.username)] : [])),
     ...deviceIds.map((id) => deviceCounter(d, id)),
     ...ipDocs.map((x) => x.ref),
   ];
-  const batch = d.db.batch();
-  refs.forEach((r) => batch.delete(r));
-  await batch.commit();
+  await deleteAll(d, refs);
   return { ok: true };
 }

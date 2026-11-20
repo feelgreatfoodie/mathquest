@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, scryptSync } from 'node:crypto';
+import { createHash, createHmac, randomBytes, scryptSync } from 'node:crypto';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -308,6 +308,108 @@ describe('the 4 lock buckets', () => {
     for (let i = 0; i < 4; i++) await fail(signIn({ username: 'pip_runner', pin: '0000', ip: `10.7.1.${i}` }));
     expect(claimsOf(await signIn({ username: 'pip_runner', ip: '10.7.1.10' })).claims.kidId).toBe('kid-pip');
     expect((await counters('user_'))[0]!.data()).toMatchObject({ lockedUntil: 0, fails: 0, strikes: 0 });
+  });
+});
+
+describe('wrong tries never show whether a display name is real', () => {
+  /** The code of each of 6 wrong tries, one distinct IP per try. */
+  async function sequence(typed: { username?: string; name?: string }, tag: string) {
+    const out: string[] = [];
+    for (let i = 0; i < 6; i++) out.push((await fail(signIn({ ...typed, pin: '0000', ip: `10.20.${tag}.${i}` }))).code);
+    return out;
+  }
+
+  it('an unknown name, a legacy name with no username, a username and a legacy name of a kid with a username give the same 6 answers', async () => {
+    await player(FAM, PARENT, 'kid-emma', 'Emma S', PIN); // legacy, display name is not username shaped, no username
+    await player(FAM, PARENT, 'kid-nina', 'Nina', PIN, 'nina_n'); // has a username, so a legacy sign-in by display name strikes under it
+    const cases = {
+      unknownName: await sequence({ name: 'Zora' }, '1'),
+      legacyNoUsername: await sequence({ name: 'Maya' }, '2'),
+      username: await sequence({ username: 'pip_runner' }, '3'),
+      legacyOfKidWithUsername: await sequence({ name: 'Nina' }, '4'),
+      unknownNotUsernameShaped: await sequence({ name: 'Zed Qq' }, '5'),
+      legacyNotUsernameShaped: await sequence({ name: 'Emma S' }, '6'),
+      unknownUsername: await sequence({ username: 'nobody_here' }, '7'),
+    };
+    const want = ['permission-denied', 'permission-denied', 'permission-denied', 'permission-denied', 'permission-denied', 'resource-exhausted'];
+    for (const [k, seq] of Object.entries(cases)) expect(seq, k).toEqual(want);
+  });
+
+  it('a legacy name with no username locks on its 5th wrong try, and a grown-up Unlock, a PIN reset and the lock status cover that lock', async () => {
+    await sequence({ name: 'Maya' }, '8');
+    expect((await fail(signIn({ name: 'Maya', pin: PIN_B, ip: '10.20.9.1' }))).code).toBe('resource-exhausted');
+    expect((await kidLockStatus(deps(), PARENT)).lockedPlayers).toEqual(['maya']);
+    await unlockKidSignIn(deps(), PARENT);
+    expect(claimsOf(await signIn({ name: 'Maya', pin: PIN_B, ip: '10.20.9.2' })).claims.kidId).toBe('kid-maya');
+
+    await sequence({ name: 'Maya' }, '10');
+    await setKidPin(deps(), PARENT, { kidId: 'kid-maya', pin: PIN });
+    expect(claimsOf(await signIn({ name: 'Maya', pin: PIN, ip: '10.20.9.3' })).claims.kidId).toBe('kid-maya');
+  });
+});
+
+describe('Unlock and a PIN reset with hundreds of device docs', () => {
+  async function seedDevices(n: number) {
+    for (let from = 0; from < n; from += 400) {
+      const batch = db.batch();
+      for (let i = from; i < Math.min(n, from + 400); i++) {
+        const id = `bulkDevice-${String(i).padStart(6, '0')}-0123456789`;
+        batch.set(db.doc(`families/${FAM}/devices/${id}`), { firstSeen: 1, lastSeen: 1, kids: ['kid-pip'], label: 'iPad Safari' });
+        batch.set(db.doc(`pinIndex/_global/attempts/dev_${createHash('sha256').update(id).digest('hex').slice(0, 32)}`), { entries: [{ id: 'x', at: clock }], lockedUntil: 0, lockedBy: null, families: [FAM] });
+      }
+      await batch.commit();
+    }
+  }
+
+  /** Production refuses a batch of more than 500 writes; the emulator does not, so the test counts deletes per batch. */
+  function largestBatch() {
+    const proto = Object.getPrototypeOf(db);
+    const real = proto.batch;
+    const sizes: number[] = [];
+    const spy = vi.spyOn(proto, 'batch').mockImplementation(function (this: Firestore) {
+      const batch = real.call(this);
+      const idx = sizes.push(0) - 1;
+      const del = batch.delete.bind(batch);
+      batch.delete = (ref: never) => {
+        sizes[idx] = (sizes[idx] ?? 0) + 1;
+        return del(ref);
+      };
+      return batch;
+    });
+    return { sizes, restore: () => spy.mockRestore() };
+  }
+
+  it('unlockKidSignIn clears 600 device counters in batches of at most 500 writes', async () => {
+    await seedDevices(600);
+    expect((await counters('dev_')).length).toBe(600);
+    const spy = largestBatch();
+    try {
+      await unlockKidSignIn(deps(), PARENT);
+    } finally {
+      spy.restore();
+    }
+    expect(Math.max(...spy.sizes)).toBeLessThanOrEqual(500);
+    expect((await counters('dev_')).length).toBe(0);
+  });
+
+  it('setKidPin clears 600 device counters for that kid and still saves the new PIN', async () => {
+    await seedDevices(600);
+    const spy = largestBatch();
+    try {
+      await setKidPin(deps(), PARENT, { kidId: 'kid-pip', pin: PIN_B });
+    } finally {
+      spy.restore();
+    }
+    expect(Math.max(...spy.sizes)).toBeLessThanOrEqual(500);
+    expect((await counters('dev_')).length).toBe(0);
+    expect(claimsOf(await signIn({ username: 'pip_runner', pin: PIN_B })).claims.kidId).toBe('kid-pip');
+  });
+
+  it('kidLockStatus reads 600 devices and reports a locked one', async () => {
+    await seedDevices(600);
+    const id = 'bulkDevice-000417-0123456789';
+    await db.doc(`pinIndex/_global/attempts/dev_${createHash('sha256').update(id).digest('hex').slice(0, 32)}`).update({ lockedUntil: clock + MIN });
+    expect((await kidLockStatus(deps(), PARENT)).locked).toBe(true);
   });
 });
 
