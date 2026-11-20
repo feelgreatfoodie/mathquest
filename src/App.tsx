@@ -8,7 +8,7 @@ import { GameDeltaError, type GameDelta } from './engine/game';
 import { avatarOf, learnerOf, type Family, type Kid, type KidGame } from './engine/models';
 import type { RunSummary } from './engine/session';
 import type { RunInfo } from './ui/runShared';
-import { dataMode, getFirebase, kidClaims, registerParent, signInKid, signInParent, signOutParent } from './firebase';
+import { dataMode, getFirebase, kidClaims, kidOpenedByPad, registerParent, signInKid, signInParent, signOutParent } from './firebase';
 import { replayOutbox } from './data/outbox';
 import { settleUpdate } from './update';
 import { FailureToasts } from './ui/FailureToasts';
@@ -120,6 +120,12 @@ export function App() {
         void (async () => {
           const claims = await kidClaims();
           if (claims) {
+            // A kid session restored from storage (reload, cold start, PWA relaunch, update reload) never opened this page's PIN pad.
+            // Sign it out: the listener then fires with no user and shows the pad.
+            if (!kidOpenedByPad()) {
+              void signOutParent();
+              return;
+            }
             pauseFlow.current = 'off';
             const r = new FirestoreRepo(db, claims.familyUid);
             try {
