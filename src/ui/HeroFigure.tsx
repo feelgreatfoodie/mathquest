@@ -1,4 +1,5 @@
 import type { KidGame } from '../engine/models';
+import { glowOf } from '../game/shop/looks';
 import { equippedOf } from '../game/shop/shopState';
 import { Sprite } from './sprites';
 
@@ -25,9 +26,10 @@ function gearClass(id: string): string {
  */
 export function HeroFigure({ game, size, className, strike, cheer }: Props) {
   const worn = equippedOf(game);
+  const glow = glowOf(game);
   if (!worn.weapon && !worn.gear && !worn.pet) return <Sprite name={game.hero} size={size} className={className} />;
   return (
-    <span className={`hero-fig ${className ?? ''}`} style={{ width: size, height: size }} data-weapon={worn.weapon ?? ''} data-gear={worn.gear ?? ''} data-pet={worn.pet ?? ''}>
+    <span className={`hero-fig ${glow ? `hero-glow-${glow}` : ''} ${className ?? ''}`} style={{ width: size, height: size }} data-weapon={worn.weapon ?? ''} data-gear={worn.gear ?? ''} data-pet={worn.pet ?? ''} data-glow={glow ?? ''}>
       {worn.gear ? <Sprite name={worn.gear} size={size} className={`fig-part ${gearClass(worn.gear)}`} /> : null}
       <Sprite name={game.hero} size={size} className="fig-hero" />
       {worn.weapon ? <Sprite name={worn.weapon} size={size} className={`fig-part fig-weapon ${strike ? `strike strike-${worn.weapon}` : ''}`} /> : null}
