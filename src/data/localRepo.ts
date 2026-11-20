@@ -10,6 +10,12 @@ import { newId, type Repo } from './repo';
 
 const PREFIX = 'mathquest:v1';
 
+/** Offline mode only: the PIN of a device with no account is a lock on that device's own storage, so it is hashed here. */
+async function hashLocalPin(pin: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`mathquest:local:${pin}`));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 function read<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(`${PREFIX}:${key}`);
@@ -35,6 +41,15 @@ export class LocalRepo implements Repo {
 
   async saveFamily(family: Family): Promise<void> {
     write('family', { ...read<Family | null>('family', null), ...family });
+  }
+
+  async checkParentPin(pin: string): Promise<boolean> {
+    const f = read<Family | null>('family', null);
+    return !!f?.pinHash && (await hashLocalPin(pin)) === f.pinHash;
+  }
+
+  async setParentPin(pin: string): Promise<void> {
+    await this.saveFamily({ pinHash: await hashLocalPin(pin), createdAt: read<Family | null>('family', null)?.createdAt ?? Date.now() });
   }
 
   async markTourSeen(): Promise<void> {

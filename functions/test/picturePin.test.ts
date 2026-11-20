@@ -240,7 +240,7 @@ describe('nothing new is exposed without auth', () => {
   it('index.ts exports exactly the known callables, and only kidSignIn reads no auth', () => {
     const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
     const exported = [...src.matchAll(/export const (\w+) = onCall/g)].map((m) => m[1]).sort();
-    expect(exported).toEqual(['kidLockStatus', 'kidSignIn', 'registerParent', 'setKidPicturePin', 'setKidPin', 'unlockKidSignIn']);
+    expect(exported).toEqual(['checkParentPin', 'kidLockStatus', 'kidSignIn', 'registerParent', 'setKidPicturePin', 'setKidPin', 'setParentPin', 'unlockKidSignIn']);
     for (const line of src.split('\n').filter((l) => /^export const \w+ = onCall/.test(l))) {
       if (line.includes('kidSignIn')) continue;
       expect(line, line).toContain('authOf(req)');

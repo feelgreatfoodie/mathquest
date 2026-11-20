@@ -40,7 +40,7 @@ function deps(withPepper = false): Deps {
 function authOf(req: CallableRequest): AuthContext | undefined {
   if (!req.auth) return undefined;
   const t = req.auth.token;
-  return { uid: req.auth.uid, email: t.email, emailVerified: t.email_verified, provider: t.firebase?.sign_in_provider };
+  return { uid: req.auth.uid, email: t.email, emailVerified: t.email_verified, provider: t.firebase?.sign_in_provider, authTime: typeof t.auth_time === 'number' ? t.auth_time : undefined };
 }
 
 /**
@@ -70,5 +70,7 @@ export const kidSignIn = onCall(signInOpts, (req) =>
 export const registerParent = onCall(opts, (req) => (appVerdict('registerParent', req), core.registerParent(deps(), authOf(req))));
 export const setKidPin = onCall(pepperOpts, (req) => (appVerdict('setKidPin', req), core.setKidPin(deps(true), authOf(req), req.data ?? {}, ipOf(req))));
 export const setKidPicturePin = onCall(pepperOpts, (req) => (appVerdict('setKidPicturePin', req), core.setKidPicturePin(deps(true), authOf(req), req.data ?? {}, ipOf(req))));
+export const checkParentPin = onCall(pepperOpts, (req) => (appVerdict('checkParentPin', req), core.checkParentPin(deps(true), authOf(req), req.data ?? {})));
+export const setParentPin = onCall(pepperOpts, (req) => (appVerdict('setParentPin', req), core.setParentPin(deps(true), authOf(req), req.data ?? {})));
 export const kidLockStatus = onCall(opts, (req) => (appVerdict('kidLockStatus', req), core.kidLockStatus(deps(), authOf(req))));
 export const unlockKidSignIn = onCall(opts, (req) => (appVerdict('unlockKidSignIn', req), core.unlockKidSignIn(deps(), authOf(req))));

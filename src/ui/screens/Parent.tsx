@@ -14,7 +14,7 @@ import { AVATAR_COLORS, AVATAR_HEROES, avatarOf, bossTimerOf, bossTimerPreOn, le
 import { MODULES, type ModuleId } from '../../engine/modules';
 import { addId, subId } from '../../engine/modules/early';
 import { median } from '../../engine/scheduler';
-import { hashPin, type Repo } from '../../data/repo';
+import type { Repo } from '../../data/repo';
 import { outbox, type ParkedRun } from '../../data/outbox';
 import { dataMode, kidLockStatus, setKidPicturePin, setKidPin, unlockKidSignIn, type KidLockStatus } from '../../firebase';
 import { PICTURE_LENGTH, pictureCode } from '../../data/deviceKids';
@@ -33,7 +33,7 @@ import { Tour, TourOffer } from '../tour/Tour';
 export { makeKid };
 
 /** First run: set the parent PIN, then add the first kid. */
-export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone: (family: Family, kids: Kid[]) => void }) {
+export function Setup({ repo, onDone }: { repo: Repo; onDone: (family: Family, kids: Kid[]) => void }) {
   const [step, setStep] = useState<'pin' | 'confirm' | 'kid'>('pin');
   const [first, setFirst] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -52,9 +52,10 @@ export function Setup({ repo, salt, onDone }: { repo: Repo; salt: string; onDone
             setStep('pin');
             return;
           }
-          const f: Family = { pinHash: await hashPin(salt, p), createdAt: Date.now() };
+          let f: Family;
           try {
-            await repo.saveFamily(f);
+            await repo.setParentPin(p);
+            f = (await repo.getFamily()) ?? { pinHash: null, hasPin: true, createdAt: Date.now() };
           } catch (e) {
             reportFailure('The PIN was not saved.', e);
             setStep('pin');
@@ -145,7 +146,6 @@ function AddKidForm({ onAdd, existing = [], taken: takenAvatars = [] }: { onAdd:
 
 interface ParentProps {
   repo: Repo;
-  salt: string;
   kids: Kid[];
   onKids: (kids: Kid[]) => void;
   onFamily: (f: Family) => void;
@@ -188,7 +188,7 @@ export function ParkedRounds({ kids }: { kids: Kid[] }) {
   );
 }
 
-export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut, afterPause, setPinFor, onKidPinSet, onPinReset }: ParentProps) {
+export function ParentArea({ repo, kids, onKids, onFamily, onExit, onSignOut, afterPause, setPinFor, onKidPinSet, onPinReset }: ParentProps) {
   const [askSignOut, setAskSignOut] = useState(false);
   // The light theme is each parent's own choice, kept on this device. It recolors the Grown-ups area only.
   const parentKey = repo.parentKey ?? 'local';
@@ -230,9 +230,10 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
         title="New Grown-up PIN"
         onCancel={() => setChangingPin(false)}
         onComplete={async (p) => {
-          const f: Family = { pinHash: await hashPin(salt, p), createdAt: Date.now() };
+          let f: Family;
           try {
-            await repo.saveFamily(f);
+            await repo.setParentPin(p);
+            f = (await repo.getFamily()) ?? { pinHash: null, hasPin: true, createdAt: Date.now() };
           } catch (e) {
             reportFailure('The new PIN was not saved.', e);
             return;

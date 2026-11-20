@@ -106,6 +106,17 @@ export async function registerParent(): Promise<void> {
   await callable<Record<string, never>, { ok: true }>('registerParent')({});
 }
 
+/** The server checks the grown-up PIN (checkParentPin). Resolves false for a wrong PIN, rejects when locked or offline. */
+export async function checkParentPin(pin: string): Promise<boolean> {
+  const res = await callable<{ pin: string }, { ok: boolean }>('checkParentPin')({ pin });
+  return res.data.ok === true;
+}
+
+/** Sets or changes the grown-up PIN on the server (setParentPin). The browser never hashes it. */
+export async function setParentPin(pin: string): Promise<void> {
+  await callable<{ pin: string }, { ok: true }>('setParentPin')({ pin });
+}
+
 export async function setKidPin(kidId: string, pin: string): Promise<void> {
   await callable<{ kidId: string; pin: string }, { ok: true }>('setKidPin')({ kidId, pin });
 }

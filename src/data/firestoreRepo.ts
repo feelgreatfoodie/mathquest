@@ -25,6 +25,7 @@ import type { CampDoc } from '../game/overworld/camp';
 import { REGION_IDS, type RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
 import type { GameModeId } from '../game/modes/types';
+import { checkParentPin, setParentPin } from '../firebase';
 import { newId, type Repo } from './repo';
 
 const BATCH_MAX = 450;
@@ -77,12 +78,29 @@ export class FirestoreRepo implements Repo {
   }
 
   async getFamily(): Promise<Family | null> {
-    const snap = await getDoc(this.family());
-    return snap.exists() ? (snap.data() as Family) : null;
+    try {
+      const snap = await getDoc(this.family());
+      return snap.exists() ? (snap.data() as Family) : null;
+    } catch (e) {
+      // Rules refuse a family doc that still holds the old pinHash. That means a PIN exists and has not moved to the server yet:
+      // the first right PIN moves it, and the app reads the doc again then.
+      if ((e as { code?: string }).code === 'permission-denied') return { pinHash: null, hasPin: true, createdAt: 0 };
+      throw e;
+    }
   }
 
   async saveFamily(family: Family): Promise<void> {
-    await setDoc(this.family(), family, { merge: true });
+    // A browser cannot write pinHash or hasPin (rules refuse it). The PIN goes through setParentPin.
+    const { pinHash: _pinHash, hasPin: _hasPin, ...rest } = family;
+    await setDoc(this.family(), rest, { merge: true });
+  }
+
+  checkParentPin(pin: string): Promise<boolean> {
+    return checkParentPin(pin);
+  }
+
+  setParentPin(pin: string): Promise<void> {
+    return setParentPin(pin);
   }
 
   async markTourSeen(): Promise<void> {

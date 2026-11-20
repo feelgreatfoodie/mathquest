@@ -233,7 +233,10 @@ export function avatarOf(kid: Pick<Kid, 'id' | 'avatar' | 'game'>): KidAvatar {
 }
 
 export interface Family {
+  /** Offline mode only (LocalRepo). A signed-in family keeps its PIN on the server, and a leftover hash is moved there at the first right PIN. */
   pinHash: string | null;
+  /** The server wrote a grown-up PIN for this account. Set by setParentPin and the migration; a browser cannot write it. */
+  hasPin?: boolean;
   createdAt: number;
   /** The Grown-ups tour was offered on this account. Written alone by Repo.markTourSeen, kept when the PIN changes. */
   tourSeen?: boolean;

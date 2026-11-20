@@ -38,7 +38,7 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
-    await setDoc(doc(db, `families/${FAM}`), { pinHash: 'x', createdAt: 1 });
+    await setDoc(doc(db, `families/${FAM}`), { hasPin: true, createdAt: 1 });
     await setDoc(doc(db, `families/${FAM}/kids/${KID}`), kidDoc(KID));
     await setDoc(doc(db, `families/${FAM}/kids/${SIBLING}`), kidDoc(SIBLING));
     await setDoc(doc(db, `families/${FAM}/kids/${KID}/cards/mul:2x3`), { id: 'mul:2x3', attempts: 1 });
@@ -134,7 +134,7 @@ describe('parent token', () => {
   it('keeps full access to the family tree', async () => {
     const db = parentCtx().firestore();
     await assertSucceeds(getDoc(doc(db, `families/${FAM}`)));
-    await assertSucceeds(setDoc(doc(db, `families/${FAM}`), { pinHash: 'y', createdAt: 1 }));
+    await assertSucceeds(setDoc(doc(db, `families/${FAM}`), { hasPin: true, createdAt: 2 }));
     await assertSucceeds(getDocs(collection(db, `families/${FAM}/kids`)));
     await assertSucceeds(setDoc(doc(db, `families/${FAM}/kids/${KID}`), kidDoc(KID, { settings: { paceMultiplier: 1 } })));
     await assertSucceeds(setDoc(doc(db, `families/${FAM}/kids/newkid`), kidDoc('newkid')));

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { hashPin } from '../../src/data/repo';
+import { createHash } from 'node:crypto';
 
 /**
  * A kid with no PIN, picked in the Picker on a grown-up session, never reaches Home. The grown-up is sent to the Grown-up PIN,
@@ -58,7 +58,7 @@ async function parentUid(): Promise<string> {
 
 /** The family doc with a Grown-up PIN, one kid with a PIN and one without. Written as the emulator admin. */
 async function seedFamily(uid: string): Promise<void> {
-  await put(`families/${uid}`, { pinHash: await hashPin(uid, GROWN_PIN), createdAt: 1 });
+  await put(`families/${uid}`, { pinHash: createHash('sha256').update(`mathquest:${uid}:${GROWN_PIN}`).digest('hex'), createdAt: 1 });
   await put(`families/${uid}/kids/${NO_PIN_KID.id}`, { id: NO_PIN_KID.id, name: NO_PIN_KID.name, createdAt: 1, settings: SETTINGS, game: GAME });
   await put(`families/${uid}/kids/${PIN_KID.id}`, { id: PIN_KID.id, name: PIN_KID.name, createdAt: 2, hasPin: true, settings: SETTINGS, game: GAME });
 }
