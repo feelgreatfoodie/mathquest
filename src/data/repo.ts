@@ -14,6 +14,13 @@ export interface Repo {
   getFamily(): Promise<Family | null>;
   /** Merges the given fields into the family doc, so a field this code does not know (tourSeen) is kept. */
   saveFamily(family: Family): Promise<void>;
+  /**
+   * Checks the grown-up PIN. Signed in, the server does it (checkParentPin) and no hash is computed or compared in the browser:
+   * false for a wrong PIN, a thrown error for a lock or no connection. Offline mode checks its own on-device copy.
+   */
+  checkParentPin(pin: string): Promise<boolean>;
+  /** Sets or changes the grown-up PIN: setParentPin on the server when signed in, the on-device family doc offline. */
+  setParentPin(pin: string): Promise<void>;
   /** Writes the single field tourSeen: true on the parent's own family doc and nothing else. */
   markTourSeen(): Promise<void>;
   listKids(): Promise<Kid[]>;
@@ -106,10 +113,4 @@ export function newId(): string {
     for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
   }
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-export async function hashPin(salt: string, pin: string): Promise<string> {
-  const bytes = new TextEncoder().encode(`mathquest:${salt}:${pin}`);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }

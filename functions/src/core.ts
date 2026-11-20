@@ -20,6 +20,9 @@ import { reservedReason } from './reserved.js';
 //   pinIndex/_global/attempts/name_{hash}        legacy display-name counter (10 per hour), for the legacy path only
 //   usernames/{usernameLower}                    { familyUid, kidId, createdAt }: the one kid that owns a username
 //   families/{uid}/devices/{deviceId}            { firstSeen, lastSeen, kids[], label }: written on a good sign-in, parents read it
+//   parentPins/{uid}                             { salt, hash, v: 2, updatedAt, verifiedAt }: the grown-up PIN (peppered scrypt), server-only
+//   pinIndex/_global/attempts/par_{hash}         the same strike counter for one parent uid: 5 wrong lock 5 min, doubling to 60 min
+//   families/{uid}                               { hasPin, createdAt, tourSeen }; a pinHash here is the old browser SHA-256, migrated on the first right check
 //   parents/{uid}                                { email, createdAt }: a registered parent account
 //   meta/parentCount                             { count }: how many parents are registered
 //   nameKeys/{nameKey}                           { familyUid, kidId }: the one kid that owns a display name
@@ -28,6 +31,8 @@ import { reservedReason } from './reserved.js';
 
 export const MISMATCH_MESSAGE = "That username and passcode didn't match.";
 export const LOCKED_MESSAGE = 'Too many wrong tries. Ask a grown-up to open Grown-ups and tap Unlock.';
+export const LOCKED_PARENT_MESSAGE = 'Too many wrong tries. Wait a while, or sign in with Google again to try once more.';
+export const PARENT_STALE_MESSAGE = 'Type the Grown-up PIN first.';
 export const FULL_MESSAGE = 'Math Quest is full right now.';
 export const NAME_TAKEN_MESSAGE = 'That name is taken. Try adding a last initial, like EmmaS.';
 
@@ -84,6 +89,8 @@ export interface AuthContext {
   emailVerified?: boolean | undefined;
   /** The sign-in provider of the caller's token, for example 'google.com'. */
   provider?: string | undefined;
+  /** When the caller last signed in, in seconds (the token's auth_time). A Google sign-in after a parent PIN lock opens that lock. */
+  authTime?: number | undefined;
 }
 
 export interface Deps {
@@ -185,6 +192,9 @@ interface Counter {
   strikes: number;
   /** Username bucket: when the last lock was set. */
   strikeAt: number;
+  /** Parent bucket: strikes and strikeAt from before the lock that the latest try set, so a right try can take that lock back. */
+  prevStrikes?: number;
+  prevStrikeAt?: number;
 }
 
 const emptyCounter = (): Counter => ({ entries: [], lockedUntil: 0, lockedBy: null, fails: 0, strikes: 0, strikeAt: 0 });
@@ -199,6 +209,7 @@ function readCounter(raw: FirebaseFirestore.DocumentData | undefined): Counter {
     fails: typeof raw.fails === 'number' ? raw.fails : 0,
     strikes: typeof raw.strikes === 'number' ? raw.strikes : 0,
     strikeAt: typeof raw.strikeAt === 'number' ? raw.strikeAt : 0,
+    ...(typeof raw.prevStrikes === 'number' ? { prevStrikes: raw.prevStrikes, prevStrikeAt: typeof raw.prevStrikeAt === 'number' ? raw.prevStrikeAt : 0 } : {}),
   };
 }
 
@@ -215,6 +226,8 @@ interface StrikeBucket {
   kind: 'strike';
   ref: FirebaseFirestore.DocumentReference;
   familyUid?: string;
+  /** A success clears the wrong tries and the lock it set, but keeps the strikes (parent PIN). Kid buckets reset strikes on a success. */
+  keepStrikes?: boolean;
 }
 type Bucket = WindowBucket | StrikeBucket;
 
@@ -251,6 +264,11 @@ async function reserve(d: Deps, buckets: Bucket[], entryId: string): Promise<boo
       if (b.kind === 'strike') {
         c.fails += 1;
         if (c.fails >= LIMITS.username.max) {
+          // The 5th try sets the lock before it is compared. A parent bucket remembers what it held, so a right 5th try can undo it.
+          if (b.keepStrikes) {
+            c.prevStrikes = c.strikes;
+            c.prevStrikeAt = c.strikeAt;
+          }
           c.lockedUntil = now + lockMsFor(c.strikes);
           c.lockedBy = entryId;
           c.strikes += 1;
@@ -266,7 +284,17 @@ async function reserve(d: Deps, buckets: Bucket[], entryId: string): Promise<boo
       }
       const fams = new Set(c.families ?? []);
       if (b.familyUid) fams.add(b.familyUid);
-      tx.set(b.ref, { entries: c.entries, lockedUntil: c.lockedUntil, lockedBy: c.lockedBy, families: [...fams], fails: c.fails, strikes: c.strikes, strikeAt: c.strikeAt, updatedAt: now });
+      tx.set(b.ref, {
+        entries: c.entries,
+        lockedUntil: c.lockedUntil,
+        lockedBy: c.lockedBy,
+        families: [...fams],
+        fails: c.fails,
+        strikes: c.strikes,
+        strikeAt: c.strikeAt,
+        ...(c.prevStrikes !== undefined ? { prevStrikes: c.prevStrikes, prevStrikeAt: c.prevStrikeAt ?? 0 } : {}),
+        updatedAt: now,
+      });
     }
     return true;
   }, TX_OPTS);
@@ -295,7 +323,16 @@ async function refund(d: Deps, buckets: Bucket[], entryId: string, migrate?: Mig
       if (!raw) continue;
       const c = readCounter(raw);
       if (b.kind === 'strike') {
-        tx.set(b.ref, { ...raw, entries: [], lockedUntil: c.lockedBy === entryId ? 0 : c.lockedUntil, lockedBy: c.lockedBy === entryId ? null : c.lockedBy, fails: 0, strikes: 0, strikeAt: 0 });
+        tx.set(b.ref, {
+          ...raw,
+          entries: [],
+          lockedUntil: c.lockedBy === entryId ? 0 : c.lockedUntil,
+          lockedBy: c.lockedBy === entryId ? null : c.lockedBy,
+          fails: 0,
+          // A right try keeps the strikes, except the one its own 5th-try lock added before the compare: that goes back, with its time.
+          strikes: !b.keepStrikes ? 0 : c.lockedBy === entryId && c.prevStrikes !== undefined ? c.prevStrikes : c.strikes,
+          strikeAt: !b.keepStrikes ? 0 : c.lockedBy === entryId && c.prevStrikes !== undefined ? c.prevStrikeAt ?? 0 : c.strikeAt,
+        });
         continue;
       }
       c.entries = c.entries.filter((e) => e.id !== entryId);
@@ -603,6 +640,9 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
   if (typeof kidId !== 'string' || !ID_RE.test(kidId)) throw new HttpsError('invalid-argument', 'Bad player id.');
   if (typeof pin !== 'string' || !PIN_RE.test(pin)) throw new HttpsError('invalid-argument', 'The PIN must be 4 digits.');
 
+  // Before anything that looks at the parent PIN: a caller who has not typed it recently learns nothing about it.
+  await assertParentVerified(d, parent.uid);
+
   const kidRef = d.db.doc(`families/${parent.uid}/kids/${kidId}`);
   const kidSnap = await kidRef.get();
   if (!kidSnap.exists) throw new HttpsError('not-found', 'That player does not exist.');
@@ -610,11 +650,7 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
   const nameKey = normalizeName(name);
   if (!nameKey) throw new HttpsError('invalid-argument', 'The player needs a name first.');
 
-  const family = await d.db.doc(`families/${parent.uid}`).get();
-  const parentHash = family.data()?.pinHash;
-  if (typeof parentHash === 'string' && parentHash === parentPinHash(parent.uid, pin)) {
-    throw new HttpsError('invalid-argument', 'Pick a PIN that is different from the parent PIN.');
-  }
+  if (await isParentPin(d, parent.uid, pin)) throw new HttpsError('invalid-argument', 'Pick a PIN that is different from the parent PIN.');
 
   // Names are unique inside the family, across kid docs and across index rows.
   const kids = await d.db.collection(`families/${parent.uid}/kids`).get();
@@ -677,6 +713,7 @@ export async function setKidPicturePin(d: Deps, auth: AuthContext | undefined, d
   const { kidId, picture } = data;
   if (typeof kidId !== 'string' || !ID_RE.test(kidId)) throw new HttpsError('invalid-argument', 'Bad player id.');
   if (typeof picture !== 'string' || !PICTURE_RE.test(picture)) throw new HttpsError('invalid-argument', 'Pick 4 pictures.');
+  await assertParentVerified(d, parent.uid);
   const kidRef = d.db.doc(`families/${parent.uid}/kids/${kidId}`);
   if (!(await kidRef.get()).exists) throw new HttpsError('not-found', 'That player does not exist.');
   const rowRef = d.db.doc(`pinIndex/${parent.uid}/kids/${kidId}`);
@@ -744,5 +781,149 @@ export async function unlockKidSignIn(d: Deps, auth: AuthContext | undefined): P
     ...ipDocs.map((x) => x.ref),
   ];
   await deleteAll(d, refs);
+  return { ok: true };
+}
+
+// ---------- the grown-up PIN ----------
+
+const PARENT_VERIFY_WINDOW_MS = 30 * 60_000;
+/** A Google sign-in opens the 1st and 2nd lock only. */
+const PARENT_REOPEN_MAX_STRIKES = 3;
+const parentPinRef = (d: Deps, uid: string) => d.db.doc(`parentPins/${uid}`);
+const familyRef = (d: Deps, uid: string) => d.db.doc(`families/${uid}`);
+/** One strike bucket per parent uid, in its own key space (par_): no kid, family or portal Unlock reset derives this key. */
+const parentCounter = (d: Deps, uid: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/par_${sha(uid).slice(0, 32)}`);
+
+const sameBytes = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual(a, b);
+
+function parentPinOf(data: unknown): string {
+  const pin = (data as { pin?: unknown } | null | undefined)?.pin;
+  if (typeof pin !== 'string' || !PIN_RE.test(pin)) throw new HttpsError('invalid-argument', 'The PIN must be 4 digits.');
+  return pin;
+}
+
+/**
+ * A caller who holds a parent's Google session but has not typed the grown-up PIN in the last 30 minutes may not use any call that
+ * compares a PIN with it, or that sets a PIN. A parent with no PIN has nothing to guard. This runs before any such comparison, so no
+ * answer depends on the PIN and no try goes uncounted: the only counted way to test a guess is checkParentPin.
+ */
+async function assertParentVerified(d: Deps, uid: string): Promise<void> {
+  const [fam, row] = await Promise.all([familyRef(d, uid).get(), parentPinRef(d, uid).get()]);
+  if (!row.exists && typeof fam.data()?.pinHash !== 'string') return;
+  const at = row.data()?.verifiedAt;
+  const now = nowOf(d);
+  if (!(typeof at === 'number' && at <= now && now - at < PARENT_VERIFY_WINDOW_MS)) throw new HttpsError('failed-precondition', PARENT_STALE_MESSAGE);
+}
+
+/** The v2 row of a parent, when it is well formed. */
+function parentSecret(row: FirebaseFirestore.DocumentData | undefined): Secret | null {
+  if (!row || row.v !== 2 || typeof row.salt !== 'string' || typeof row.hash !== 'string') return null;
+  return { salt: Buffer.from(row.salt, 'hex'), hash: Buffer.from(row.hash, 'hex'), v: 2 };
+}
+
+/** True when `pin` is this parent's PIN, by the v2 row or by a legacy hash. Used to keep a kid PIN different from it. */
+async function isParentPin(d: Deps, uid: string, pin: string): Promise<boolean> {
+  const [fam, row] = await Promise.all([familyRef(d, uid).get(), parentPinRef(d, uid).get()]);
+  const legacy = fam.data()?.pinHash;
+  if (typeof legacy === 'string' && legacy === parentPinHash(uid, pin)) return true;
+  const secret = parentSecret(row.data());
+  return secret !== null && sameBytes(await hashV2(d, pin, secret.salt), secret.hash);
+}
+
+/**
+ * A Google sign-in after the lock opens it while the bucket has fewer than PARENT_REOPEN_MAX_STRIKES strikes: the token's
+ * auth_time is later than the moment the lock was set. It clears the lock and the wrong-try count and keeps the strikes. One sign-in
+ * opens one lock. From the 3rd lock on only the timed lock ends it, because on a family iPad a Google sign-in is one tap and would
+ * hand a kid 5 more guesses per tap.
+ */
+async function reopenAfterSignIn(d: Deps, ref: FirebaseFirestore.DocumentReference, authTimeSec: number | undefined): Promise<void> {
+  if (typeof authTimeSec !== 'number') return;
+  await d.db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const raw = snap.data();
+    if (!raw) return;
+    const c = readCounter(raw);
+    if (c.lockedUntil > nowOf(d) && c.strikes < PARENT_REOPEN_MAX_STRIKES && authTimeSec * 1000 > c.strikeAt) tx.set(ref, { ...raw, lockedUntil: 0, lockedBy: null, fails: 0 });
+  }, TX_OPTS);
+}
+
+/**
+ * Checks the grown-up PIN of the calling parent. Returns {ok} and never the reason. Every try counts in the one bucket of this
+ * uid before anything is read, whether the parent has a v2 row, only the old pinHash, or no PIN at all, and every counted try pays
+ * one scrypt, so neither the answers nor the lock timing show which of the three a uid is. A right PIN refunds its try.
+ * A right PIN on the old pinHash writes the v2 row and deletes pinHash in one transaction. A wrong one never gets that far.
+ */
+export async function checkParentPin(d: Deps, auth: AuthContext | undefined, data: { pin?: unknown }): Promise<{ ok: boolean }> {
+  const parent = await assertParent(d, auth);
+  const pin = parentPinOf(data);
+  const bucket: Bucket = { kind: 'strike', ref: parentCounter(d, parent.uid), keepStrikes: true };
+  await reopenAfterSignIn(d, bucket.ref, parent.authTime);
+  const entryId = randomBytes(8).toString('hex');
+  if (!(await reserve(d, [bucket], entryId))) throw new HttpsError('resource-exhausted', LOCKED_PARENT_MESSAGE);
+
+  const rowRef = parentPinRef(d, parent.uid);
+  const famRef = familyRef(d, parent.uid);
+  const [rowSnap, famSnap] = await Promise.all([rowRef.get(), famRef.get()]);
+  const secret = parentSecret(rowSnap.data());
+  const legacy = famSnap.data()?.pinHash;
+  const legacyHash = typeof legacy === 'string' && /^[0-9a-f]{64}$/.test(legacy) ? Buffer.from(legacy, 'hex') : null;
+
+  let ok: boolean;
+  if (secret) ok = sameBytes(await hashV2(d, pin, secret.salt), secret.hash);
+  else {
+    // The old hash and no hash at all both pay the one scrypt a v2 row costs.
+    await scryptAsync(pin, DUMMY_SALT);
+    ok = legacyHash !== null && sameBytes(Buffer.from(parentPinHash(parent.uid, pin), 'hex'), legacyHash);
+  }
+  if (!ok) return { ok: false };
+
+  await refund(d, [bucket], entryId);
+  const now = nowOf(d);
+  if (secret) {
+    await rowRef.update({ verifiedAt: now });
+    // An old pinHash that lingers next to a v2 row is dead weight, and it would keep the family doc unreadable.
+    if (famSnap.data()?.pinHash !== undefined) await famRef.set({ pinHash: FieldValue.delete(), hasPin: true }, { merge: true });
+    return { ok: true };
+  }
+  const salt = randomBytes(16);
+  const hash = await hashV2(d, pin, salt);
+  const migrated = await d.db.runTransaction(async (tx) => {
+    const [r, f] = await Promise.all([tx.get(rowRef), tx.get(famRef)]);
+    // Only while nothing changed since the check: a v2 row written meanwhile wins, and the old hash is the one that verified.
+    if (r.exists || f.data()?.pinHash !== legacy) return false;
+    tx.set(rowRef, { salt: salt.toString('hex'), hash: hash.toString('hex'), v: 2, updatedAt: now, verifiedAt: now });
+    tx.set(famRef, { pinHash: FieldValue.delete(), hasPin: true }, { merge: true });
+    return true;
+  }, TX_OPTS);
+  if (migrated) return { ok: true };
+  // Lost a race: another call wrote the v2 row first. Check this PIN against it, so a right PIN never shows as wrong.
+  const winner = parentSecret((await rowRef.get()).data());
+  return { ok: winner !== null && sameBytes(await hashV2(d, pin, winner.salt), winner.hash) };
+}
+
+/**
+ * Sets or changes the grown-up PIN of the calling parent. The first PIN needs nothing more. A parent who already has one
+ * (a v2 row or the old pinHash) must have checked it with checkParentPin in the last 30 minutes, so someone at a signed-in device
+ * who has not typed the PIN cannot replace it. It never opens a lock: a locked parent is refused, and the lock bucket is not touched.
+ */
+export async function setParentPin(d: Deps, auth: AuthContext | undefined, data: { pin?: unknown }): Promise<{ ok: true }> {
+  const parent = await assertParent(d, auth);
+  const pin = parentPinOf(data);
+  const salt = randomBytes(16);
+  const hash = await hashV2(d, pin, salt);
+  const rowRef = parentPinRef(d, parent.uid);
+  const famRef = familyRef(d, parent.uid);
+  await d.db.runTransaction(async (tx) => {
+    const [r, f, c] = await Promise.all([tx.get(rowRef), tx.get(famRef), tx.get(parentCounter(d, parent.uid))]);
+    const now = nowOf(d);
+    if (readCounter(c.data()).lockedUntil > now) throw new HttpsError('resource-exhausted', LOCKED_PARENT_MESSAGE);
+    const had = r.exists || typeof f.data()?.pinHash === 'string';
+    const verifiedAt = r.data()?.verifiedAt;
+    if (had && !(typeof verifiedAt === 'number' && verifiedAt <= now && now - verifiedAt < PARENT_VERIFY_WINDOW_MS)) {
+      throw new HttpsError('failed-precondition', PARENT_STALE_MESSAGE);
+    }
+    tx.set(rowRef, { salt: salt.toString('hex'), hash: hash.toString('hex'), v: 2, updatedAt: now, verifiedAt: had ? now : 0 });
+    tx.set(famRef, { pinHash: FieldValue.delete(), hasPin: true, ...(f.exists && typeof f.data()?.createdAt === 'number' ? {} : { createdAt: now }) }, { merge: true });
+  }, TX_OPTS);
   return { ok: true };
 }

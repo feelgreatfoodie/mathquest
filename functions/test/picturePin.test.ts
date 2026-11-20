@@ -25,11 +25,14 @@ const PIC = 'adgb';
 const PIC_B = 'hhei';
 
 let db: Firestore;
+/** Stamps the Grown-up PIN as typed just now, the way a right checkParentPin does. */
+const verifyParent = () => db.doc(`parentPins/${FAM}`).set({ verifiedAt: clock });
+
 let clock = 1_700_000_000_000;
 const deps = (): Deps => ({ db, pepper: TEST_PEPPER, now: () => clock, auth: { createCustomToken: async (uid, claims) => JSON.stringify({ uid, claims }) } });
 const seedKid = (fam: string, id: string, name: string) => db.doc(`families/${fam}/kids/${id}`).set({ id, name, createdAt: 1, settings: {}, game: {} });
 async function clearAll() {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'parentPins', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 }
 const signIn = (name: string, pin: string, ip = '10.0.0.1') => kidSignIn(deps(), { name, pin, ip });
 const claimsOf = (r: { token: string }) => JSON.parse(r.token) as { uid: string; claims: Record<string, string> };
@@ -53,6 +56,8 @@ beforeEach(async () => {
   await db.doc(`parents/${FAM2}`).set({ email: 'parent-two@example.com', createdAt: 1 });
   await db.doc('meta/parentCount').set({ count: 2 });
   await db.doc(`families/${FAM}`).set({ pinHash: parentPinHash(FAM, PARENT_PIN), createdAt: 1 });
+  // The parent typed the Grown-up PIN a moment ago (setKidPin and setKidPicturePin need that). Tests that move the clock call verifyParent().
+  await verifyParent();
   await seedKid(FAM, 'kid-pip', 'Pip');
   await seedKid(FAM, 'kid-maya', 'Maya');
   await seedKid(FAM, 'kid-zed', 'Zed');
@@ -240,7 +245,7 @@ describe('nothing new is exposed without auth', () => {
   it('index.ts exports exactly the known callables, and only kidSignIn reads no auth', () => {
     const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
     const exported = [...src.matchAll(/export const (\w+) = onCall/g)].map((m) => m[1]).sort();
-    expect(exported).toEqual(['kidLockStatus', 'kidSignIn', 'registerParent', 'setKidPicturePin', 'setKidPin', 'unlockKidSignIn']);
+    expect(exported).toEqual(['checkParentPin', 'kidLockStatus', 'kidSignIn', 'registerParent', 'setKidPicturePin', 'setKidPin', 'setParentPin', 'unlockKidSignIn']);
     for (const line of src.split('\n').filter((l) => /^export const \w+ = onCall/.test(l))) {
       if (line.includes('kidSignIn')) continue;
       expect(line, line).toContain('authOf(req)');

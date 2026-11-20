@@ -2,7 +2,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FirestoreRepo } from './data/firestoreRepo';
 import { LocalRepo } from './data/localRepo';
-import { hashPin, type Repo } from './data/repo';
+import type { Repo } from './data/repo';
 import { VersionGuard, guardFor } from './data/versionGate';
 import { GameDeltaError, type GameDelta } from './engine/game';
 import { avatarOf, learnerOf, type Family, type Kid, type KidGame } from './engine/models';
@@ -64,8 +64,7 @@ export function App() {
   const [stale, setStale] = useState(false);
   const [screen, setScreen] = useState<Screen>({ name: 'boot' });
   const [repo, setRepo] = useState<Repo | null>(null);
-  const [salt, setSalt] = useState('local');
-  const [family, setFamily] = useState<Family | null>(null);
+  const [, setFamily] = useState<Family | null>(null);
   const [kids, setKids] = useState<Kid[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
@@ -81,7 +80,7 @@ export function App() {
       const [f, ks] = await Promise.all([r.getFamily(), r.listKids()]);
       setFamily(f);
       setKids(ks);
-      if (!f?.pinHash) setScreen({ name: 'setup' });
+      if (!f?.pinHash && !f?.hasPin) setScreen({ name: 'setup' });
       else if (!ks.length) setScreen({ name: 'pin' });
       else setScreen(pauseFlow.current === 'active' ? { name: 'pin' } : { name: 'picker' });
     } catch (e) {
@@ -154,7 +153,6 @@ export function App() {
           }
           const r = new FirestoreRepo(db, user.uid);
           setRepo(r);
-          setSalt(user.uid);
           void load(r);
         })();
       });
@@ -373,7 +371,6 @@ export function App() {
       return (
         <Setup
           repo={repo}
-          salt={salt}
           onDone={(f, ks) => {
             setFamily(f);
             setKids(ks);
@@ -464,8 +461,19 @@ export function App() {
           error={pinError}
           onCancel={screen.setPinFor ? () => { setPinError(null); setScreen({ name: 'picker' }); } : pauseFlow.current === 'active' ? () => { setPinError(null); void signOutParent(); } : kids.length ? () => { setPinError(null); setScreen({ name: 'picker' }); } : undefined}
           onComplete={async (p) => {
-            if ((await hashPin(salt, p)) === family?.pinHash) {
+            let ok = false;
+            try {
+              ok = await repo.checkParentPin(p);
+            } catch (e) {
+              // A lock or no connection: the server's words for a lock, a plain line otherwise. Nothing was checked.
+              const code = (e as { code?: string }).code;
+              setPinError(code === 'functions/resource-exhausted' ? (e as Error).message : 'Could not check the PIN. Try again.');
+              return false;
+            }
+            if (ok) {
               setPinError(null);
+              // The first right PIN moves an old hash to the server and removes it, so read the family again.
+              if (repo.mode === 'firestore') void repo.getFamily().then(setFamily).catch(() => undefined);
               // Parent copies of kids can be old by now. Reload them so the area shows stored totals.
               void repo.listKids().then(setKids).catch((e) => reportFailure('Could not load the latest player data.', e));
               setScreen({ name: 'parent', ...(screen.setPinFor ? { setPinFor: screen.setPinFor } : {}) });
@@ -480,7 +488,6 @@ export function App() {
       return (
         <ParentArea
           repo={repo}
-          salt={salt}
           kids={kids}
           onKids={setKids}
           onFamily={setFamily}

@@ -14,6 +14,9 @@ type Endpoint = { minInstances?: number | null; maxInstances?: number | null; se
 type Fn = { __endpoint: Endpoint; run: (req: unknown) => Promise<unknown> };
 let fns: Record<string, Fn>;
 let db: Firestore;
+/** Stamps the Grown-up PIN as typed just now, the way a right checkParentPin does. */
+const verifyParent = () => db.doc(`parentPins/${FAM}`).set({ verifiedAt: Date.now() });
+
 
 const FAM = 'fam-wire-1';
 const PARENT: AuthContext = { uid: FAM, email: 'parent-wire@example.com', emailVerified: true, provider: 'google.com' };
@@ -26,13 +29,15 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Leave no usernames or counters behind: the other test files share this emulator.
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'parentPins', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 });
 
 beforeEach(async () => {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'parentPins', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
   await db.doc(`parents/${FAM}`).set({ email: 'parent-wire@example.com', createdAt: 1 });
   await db.doc(`families/${FAM}`).set({ pinHash: parentPinHash(FAM, '4821'), createdAt: 1 });
+  // The parent typed the Grown-up PIN a moment ago (setKidPin and setKidPicturePin need that). Tests that move the clock call verifyParent().
+  await verifyParent();
   await db.doc(`families/${FAM}/kids/kid-wire`).set({ id: 'kid-wire', name: 'Wire', createdAt: 1 });
   const d: Deps = { db, pepper: TEST_PEPPER, auth: { createCustomToken: async () => 't' } };
   await setKidPin(d, PARENT, { kidId: 'kid-wire', pin: '7305' });

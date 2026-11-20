@@ -22,23 +22,24 @@ beforeEach(async () => {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
-    await setDoc(doc(db, `families/${FAM}`), { pinHash: 'abc', createdAt: 1 });
+    await setDoc(doc(db, `families/${FAM}`), { hasPin: true, createdAt: 1 });
     await setDoc(doc(db, `parents/${FAM}`), { email: 'parent@example.com', createdAt: 1 });
   });
 });
 
 describe('tourSeen on the family doc', () => {
-  it('the parent writes the one field and the PIN hash stays', async () => {
+  it('the parent writes the one field and hasPin stays', async () => {
     const repo = new FirestoreRepo(parentDb(), FAM);
     expect((await repo.getFamily())?.tourSeen).toBeUndefined();
     await repo.markTourSeen();
-    expect(await repo.getFamily()).toEqual({ pinHash: 'abc', createdAt: 1, tourSeen: true });
+    expect(await repo.getFamily()).toEqual({ hasPin: true, createdAt: 1, tourSeen: true });
   });
   it('changing the PIN keeps tourSeen', async () => {
     const repo = new FirestoreRepo(parentDb(), FAM);
     await repo.markTourSeen();
+    // A browser never writes a PIN hash: saveFamily drops pinHash, and the doc keeps hasPin and tourSeen.
     await repo.saveFamily({ pinHash: 'new', createdAt: 2 });
-    expect(await repo.getFamily()).toEqual({ pinHash: 'new', createdAt: 2, tourSeen: true });
+    expect(await repo.getFamily()).toEqual({ hasPin: true, createdAt: 2, tourSeen: true });
   });
   it('a kid token cannot write it', async () => {
     await assertFails(new FirestoreRepo(kidDb(), FAM).markTourSeen());
@@ -49,6 +50,6 @@ describe('tourSeen on the family doc', () => {
   it('the stored doc is unchanged after the refused writes', async () => {
     await assertFails(new FirestoreRepo(kidDb(), FAM).markTourSeen());
     const snap = await getDoc(doc(parentDb(), `families/${FAM}`));
-    expect(snap.data()).toEqual({ pinHash: 'abc', createdAt: 1 });
+    expect(snap.data()).toEqual({ hasPin: true, createdAt: 1 });
   });
 });
