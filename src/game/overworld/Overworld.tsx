@@ -29,6 +29,7 @@ import {
 } from './lair';
 import { BossBar, DoorLabel, LairHud } from './LairHud';
 import { walkSpeed } from './speed';
+import { BEETLE_GEMS, DOG_CHEST_GEMS, DOG_SNIFF_RANGE, activePet, beetleId, beetleTile, claimPetGrant, lairRingFill, pupCheer, snapPetTap } from './pets';
 import { doorLabel, lairRetryEntity, miniMap, openedLairSpots } from './lairView';
 import { LAIRS, MAPS, findTiles, heroStart, isWalkable, tileAt, type LairDef, type Point, type RegionId, type TileMap, type WalkCtx } from './maps';
 import { approach } from './pathfind';
@@ -203,6 +204,25 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   );
   const gearRef = useRef(gear);
   gearRef.current = gear;
+  // Pets work only while owned and equipped. Their power never reaches the session: see pets.ts.
+  const pet = activePet(kid.game.equipped?.pet, items);
+  const petRef = useRef(pet);
+  petRef.current = pet;
+  /** Spot ids of the Dog's chest the hero has come near on this open: it stays shown after the bark. */
+  const dogSeen = useRef(new Set<string>());
+  /** The Pup's animation: what it plays and until when (ms on the performance clock). */
+  const pupFx = useRef<{ kind: 'fire' | 'cheer'; until: number } | null>(null);
+  const beetleCache = useRef<{ k: string; at: Point | null }>({ k: '', at: null });
+  /** Where the Beetle's dig shows in this land: none after the trip's dig is paid, none in a lair, none without the Beetle. */
+  const beetleAt = useCallback((): Point | null => {
+    const trip = tripRef.current;
+    const w = worldRef.current;
+    if (petRef.current !== 'beetle' || !trip || !w || lairRef.current) return null;
+    if (trip.pets?.claimed.includes(beetleId(trip.tripId))) return null;
+    const k = `${trip.tripId}|${w.region}`;
+    if (beetleCache.current.k !== k) beetleCache.current = { k, at: beetleTile(trip.tripId, w.region) };
+    return beetleCache.current.at;
+  }, []);
 
   const liveCards = useCallback((): CardMap => {
     const r = runnerRef.current;
@@ -262,7 +282,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     const w = worldRef.current;
     const trip = tripRef.current;
     const r = runnerRef.current;
-    return w && trip && r ? spotsFor(r, trip.tripId, w.region, learner, bossIds.current, { key: gearRef.current.key, bridge: gearRef.current.bridge }, openedSpots(trip)) : [];
+    return w && trip && r ? spotsFor(r, trip.tripId, w.region, learner, bossIds.current, { key: gearRef.current.key, bridge: gearRef.current.bridge }, openedSpots(trip), petRef.current === 'dog') : [];
   }, [learner]);
 
   /** The opened chests of this trip in this land, for the drawing. */
@@ -303,6 +323,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       tripId: trip.tripId,
       opened: openedSpots(trip),
       gear: { key: gearRef.current.key, bridge: gearRef.current.bridge },
+      dog: petRef.current === 'dog',
       region: w.region,
       hero: { x: hero.current.x, y: hero.current.y },
       bossIds: bossIds.current,
@@ -310,6 +331,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       ctx: walkCtx(),
       now: Date.now(),
     });
+    for (const e of entities) if (e.dog && e.spotId && dogSeen.current.has(e.spotId)) e.shown = true;
     entsRef.current = entities;
     for (const q of runnerRef.current!.queue) known.current.add(q.id);
     refreshChestHud();
@@ -831,6 +853,18 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     else refreshLair();
     const here = entsRef.current.find((e) => e.shown && e.x === h.x && e.y === h.y);
     if (here) return openEntity(here);
+    const dig = beetleAt();
+    const trip = tripRef.current;
+    if (dig && trip && dig.x === h.x && dig.y === h.y) {
+      // The dig pays once per trip: the grant id is written to the trip first, so a second arrival or a re-render pays nothing.
+      const c = claimPetGrant(kidRef.current.id, trip, beetleId(trip.tripId), BEETLE_GEMS);
+      if (c.paid) {
+        chestSound();
+        void grant(c.gems);
+        say({ text: 'Your Beetle dug up a gem!' });
+        voice('Your beetle found a gem!');
+      }
+    }
     const tile = tileAt(map, h.x, h.y);
     if (lair) {
       if (tile === 'exit') return leaveLair();
@@ -857,7 +891,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         if (want === 'gate' && t === 'gate') return gateMessage();
       }
     }
-  }, [touchWorld, openEntity, changeRegion, finishTrip, say, startBoss, gateMessage, curMap, leaveLair, refreshLair]);
+  }, [touchWorld, openEntity, changeRegion, finishTrip, say, startBoss, gateMessage, curMap, leaveLair, refreshLair, beetleAt, grant]);
 
   const resolveEntity = useCallback(
     (entity: Entity, fb: Feedback) => {
@@ -868,7 +902,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         chestSound();
         // Each chest pays once on a trip: the spot is written to the trip first, so a second open of the same spot pays nothing.
         const trip = tripRef.current;
-        const claim = entity.spotId && trip ? claimChest(kidRef.current.id, trip, entity.spotId, fb.verdict === 'correct') : null;
+        const claim = entity.spotId && trip ? claimChest(kidRef.current.id, trip, entity.spotId, fb.verdict === 'correct', entity.dog ? DOG_CHEST_GEMS : undefined) : null;
         if (claim?.opened) {
           touchWorld({ t: 'chest' });
           if (entity.key && worldRef.current!.keys === 0) {
@@ -876,6 +910,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
             setKeys(worldRef.current!.keys);
           }
           if (claim.gems > 0) void grant(claim.gems);
+          if (entity.dog) say({ text: 'Your Dog found a bonus chest!' });
           refreshChestHud();
         }
       } else if (fb.verdict === 'correct') {
@@ -912,6 +947,12 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       if (!m?.boss || !run || !l || run.result !== 'pending') return;
       run.answered++;
       if (fb.verdict === 'correct') run.correct++;
+      if (fb.verdict === 'correct' && petRef.current === 'pup') {
+        // Animation and voice only: nothing here reads or changes the outcome, the clock or the grade.
+        const cheer = pupCheer(fb.combo);
+        pupFx.current = { kind: cheer ? 'cheer' : 'fire', until: performance.now() + (cheer ? 1600 : 900) };
+        if (cheer) voice(cheer === 5 ? 'Five in a row!' : cheer === 10 ? 'Ten in a row!' : 'Twenty in a row!');
+      }
       const slot = l.build.slotOf[m.entry.id];
       if (slot) markDone(slot);
       const clock = fightRef.current?.clock ?? null;
@@ -1046,6 +1087,15 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
           else h.frame = 0;
         }
       }
+      if (petRef.current === 'dog' && !lairRef.current) {
+        for (const e of entsRef.current) {
+          if (!e.dog || e.shown || Math.abs(e.x - h.x) + Math.abs(e.y - h.y) > DOG_SNIFF_RANGE) continue;
+          e.shown = true;
+          if (e.spotId) dogSeen.current.add(e.spotId);
+          voice('Woof woof!');
+          say({ text: 'Woof! Your Dog found a chest!' });
+        }
+      }
       draw(time);
       raf = requestAnimationFrame(loop);
     };
@@ -1083,6 +1133,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         ...(!lair && w.bossesDefeated.includes(w.region) ? { trophy: true } : {}),
         ...(!lair ? { camp: campRef.current.placed.filter((c) => c.region === w.region) } : {}),
         lantern: gearRef.current.lantern,
+        ...(!lair && beetleAt() ? { mound: beetleAt()! } : {}),
+        ...(!lair && petRef.current === 'owl' ? { ring: lairRingFill(w.region, cardsRef.current, kidRef.current.settings) } : {}),
+        ...(petRef.current === 'pup' && pupFx.current && pupFx.current.until > performance.now() ? { pupFx: pupFx.current.kind } : {}),
         time,
         marker: markerRef.current,
         still: reducedMotion,
@@ -1100,7 +1153,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, beginStep, onArrive, curMap]);
+  }, [loaded, beginStep, onArrive, curMap, say, beetleAt]);
 
   const viewScale = useRef(4);
   const hudLit = useRef(false);
@@ -1156,7 +1209,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         region: worldRef.current!.region,
         hero: { x: hero.current.x, y: hero.current.y },
         moving: !!hero.current.moving || pathRef.current.length > 0,
-        entities: entsRef.current.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, shown: e.shown, cardId: e.cardId, ...(e.spotId ? { spotId: e.spotId } : {}), ...(e.key ? { key: true } : {}), ...(e.room !== undefined ? { room: e.room } : {}), ...(e.guard ? { guard: true } : {}), ...(e.trap ? { trap: true } : {}) })),
+        entities: entsRef.current.map((e) => ({ id: e.id, kind: e.kind, x: e.x, y: e.y, shown: e.shown, cardId: e.cardId, ...(e.spotId ? { spotId: e.spotId } : {}), ...(e.key ? { key: true } : {}), ...(e.dog ? { dog: true } : {}), ...(e.room !== undefined ? { room: e.room } : {}), ...(e.guard ? { guard: true } : {}), ...(e.trap ? { trap: true } : {}) })),
         lair: lairState(),
         stats: stats,
         world: worldRef.current,
@@ -1165,6 +1218,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         spots: spotsHere().map((s) => ({ id: s.id, x: s.x, y: s.y, key: s.key, ...(s.power ? { power: s.power } : {}) })),
         lifetime: lifetimeChests(worldRef.current!.openedChests),
         paused: pausedRef.current,
+        pet: petRef.current,
+        mound: beetleAt(),
+        pupFx: pupFx.current && pupFx.current.until > performance.now() ? pupFx.current.kind : null,
       }),
       answerOf: (id: string) => {
         const a = runnerRef.current!.queue.find((q) => q.id === id)?.problem.answer;
@@ -1184,6 +1240,10 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         const run = bossRun.current;
         const a = run?.entries[run.idx]?.problem.answer;
         return a && a.kind === 'int' ? a.value : null;
+      },
+      /** Dev only: plays the Pup's animation for a screenshot. */
+      playPupFx: (kind: 'fire' | 'cheer') => {
+        pupFx.current = { kind, until: performance.now() + 60_000 };
       },
       teleport: (x: number, y: number) => {
         const h = hero.current;
@@ -1265,7 +1325,10 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       bump((n) => n + 1);
       return;
     }
-    tapTile(tile);
+    // A pet's spot (the Beetle's mound, the Dog's shown chest) is a 120 px target: a tap within 60 px of its center counts as a tap on it.
+    const spots: Point[] = [...(beetleAt() ? [beetleAt()!] : []), ...entsRef.current.filter((x) => x.dog && x.shown)];
+    const snap = snapPetTap({ x: e.clientX, y: e.clientY }, rect, canvas.width, { t, left, top }, spots);
+    tapTile(snap ? { x: snap.x, y: snap.y } : tile);
     bump((n) => n + 1);
   };
 

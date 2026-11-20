@@ -76,7 +76,9 @@ export function powerSpots(region: RegionId): Array<Point & { id: string; power:
 export interface TripSpot extends Point {
   id: string;
   /** Set on a spot that an owned item adds: it stands behind a key door or across the bridge kit's spans. */
-  power?: PowerKind;
+  power?: PowerKind | 'dog';
+  /** The Dog's bonus chest stands out of sight until the hero comes within a few tiles. */
+  hidden?: true;
   /** The land's key chest on this trip: it holds a key while the kid has none. It stands where the hero reaches without a key. */
   key: boolean;
 }

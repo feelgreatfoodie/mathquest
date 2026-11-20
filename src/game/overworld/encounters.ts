@@ -20,6 +20,8 @@ export interface Entity {
   spotId?: string;
   /** The land's key chest on this trip. */
   key?: boolean;
+  /** The Dog's bonus chest: it pays the bonus and stays unshown until the hero is near. */
+  dog?: true;
   /** Monsters past MAX_VISIBLE wait off the map. */
   shown: boolean;
   /** Lair only: the room it stands in (index into `LAIRS[region].rooms`). */
@@ -116,7 +118,7 @@ export function planEntities({
     if (spot && free(spot)) {
       taken.add(key(spot));
       const teachId = teachFor.get(e.cardId);
-      out.push({ id: e.id, kind: 'chest', x: spot.x, y: spot.y, look: lookFor(e.cardId), cardId: e.cardId, spotId: spot.id, ...(spot.key ? { key: true } : {}), ...(teachId ? { teachId } : {}), shown: true });
+      out.push({ id: e.id, kind: 'chest', x: spot.x, y: spot.y, look: lookFor(e.cardId), cardId: e.cardId, spotId: spot.id, ...(spot.key ? { key: true } : {}), ...(spot.power === 'dog' ? { dog: true } : {}), ...(teachId ? { teachId } : {}), shown: !spot.hidden });
       continue;
     }
     const candidates = spawns.filter(free);

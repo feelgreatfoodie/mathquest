@@ -319,6 +319,12 @@ export interface Scene {
   roomsCleared?: number;
   /** A beaten lair leaves a gold cup at the camp. Cosmetic only: it is not an item. */
   trophy?: boolean;
+  /** The Beetle's dig: a dirt mound with a glint on this tile. Decor until the hero stands on it. */
+  mound?: Point;
+  /** The Owl's ring around the lair door, 0 to 1: how far the land's facts are toward the lair rule. */
+  ring?: number;
+  /** The Dragon Pup's animation: a puff of fire after a right boss answer, or stars for a combo cheer. */
+  pupFx?: 'fire' | 'cheer';
   /** The tent and flags the kid placed in this land (see camp.ts). Decor only: the hero walks over them. */
   camp?: Placed[];
 }
@@ -379,6 +385,7 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
       else if (k === 'door' && s.hasKey) tile('path', x, y);
       else tile(k, x, y);
       if (k === 'boss' && !s.bossDefeated) sprite('boss', x, y, Math.sin(s.time * 2) * 0.6);
+      if (k === 'boss' && s.ring !== undefined) lairRing(g, x * t - left, y * t - top, t, s.ring);
       if (k === 'camp' && x === firstCamp(s.map)?.x && y === firstCamp(s.map)?.y) campfire(g, x * t - left, y * t - top, t, s.campLit, s.time);
       if (k === 'camp' && s.trophy && x === trophySpot(s.map)?.x && y === trophySpot(s.map)?.y) trophyCup(g, x * t - left, y * t - top, t);
       if (k === 'gate' && !s.gateOpen) lock(g, x * t - left, y * t - top, t);
@@ -406,6 +413,10 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
     if (c.x < x0 - 1 || c.x > x1 + 1 || c.y < y0 - 1 || c.y > y1 + 1) continue;
     items.push({ y: c.y, draw: () => chestAt(g, c.x * t - left, c.y * t - top, t, true, false, s.time) });
   }
+  if (s.mound && s.mound.x >= x0 - 1 && s.mound.x <= x1 + 1 && s.mound.y >= y0 - 1 && s.mound.y <= y1 + 1) {
+    const m = s.mound;
+    items.push({ y: m.y - 0.4, draw: () => digMound(g, m.x * t - left, m.y * t - top, t, s.time, !!s.still) });
+  }
   for (const c of s.camp ?? []) {
     if (c.x < x0 - 1 || c.x > x1 + 1 || c.y < y0 - 1 || c.y > y1 + 1) continue;
     // Drawn before the hero of the same row, so the hero walks in front of a tent or a flag.
@@ -417,6 +428,7 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
     y: h.y + 0.5,
     draw: () => {
       if (s.petSprite) sprite(s.petSprite, h.x + (h.facing === 'left' ? 0.55 : -0.5), h.y + 0.15, bob * 0.5, h.facing !== 'left', 0.7);
+      if (s.pupFx) pupEffect(g, (h.x + (h.facing === 'left' ? 0.55 : -0.5)) * t - left, (h.y + 0.15) * t - top, t, s.time, s.pupFx, h.facing === 'left');
       sprite(s.heroSprite, h.x, h.y, bob, h.facing === 'left');
       if (h.facing === 'up') {
         // From behind: the face is covered.
@@ -579,4 +591,49 @@ function flame(g: G, x: number, y: number, t: number, time: number) {
   g.fillRect(x + 4.5 * u, y + (1.5 + f * 0.5) * u, 3 * u, (3 - f * 0.5) * u);
   g.fillStyle = '#fde047';
   g.fillRect(x + 5.5 * u, y + (2.5 + f * 0.5) * u, 1 * u, 1.5 * u);
+}
+
+/** The Owl's ring: 12 pips around a lair door. Filled pips are gold, the rest dark. A full ring means the lair is ready. */
+function lairRing(g: G, x: number, y: number, t: number, fill: number) {
+  const u = t / TILE;
+  const pips: Array<[number, number]> = [[3, 0], [6, 0], [9, 0], [11, 3], [11, 6], [11, 9], [9, 11], [6, 11], [3, 11], [0, 9], [0, 6], [0, 3]];
+  const on = Math.round(fill * pips.length);
+  pips.forEach(([px_, py_], i) => {
+    g.fillStyle = i < on ? '#fbbf24' : 'rgba(17,24,39,0.7)';
+    g.fillRect(x + px_ * u, y + py_ * u, 1 * u, 1 * u);
+  });
+}
+
+/** A mound of turned earth with a small glint. Style 1: flat pixels, 3 colors. */
+function digMound(g: G, x: number, y: number, t: number, time: number, still: boolean) {
+  const u = t / TILE;
+  g.fillStyle = '#78350f';
+  g.fillRect(x + 3 * u, y + 7 * u, 6 * u, 3 * u);
+  g.fillStyle = '#92400e';
+  g.fillRect(x + 4 * u, y + 6 * u, 4 * u, 2 * u);
+  if (still || Math.sin(time * 4) > -0.3) {
+    g.fillStyle = '#fde047';
+    g.fillRect(x + 5 * u, y + 4 * u, 2 * u, 1 * u);
+    g.fillRect(x + 5.5 * u, y + 3 * u, 1 * u, 3 * u);
+  }
+}
+
+/** The Pup's show: a fire puff in front of it (3 pixel blocks) or three stars above it. */
+function pupEffect(g: G, x: number, y: number, t: number, time: number, kind: 'fire' | 'cheer', left: boolean) {
+  const u = t / TILE;
+  if (kind === 'fire') {
+    const f = Math.sin(time * 14) > 0 ? 1 : 0;
+    g.fillStyle = '#ef4444';
+    g.fillRect(x + (left ? -4 : 8) * u, y + (3 + f) * u, 3 * u, 3 * u);
+    g.fillStyle = '#f97316';
+    g.fillRect(x + (left ? -7 : 11) * u, y + (4 - f) * u, 3 * u, 2 * u);
+    g.fillStyle = '#fde047';
+    g.fillRect(x + (left ? -9 : 14) * u, y + 4.5 * u, 2 * u, 1 * u);
+    return;
+  }
+  g.fillStyle = '#fde047';
+  for (let i = 0; i < 3; i++) {
+    const rise = ((time * 6 + i * 2) % 6);
+    g.fillRect(x + (1 + i * 3) * u, y - (2 + rise) * u, 2 * u, 2 * u);
+  }
 }

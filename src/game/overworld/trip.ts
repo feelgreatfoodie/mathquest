@@ -42,6 +42,8 @@ export interface TripState {
   chests?: { opened: string[] };
   /** Lair boss fights logged on this trip: the next log doc is `${tripId}-lair${lairs + 1}`. Absent reads as 0. */
   lairs?: number;
+  /** Grant ids of the pets' gems paid on this trip (`beetle:<trip>`). Kept on this device with the trip. An older app ignores it. */
+  pets?: { claimed: string[] };
 }
 
 export const EMPTY_TOTALS: TripTotals = { answered: 0, graded: 0, correct: 0, fast: 0, newLearned: 0, xp: 0, bestCombo: 0, medianMs: 0, missed: [] };
@@ -53,7 +55,8 @@ export function loadTrip(kidId: string): TripState | null {
     const raw = JSON.parse(localStorage.getItem(key(kidId)) ?? 'null') as Partial<TripState> | null;
     if (!raw || typeof raw.tripId !== 'string' || typeof raw.startedAt !== 'number' || typeof raw.seq !== 'number' || !raw.totals) return null;
     const opened = Array.isArray(raw.chests?.opened) ? raw.chests!.opened.filter((s): s is string => typeof s === 'string' && s.length <= 40).slice(0, 60) : [];
-    return { ...(raw as TripState), chests: { opened }, finished: raw.finished === true, updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : raw.startedAt, totals: { ...EMPTY_TOTALS, ...raw.totals } };
+    const claimed = Array.isArray(raw.pets?.claimed) ? raw.pets!.claimed.filter((s): s is string => typeof s === 'string' && s.length <= 60).slice(0, 20) : [];
+    return { ...(raw as TripState), chests: { opened }, ...(claimed.length ? { pets: { claimed } } : {}), finished: raw.finished === true, updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : raw.startedAt, totals: { ...EMPTY_TOTALS, ...raw.totals } };
   } catch {
     return null;
   }
@@ -137,7 +140,7 @@ export function openChest(kidId: string, trip: TripState, spot: string): boolean
  * follow only for a right answer. The spot id is the grant's id: a second open of the same spot, from a repeated tap or a
  * re-render, returns `opened: false` and 0 gems. Every chest, power chests included, pays through here and then through gemGrant.
  */
-export function claimChest(kidId: string, trip: TripState, spot: string, correct: boolean): { opened: boolean; gems: number } {
+export function claimChest(kidId: string, trip: TripState, spot: string, correct: boolean, base?: number): { opened: boolean; gems: number } {
   if (!openChest(kidId, trip, spot)) return { opened: false, gems: 0 };
-  return { opened: true, gems: correct ? chestGems(trip.tripId, spot) : 0 };
+  return { opened: true, gems: correct ? base ?? chestGems(trip.tripId, spot) : 0 };
 }
