@@ -153,6 +153,9 @@ interface ParentProps {
   onSignOut?: () => void;
   /** The grown-up came from a kid's break screen (a kid session cannot resume itself). Resume then asks to sign out, and Back is a sign-out. */
   afterPause?: boolean;
+  /** A kid with no PIN was picked on this device: open on that kid's tab at the PIN panel, and hand the kid to the PIN pad once it is set. */
+  setPinFor?: string;
+  onKidPinSet?: (kidId: string) => void;
 }
 
 /** Rounds the server refused 3 times. They stay on this device, are never retried, and the parent sees their date and values. */
@@ -183,13 +186,13 @@ export function ParkedRounds({ kids }: { kids: Kid[] }) {
   );
 }
 
-export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut, afterPause }: ParentProps) {
+export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut, afterPause, setPinFor, onKidPinSet }: ParentProps) {
   const [askSignOut, setAskSignOut] = useState(false);
   // The light theme is each parent's own choice, kept on this device. It recolors the Grown-ups area only.
   const parentKey = repo.parentKey ?? 'local';
   const [theme, setTheme] = useState<Theme>(() => readTheme(parentKey));
   const resumed = afterPause && onSignOut ? () => setAskSignOut(true) : undefined;
-  const [selected, setSelected] = useState<string | 'add'>(kids[0]?.id ?? 'add');
+  const [selected, setSelected] = useState<string | 'add'>(setPinFor && kids.some((k) => k.id === setPinFor) ? setPinFor : kids[0]?.id ?? 'add');
   const [changingPin, setChangingPin] = useState(false);
   const kid = kids.find((k) => k.id === selected);
   // The Grown-ups tour: offered once on this account (tourSeen on the family doc), replayed by the Tour button.
@@ -357,6 +360,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
             const save = async () => {
               await repo.setKidFlags(kid.id, { hasPin: true });
               onKids(kids.map((x) => (x.id === kid.id ? { ...x, hasPin: true } : x)));
+              if (kid.id === setPinFor) onKidPinSet?.(kid.id);
             };
             try {
               await save();
@@ -364,6 +368,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
               reportFailure('The PIN setting was not saved.', e, save);
             }
           }}
+          focusPin={kid.id === setPinFor && !kid.hasPin}
           onPicturePinSet={() => onKids(kids.map((x) => (x.id === kid.id ? { ...x, hasPicturePin: true } : x)))}
           onDelete={async () => {
             try {
@@ -447,13 +452,20 @@ function LockBanner() {
 }
 
 /** Set or change one kid's sign-in PIN. The PIN goes to the setKidPin function and is never stored client-side. */
-function KidPinPanel({ kid, onSet }: { kid: Kid; onSet: () => Promise<void> }) {
+function KidPinPanel({ kid, onSet, focus }: { kid: Kid; onSet: () => Promise<void>; focus?: boolean }) {
   const [pin, setPin] = useState('');
+  const panel = useRef<HTMLElement>(null);
+  // Sent here to set this kid's first PIN: bring the panel into view and put the cursor in the PIN box.
+  useEffect(() => {
+    if (!focus) return;
+    panel.current?.scrollIntoView?.({ block: 'center' });
+    panel.current?.querySelector('input')?.focus();
+  }, [focus]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   if (dataMode !== 'firestore') return null;
   return (
-    <section className="panel">
+    <section className="panel" ref={panel} data-testid="kid-pin-panel">
       <h2>Sign-in PIN for {kid.name}</h2>
       <p className="muted">
         {kid.name} signs in on any device with the name "{nameKey(kid.name)}" (capitalization does not matter) and this 4-digit PIN.
@@ -641,7 +653,7 @@ function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
   );
 }
 
-function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudio, onLightningFloor, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onResumed?: () => void; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onLightningFloor: (ms: number | null) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
+function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudio, onLightningFloor, onPinSet, onPicturePinSet, onDelete, focusPin }: { focusPin?: boolean; repo: Repo; kid: Kid; onResumed?: () => void; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onLightningFloor: (ms: number | null) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   // The live build: this bundle's, or a newer one a log shows. A log older than it came from a device still on an old bundle.
@@ -864,7 +876,7 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
         )}
       </section>
 
-      <KidPinPanel kid={kid} onSet={onPinSet} />
+      <KidPinPanel kid={kid} onSet={onPinSet} focus={focusPin} />
       <KidPicturePinPanel kid={kid} onSet={onPicturePinSet} />
 
       <section className="panel settings" data-tour="settings">
