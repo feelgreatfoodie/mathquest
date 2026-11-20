@@ -118,6 +118,33 @@ for (const vp of VIEWPORTS) {
   test.describe(`ipad-fit ${vp.w}x${vp.h}`, () => {
     test.use({ viewport: { width: vp.w, height: vp.h } });
     test.setTimeout(60_000);
+    // Picture-player Home: the Home (hold) button and the mute button are not covered by the banner or anything else.
+    // elementFromPoint at each center must return the button or a descendant; portrait taps are at least 120 px.
+    test(`picture-player Home buttons are tappable at ${vp.w}x${vp.h}`, async ({ page }) => {
+      await seedKid(page, 'prereader');
+      await openHome(page);
+      await expect(page.getByRole('button', { name: 'Play' })).toBeVisible();
+      await page.waitForTimeout(300);
+      for (const name of ['Hold to leave', /^Sound is (on|off)/]) {
+        const b = page.getByRole('button', { name });
+        await expect(b).toBeVisible();
+        const box = (await b.boundingBox())!;
+        const hit = await b.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return !!top && (top === el || el.contains(top));
+        });
+        expect.soft(hit, `${name} center is covered`).toBe(true);
+        expect.soft(box.x, `${name} left`).toBeGreaterThanOrEqual(-0.5);
+        expect.soft(box.y, `${name} top`).toBeGreaterThanOrEqual(-0.5);
+        expect.soft(box.x + box.width, `${name} right`).toBeLessThanOrEqual(vp.w + 0.5);
+        expect.soft(box.y + box.height, `${name} bottom`).toBeLessThanOrEqual(vp.h + 0.5);
+        if (vp.w < vp.h) {
+          expect.soft(box.width, `${name} width`).toBeGreaterThanOrEqual(120);
+          expect.soft(box.height, `${name} height`).toBeGreaterThanOrEqual(120);
+        }
+      }
+    });
     for (const s of STEPS) {
       test(`${s.name} fits ${vp.w}x${vp.h}`, async ({ page }) => {
         if (s.who) await seedKid(page, s.who, s.teach);
