@@ -9,6 +9,7 @@ import {
   kidLockStatus,
   kidSignIn,
   parentPinHash,
+  setKidPicturePin,
   setKidPin,
   unlockKidSignIn,
   type AuthContext,
@@ -339,5 +340,80 @@ describe('parent lock status and unlock', () => {
     await lockFamily();
     await unlockKidSignIn(deps(), PARENT2);
     expect((await fail(signIn('Zed', PIN, '2.2.2.251'))).code).toBe('resource-exhausted');
+  });
+});
+
+describe('a parent PIN reset clears the kid sign-in lock', () => {
+  const NEW_PIN = '1357';
+  const IP = '3.3.3.3';
+  const lockByName = async (name: string, ip: string) => {
+    for (let i = 0; i < LIMITS.ip.max; i++) await fail(signIn(name, '0000', ip));
+  };
+
+  it('lets the kid in with the new PIN after an IP lock, clearing the name, family and ip counters', async () => {
+    await lockByName('Pip', IP);
+    expect((await fail(signIn('Pip', PIN, IP))).code).toBe('resource-exhausted');
+    await setKidPin(deps(), PARENT, { kidId: 'kid-pip', pin: NEW_PIN }, IP);
+    expect(claimsOf(await signIn('Pip', NEW_PIN, IP)).claims.kidId).toBe('kid-pip');
+    const s = await kidLockStatus(deps(), PARENT);
+    expect(s.locked).toBe(false);
+    expect(s.failures).toBe(0);
+    expect(s.lockedPlayers).toEqual([]);
+  });
+
+  it('clears a name lock reached from many addresses', async () => {
+    for (let i = 0; i < LIMITS.name.max; i++) await fail(signIn('Pip', '0000', `4.4.4.${i}`));
+    expect((await fail(signIn('Pip', PIN, '4.4.4.200'))).code).toBe('resource-exhausted');
+    expect((await kidLockStatus(deps(), PARENT)).lockedPlayers).toEqual(['pip']);
+    await setKidPin(deps(), PARENT, { kidId: 'kid-pip', pin: NEW_PIN }, '4.4.4.201');
+    expect(claimsOf(await signIn('Pip', NEW_PIN, '4.4.4.200')).claims.kidId).toBe('kid-pip');
+  });
+
+  it('clears a family lock', async () => {
+    let n = 0;
+    for (const name of ['Pip', 'Maya', 'Leo']) for (let j = 0; j < 7; j++) await fail(signIn(name, '0000', `5.5.5.${n++}`));
+    expect((await kidLockStatus(deps(), PARENT)).locked).toBe(true);
+    await setKidPin(deps(), PARENT, { kidId: 'kid-zed', pin: NEW_PIN }, '5.5.5.250');
+    expect(claimsOf(await signIn('Zed', NEW_PIN, '5.5.5.250')).claims.kidId).toBe('kid-zed');
+  });
+
+  it('clears the locks when the parent sets a picture PIN too', async () => {
+    await setKidPicturePin(deps(), PARENT, { kidId: 'kid-pip', picture: 'abcd' }, IP);
+    await lockByName('Pip', IP);
+    await setKidPicturePin(deps(), PARENT, { kidId: 'kid-pip', picture: 'efgh' }, IP);
+    expect(claimsOf(await signIn('Pip', 'efgh', IP)).claims.kidId).toBe('kid-pip');
+  });
+
+  it('works without a caller address: the name and family counters still clear', async () => {
+    for (let i = 0; i < LIMITS.name.max; i++) await fail(signIn('Pip', '0000', `6.6.6.${i}`));
+    await setKidPin(deps(), PARENT, { kidId: 'kid-pip', pin: NEW_PIN });
+    expect(claimsOf(await signIn('Pip', NEW_PIN, '6.6.6.250')).claims.kidId).toBe('kid-pip');
+  });
+
+  it("keeps another family's kid locked", async () => {
+    await seedKid(FAM2, 'kid-other', 'Otto');
+    await setKidPin(deps(), PARENT2, { kidId: 'kid-other', pin: PIN_B });
+    for (let i = 0; i < LIMITS.name.max; i++) await fail(signIn('Otto', '0000', `7.7.7.${i}`));
+    await setKidPin(deps(), PARENT, { kidId: 'kid-pip', pin: NEW_PIN }, '8.8.8.8');
+    expect((await fail(signIn('Otto', PIN_B, '7.7.7.8'))).code).toBe('resource-exhausted');
+  });
+
+  it('keeps an ip lock that has counted another family, so a reset cannot wipe the ip limit while guessing at other kids', async () => {
+    await seedKid(FAM2, 'kid-other', 'Otto');
+    await setKidPin(deps(), PARENT2, { kidId: 'kid-other', pin: PIN_B });
+    await lockByName('Otto', '9.9.9.9');
+    await setKidPin(deps(), PARENT, { kidId: 'kid-pip', pin: NEW_PIN }, '9.9.9.9');
+    expect((await fail(signIn('Pip', NEW_PIN, '9.9.9.9'))).code).toBe('resource-exhausted');
+  });
+
+  it('does not clear anything when the call is refused', async () => {
+    await lockByName('Pip', IP);
+    await fail(setKidPin(deps(), PARENT, { kidId: 'kid-pip', pin: 'abcd' }, IP));
+    await fail(setKidPin(deps(), PARENT2, { kidId: 'kid-pip', pin: NEW_PIN }, IP));
+    expect((await fail(signIn('Pip', PIN, IP))).code).toBe('resource-exhausted');
+  });
+
+  it('tells the kid to ask a grown-up to tap Unlock', () => {
+    expect(LOCKED_MESSAGE).toBe('Too many wrong tries. Ask a grown-up to open Grown-ups and tap Unlock.');
   });
 });

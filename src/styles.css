@@ -870,21 +870,24 @@ legend { padding: 0 6px; color: var(--muted); }
 .ow-stat { display: inline-flex; align-items: center; gap: 6px; font-size: 24px; }
 .ow-chests b { white-space: nowrap; }
 .panel .story { font-size: 22px; line-height: 1.3; margin: 4px 0 8px; max-width: 28ch; }
-.ow-remaining { display: inline-flex; align-items: center; gap: 4px; flex: 1; min-width: 0; flex-wrap: wrap; }
-.ow-remaining b { font-size: 20px; }
+.ow-remaining { display: inline-flex; align-items: center; gap: 4px; flex: 1 1 0; min-width: 0; flex-wrap: nowrap; } /* one line: when the bar is short the icons squeeze and "+N" stays beside them */
+.ow-remaining > :not(b) { flex: 0 1 26px; min-width: 6px; overflow: hidden; }
+.ow-remaining b { font-size: 20px; white-space: nowrap; flex: none; }
 .ow-camp-lit { display: inline-flex; align-items: center; gap: 6px; font-size: 20px; color: var(--gold); font-weight: 700; }
 .ow-item { image-rendering: pixelated; }
 .ow-stage { position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: #10131f; touch-action: none; }
 /* Out of flow: the canvas bitmap is 2x or 3x the box, and its intrinsic size must never take part in layout. */
 .ow-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; image-rendering: pixelated; touch-action: none; }
-.ow-msg { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); max-width: min(520px, 92%); background: var(--panel); border: 3px solid var(--gold); border-radius: 14px; padding: 10px 44px 10px 14px; font-size: 18px; }
-.ow-msg p { margin: 0 0 6px; }
-.ow-lair { display: flex; align-items: center; gap: 12px; margin-right: 52px; }
+.ow-msg { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); max-width: min(520px, 92%); background: var(--panel); border: 3px solid var(--gold); border-radius: 14px; padding: 10px 10px 10px 14px; font-size: 18px; display: flex; align-items: center; gap: 10px; }
+.ow-msg-body { flex: 1 1 auto; min-width: 0; }
+.ow-msg p { margin: 0; }
+.ow-msg-body > * + * { margin-top: 6px; }
+.ow-lair { display: flex; align-items: center; gap: 12px; }
 .ow-dots { display: grid; grid-template-columns: repeat(5, 18px); gap: 8px; }
 .ow-dots i { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--gold); background: transparent; }
 .ow-dots i.on { background: var(--gold); }
 .ow-count { font-size: 32px; font-weight: 800; color: var(--gold); }
-.ow-msg .icon-btn { position: absolute; right: 6px; top: 6px; color: var(--text); }
+.ow-msg .icon-btn { flex: none; width: 44px; height: 44px; border-bottom-width: 3px; border-radius: 12px; color: var(--text); } /* inline at the end of the row, so it never sits on the text */
 .ow-dpad { position: absolute; left: calc(14px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); width: 204px; height: 204px; display: grid; grid-template-areas: '. up .' 'left . right' '. down .'; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px); gap: 6px; opacity: 0.9; touch-action: none; }
 .ow-dir { width: 64px; height: 64px; border-radius: 16px; border: 3px solid var(--line); background: var(--panel-2); color: var(--text); display: flex; align-items: center; justify-content: center; touch-action: none; }
 .ow-dir:active { background: var(--line); }
@@ -892,11 +895,8 @@ legend { padding: 0 6px; color: var(--muted); }
 .ow-dir.ow-left { grid-area: left; transform: rotate(90deg); }
 .ow-down { grid-area: down; }
 .ow-dir.ow-right { grid-area: right; transform: rotate(-90deg); }
-/* Pre-readers: Home, mute and the walk pad are 120 px or more. */
+/* Pre-readers: Home and mute are 120 px or more. The walk pad keeps the size it had in #29 for every player (Flynn, TENSOR task anbU4hhJ); tap-to-walk is the easy path. */
 .ow-pre .ow-hud .hold-btn, .ow-pre .ow-hud .mute-btn { min-width: 120px; min-height: 120px; }
-.ow-pre .ow-dpad { width: 372px; height: 372px; grid-template-columns: repeat(3, 120px); grid-template-rows: repeat(3, 120px); }
-.ow-pre .ow-dir { width: 120px; height: 120px; }
-.ow-pre .ow-dpad { opacity: 0.6; } /* big enough to hide the hero at a map edge, so it lets the hero show through */
 .ow-overlay .panel { align-items: center; text-align: center; display: flex; flex-direction: column; gap: 12px; align-self: center; }
 @media (prefers-reduced-motion: reduce) {
   .hero-sprite.lunge, .hero-sprite.hop, .monster.hit svg, .combo-badge, .star-burst i, .sparkles i, .entry-box.is-active { animation: none; }
@@ -1328,9 +1328,6 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .ow-hearts { display: inline-flex; gap: 2px; letter-spacing: 0; }
 .ow-hearts i { display: inline-flex; font-style: normal; }
 .ow-hearts svg, .ow-stat svg { image-rendering: pixelated; }
-.ow-dir { border: 0; border-radius: 0; margin: 4px; background: rgba(44, 51, 84, 0.58); color: var(--px-neutral-text); box-shadow: -4px 0 0 rgba(13, 16, 32, 0.7), 4px 0 0 rgba(13, 16, 32, 0.7), 0 -4px 0 rgba(13, 16, 32, 0.7), 0 4px 0 rgba(13, 16, 32, 0.7), inset 0 4px 0 rgba(255, 255, 255, 0.14), inset 0 -6px 0 rgba(28, 32, 54, 0.7); }
-.ow-dir:active { background: var(--px-neutral); }
-.ow-pre .ow-dir { margin: 0; }
 .ow-msg { border-radius: 0; border: 0; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); }
 
 /* ===== style-3: the shop stall and the vault door. ===== */
@@ -1359,9 +1356,6 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .ow-hearts { display: inline-flex; gap: 2px; letter-spacing: 0; }
 .ow-hearts i { display: inline-flex; font-style: normal; }
 .ow-hearts svg, .ow-stat svg { image-rendering: pixelated; }
-.ow-dir { border: 0; border-radius: 0; margin: 4px; background: rgba(44, 51, 84, 0.58); color: var(--px-neutral-text); box-shadow: -4px 0 0 rgba(13, 16, 32, 0.7), 4px 0 0 rgba(13, 16, 32, 0.7), 0 -4px 0 rgba(13, 16, 32, 0.7), 0 4px 0 rgba(13, 16, 32, 0.7), inset 0 4px 0 rgba(255, 255, 255, 0.14), inset 0 -6px 0 rgba(28, 32, 54, 0.7); }
-.ow-dir:active { background: var(--px-neutral); }
-.ow-pre .ow-dir { margin: 0; }
 .ow-msg { border-radius: 0; border: 0; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); }
 
 /* ===== style-3: the shop stall and the vault door. ===== */
@@ -1662,6 +1656,11 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
   .early-home .early-home-row { display: grid; grid-template-columns: 1.4fr 1fr; grid-auto-rows: 1fr; }
   .early-home .early-home-row > * { flex: none; }
   .early-home .early-home-row > .play-btn { flex: none; }
+  /* Home and mute are 120 px and sit in their own strip above the banner, so the banner never covers them. */
+  .screen.center.early-home { padding-top: calc(max(10px, env(safe-area-inset-top)) + 128px); }
+  .early-home-top, .early-home-mute { top: max(10px, env(safe-area-inset-top)); z-index: 2; }
+  .early-home-top .hold-btn { width: 120px; height: 120px; }
+  .early-home-top .hold-btn svg { width: 72px; height: 72px; }
 }
 
 /* Reader Home: portrait lets the banner take what is left, landscape puts the banner and week on the left and the actions on the right. */

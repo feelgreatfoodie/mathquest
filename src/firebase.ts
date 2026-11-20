@@ -76,10 +76,25 @@ function callable<I, O>(name: string) {
   return httpsCallable<I, O>(fns, name);
 }
 
+/**
+ * True while this page load holds a kid session that the pad opened. Firebase Auth keeps a kid session in IndexedDB, so a reload,
+ * a cold start or a PWA relaunch restores one the pad never opened. App.tsx signs that one out, because the PIN is required on
+ * every app open. The flag is memory only, so every new page load starts false.
+ */
+let kidPadOpened = false;
+export const kidOpenedByPad = (): boolean => kidPadOpened;
+
 /** First name + PIN to the kidSignIn function, then sign this device in as that kid. */
 export async function signInKid(name: string, pin: string): Promise<void> {
   const res = await callable<{ name: string; pin: string }, { token: string }>('kidSignIn')({ name, pin });
-  await signInWithCustomToken(getFirebase().auth, res.data.token);
+  // Set before the sign-in: the auth listener fires inside signInWithCustomToken and must already see the flag.
+  kidPadOpened = true;
+  try {
+    await signInWithCustomToken(getFirebase().auth, res.data.token);
+  } catch (e) {
+    kidPadOpened = false;
+    throw e;
+  }
 }
 
 /** Registers this Google account as a parent (idempotent). Throws "Math Quest is full right now." at the cap. */
@@ -122,5 +137,6 @@ export async function kidClaims(): Promise<{ familyUid: string; kidId: string } 
 }
 
 export async function signOutParent(): Promise<void> {
+  kidPadOpened = false;
   await fbSignOut(getFirebase().auth);
 }

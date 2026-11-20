@@ -153,6 +153,11 @@ interface ParentProps {
   onSignOut?: () => void;
   /** The grown-up came from a kid's break screen (a kid session cannot resume itself). Resume then asks to sign out, and Back is a sign-out. */
   afterPause?: boolean;
+  /** A kid with no PIN was picked on this device: open on that kid's tab at the PIN panel, and hand the kid to the PIN pad once it is set. */
+  setPinFor?: string;
+  onKidPinSet?: (kidId: string) => void;
+  /** A grown-up reset a kid's PIN on this device: the app goes straight to that kid's PIN pad. */
+  onPinReset?: (kidId: string) => void;
 }
 
 /** Rounds the server refused 3 times. They stay on this device, are never retried, and the parent sees their date and values. */
@@ -183,13 +188,13 @@ export function ParkedRounds({ kids }: { kids: Kid[] }) {
   );
 }
 
-export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut, afterPause }: ParentProps) {
+export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignOut, afterPause, setPinFor, onKidPinSet, onPinReset }: ParentProps) {
   const [askSignOut, setAskSignOut] = useState(false);
   // The light theme is each parent's own choice, kept on this device. It recolors the Grown-ups area only.
   const parentKey = repo.parentKey ?? 'local';
   const [theme, setTheme] = useState<Theme>(() => readTheme(parentKey));
   const resumed = afterPause && onSignOut ? () => setAskSignOut(true) : undefined;
-  const [selected, setSelected] = useState<string | 'add'>(kids[0]?.id ?? 'add');
+  const [selected, setSelected] = useState<string | 'add'>(setPinFor && kids.some((k) => k.id === setPinFor) ? setPinFor : kids[0]?.id ?? 'add');
   const [changingPin, setChangingPin] = useState(false);
   const kid = kids.find((k) => k.id === selected);
   // The Grown-ups tour: offered once on this account (tourSeen on the family doc), replayed by the Tour button.
@@ -240,6 +245,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
 
   return (
     <div className="screen parent" data-theme={theme} onFocus={keepFocusVisible}>
+      <LockBanner kids={kids} />
       <header className="parent-head">
         <h1 className="pixel">Grown-ups area</h1>
         <div className="row">
@@ -270,7 +276,6 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
       {tour === 'offer' && kid ? <TourOffer onStart={() => setTour('on')} onDismiss={closeTour} /> : null}
       {tour === 'on' ? <Tour onClose={closeTour} /> : null}
       {askSignOut && onSignOut ? <SignOutAsk onYes={onSignOut} onStay={() => setAskSignOut(false)} /> : null}
-      <LockBanner />
       <ParkedRounds kids={kids} />
       <nav className="tabs" aria-label="Players" data-tour="kids">
         {kids.map((k) => (
@@ -357,6 +362,7 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
             const save = async () => {
               await repo.setKidFlags(kid.id, { hasPin: true });
               onKids(kids.map((x) => (x.id === kid.id ? { ...x, hasPin: true } : x)));
+              if (kid.id === setPinFor) onKidPinSet?.(kid.id);
             };
             try {
               await save();
@@ -364,6 +370,8 @@ export function ParentArea({ repo, salt, kids, onKids, onFamily, onExit, onSignO
               reportFailure('The PIN setting was not saved.', e, save);
             }
           }}
+          focusPin={kid.id === setPinFor && !kid.hasPin}
+          {...(onPinReset ? { onPinReset } : {})}
           onPicturePinSet={() => onKids(kids.map((x) => (x.id === kid.id ? { ...x, hasPicturePin: true } : x)))}
           onDelete={async () => {
             try {
@@ -401,25 +409,51 @@ function VersionFooter() {
   );
 }
 
-/** Shows when kid PIN sign-in is locked after wrong PINs, with an Unlock button. */
-function LockBanner() {
+/** The locked players, by the name a grown-up gave them. A name key with no player in this list reads as "a player". Never an id. */
+export function lockedNames(lockedPlayers: string[], kids: Kid[]): string[] {
+  const byKey = new Map(kids.map((k) => [nameKey(k.name), k.name]));
+  return lockedPlayers.map((key) => byKey.get(key) ?? 'a player');
+}
+
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/**
+ * Shows at the top of Grown-ups when kid PIN sign-in is locked after wrong PINs, with an Unlock button.
+ * It asks the server every time Grown-ups opens (the component mounts) and again when the tab comes back to the front,
+ * so a lock that starts or ends while the area sits open is never stale.
+ */
+export function LockBanner({ kids }: { kids: Kid[] }) {
   const [status, setStatus] = useState<KidLockStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     if (dataMode !== 'firestore') return;
     let alive = true;
-    kidLockStatus().then((s) => alive && setStatus(s)).catch(() => undefined);
+    const load = () => {
+      kidLockStatus().then((s) => alive && setStatus(s)).catch(() => undefined);
+    };
+    load();
+    const onShow = () => {
+      if (document.visibilityState === 'visible') load();
+    };
+    document.addEventListener('visibilitychange', onShow);
     return () => {
       alive = false;
+      document.removeEventListener('visibilitychange', onShow);
     };
   }, []);
   if (!status || (!status.locked && status.failures === 0)) return null;
+  const who = joinNames(lockedNames(status.lockedPlayers, kids));
   return (
-    <section className="panel lock-banner">
+    <section className="panel lock-banner" data-testid="lock-banner" role="status">
       <p>
         {status.locked
-          ? `Kid sign-in locked after ${status.failures} wrong PINs.`
+          ? who
+            ? `Kid sign-in is locked for ${who}. Tap Unlock to let them in.`
+            : `Kid sign-in is locked after ${status.failures} wrong PINs. Tap Unlock to let the kids in.`
           : `${status.failures} wrong kid PIN${status.failures === 1 ? '' : 's'} in the last hour. Sign-in is still open.`}
         {err ? <span className="error"> {err}</span> : null}
       </p>
@@ -447,13 +481,20 @@ function LockBanner() {
 }
 
 /** Set or change one kid's sign-in PIN. The PIN goes to the setKidPin function and is never stored client-side. */
-function KidPinPanel({ kid, onSet }: { kid: Kid; onSet: () => Promise<void> }) {
+function KidPinPanel({ kid, onSet, onReset, focus }: { kid: Kid; onSet: () => Promise<void>; onReset?: (kidId: string) => void; focus?: boolean }) {
   const [pin, setPin] = useState('');
+  const panel = useRef<HTMLElement>(null);
+  // Sent here to set this kid's first PIN: bring the panel into view and put the cursor in the PIN box.
+  useEffect(() => {
+    if (!focus) return;
+    panel.current?.scrollIntoView?.({ block: 'center' });
+    panel.current?.querySelector('input')?.focus();
+  }, [focus]);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   if (dataMode !== 'firestore') return null;
   return (
-    <section className="panel">
+    <section className="panel" ref={panel} data-testid="kid-pin-panel">
       <h2>Sign-in PIN for {kid.name}</h2>
       <p className="muted">
         {kid.name} signs in on any device with the name "{nameKey(kid.name)}" (capitalization does not matter) and this 4-digit PIN.
@@ -466,9 +507,15 @@ function KidPinPanel({ kid, onSet }: { kid: Kid; onSet: () => Promise<void> }) {
           setBusy(true);
           setMsg(null);
           try {
+            const wasReset = kid.hasPin === true;
             await setKidPin(kid.id, pin);
             await onSet();
             setPin('');
+            // A reset clears the kid's sign-in lock on the server. On this device the kid goes straight to the PIN pad.
+            if (wasReset && onReset) {
+              onReset(kid.id);
+              return;
+            }
             setMsg({ ok: true, text: 'PIN saved.' });
           } catch (err) {
             console.error('Setting the kid PIN failed.', err);
@@ -641,7 +688,7 @@ function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
   );
 }
 
-function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudio, onLightningFloor, onPinSet, onPicturePinSet, onDelete }: { repo: Repo; kid: Kid; onResumed?: () => void; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onLightningFloor: (ms: number | null) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
+function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudio, onLightningFloor, onPinSet, onPicturePinSet, onDelete, onPinReset, focusPin }: { focusPin?: boolean; onPinReset?: (kidId: string) => void; repo: Repo; kid: Kid; onResumed?: () => void; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onLightningFloor: (ms: number | null) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   // The live build: this bundle's, or a newer one a log shows. A log older than it came from a device still on an old bundle.
@@ -864,7 +911,7 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
         )}
       </section>
 
-      <KidPinPanel kid={kid} onSet={onPinSet} />
+      <KidPinPanel kid={kid} onSet={onPinSet} focus={focusPin} {...(onPinReset ? { onReset: onPinReset } : {})} />
       <KidPicturePinPanel kid={kid} onSet={onPicturePinSet} />
 
       <section className="panel settings" data-tour="settings">

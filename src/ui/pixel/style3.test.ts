@@ -125,8 +125,10 @@ describe('style-3: motion and shape rules', () => {
     const scenes = css.slice(css.indexOf('style-3: the shop stall'));
     expect(scenes).not.toMatch(/border-radius: [1-9]/);
   });
-  it('the walk pad stays see-through and keeps its 64 px keys', () => {
-    expect(block).toMatch(/\.ow-dir \{[^}]*rgba\(44, 51, 84, 0\.58\)/);
-    expect(css).toMatch(/\.ow-dir \{ width: 64px; height: 64px;/);
+  it('the walk pad has the size and look of the first build (#29) for every player', () => {
+    // adventure-pad-toast, TENSOR task anbU4hhJ: 64 px keys, a 204 px pad, no 120 px picture-player override.
+    expect(css).toMatch(/\.ow-dir \{ width: 64px; height: 64px; border-radius: 16px;/);
+    expect(css).toMatch(/\.ow-dpad \{[^}]*width: 204px; height: 204px;/);
+    expect(css).not.toMatch(/\.ow-pre \.ow-dpad/);
   });
 });

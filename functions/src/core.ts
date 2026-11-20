@@ -19,7 +19,7 @@ import type { Firestore, Transaction } from 'firebase-admin/firestore';
 // ---------------------------------------------------------------------------------------------
 
 export const MISMATCH_MESSAGE = "That name and PIN didn't match";
-export const LOCKED_MESSAGE = 'Too many wrong tries. Ask a parent, or wait and try again.';
+export const LOCKED_MESSAGE = 'Too many wrong tries. Ask a grown-up to open Grown-ups and tap Unlock.';
 export const FULL_MESSAGE = 'Math Quest is full right now.';
 export const NAME_TAKEN_MESSAGE = 'That name is taken. Try adding a last initial, like EmmaS.';
 
@@ -217,6 +217,24 @@ const familyCounter = (d: Deps, uid: string) => d.db.doc(`pinIndex/${uid}/attemp
 const ipCounter = (d: Deps, ip: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/ip_${sha(ip).slice(0, 32)}`);
 const nameCounter = (d: Deps, nameKey: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/name_${sha(nameKey).slice(0, 32)}`);
 
+/**
+ * A parent who sets or resets a kid's PIN expects the kid to get straight in, so the same call clears the kid's name counter,
+ * the family counter and the caller's ip counter. The ip counter is shared by every family behind that address, so it is only
+ * deleted when it has counted nobody but this family: a parent cannot reset their own kid's PIN to wipe the ip limit while
+ * guessing at other families' kids (those guesses add the other family to the counter's `families` list).
+ */
+async function clearKidLocks(d: Deps, familyUid: string, nameKey: string, ip: string | undefined): Promise<void> {
+  const refs = [familyCounter(d, familyUid), nameCounter(d, nameKey)];
+  if (ip) {
+    const ipRef = ipCounter(d, ip);
+    const fams = readCounter((await ipRef.get()).data()).families ?? [];
+    if (fams.every((f) => f === familyUid)) refs.push(ipRef);
+  }
+  const batch = d.db.batch();
+  refs.forEach((r) => batch.delete(r));
+  await batch.commit();
+}
+
 // ---------- index lookups ----------
 
 interface PinRow {
@@ -307,7 +325,7 @@ export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: s
 
 // ---------- setKidPin ----------
 
-export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { kidId?: unknown; pin?: unknown }): Promise<{ ok: true }> {
+export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { kidId?: unknown; pin?: unknown }, ip?: string): Promise<{ ok: true }> {
   const parent = await assertParent(d, auth);
   const { kidId, pin } = data;
   if (typeof kidId !== 'string' || !ID_RE.test(kidId)) throw new HttpsError('invalid-argument', 'Bad player id.');
@@ -370,6 +388,7 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
     if (releaseOld) tx.delete(releaseOld);
   });
   await kidRef.update({ hasPin: true });
+  await clearKidLocks(d, parent.uid, nameKey, ip);
   return { ok: true };
 }
 
@@ -381,7 +400,7 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
  * 16-byte salt exactly like setKidPin, stored in the same server-only row. The kid doc gets one flag, hasPicturePin,
  * so the parent screen can show it. The picture itself is never stored or logged.
  */
-export async function setKidPicturePin(d: Deps, auth: AuthContext | undefined, data: { kidId?: unknown; picture?: unknown }): Promise<{ ok: true }> {
+export async function setKidPicturePin(d: Deps, auth: AuthContext | undefined, data: { kidId?: unknown; picture?: unknown }, ip?: string): Promise<{ ok: true }> {
   const parent = await assertParent(d, auth);
   const { kidId, picture } = data;
   if (typeof kidId !== 'string' || !ID_RE.test(kidId)) throw new HttpsError('invalid-argument', 'Bad player id.');
@@ -389,11 +408,13 @@ export async function setKidPicturePin(d: Deps, auth: AuthContext | undefined, d
   const kidRef = d.db.doc(`families/${parent.uid}/kids/${kidId}`);
   if (!(await kidRef.get()).exists) throw new HttpsError('not-found', 'That player does not exist.');
   const rowRef = d.db.doc(`pinIndex/${parent.uid}/kids/${kidId}`);
-  if (!(await rowRef.get()).exists) throw new HttpsError('failed-precondition', 'Set a PIN for this player first.');
+  const row = await rowRef.get();
+  if (!row.exists) throw new HttpsError('failed-precondition', 'Set a PIN for this player first.');
   const salt = randomBytes(16);
   const hash = await scryptAsync(picture, salt);
   await rowRef.update({ pic: { salt: salt.toString('hex'), hash: hash.toString('hex'), updatedAt: nowOf(d) } });
   await kidRef.update({ hasPicturePin: true });
+  await clearKidLocks(d, parent.uid, String(row.data()?.nameKey ?? ''), ip);
   return { ok: true };
 }
 

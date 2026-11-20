@@ -35,7 +35,8 @@ export const kidSignIn = onCall(opts, (req) =>
   core.kidSignIn(deps(), { name: req.data?.name, pin: req.data?.pin, ip: core.clientIp(req.rawRequest.headers['x-forwarded-for'], req.rawRequest.ip) }),
 );
 export const registerParent = onCall(opts, (req) => core.registerParent(deps(), authOf(req)));
-export const setKidPin = onCall(opts, (req) => core.setKidPin(deps(), authOf(req), req.data ?? {}));
-export const setKidPicturePin = onCall(opts, (req) => core.setKidPicturePin(deps(), authOf(req), req.data ?? {}));
+const ipOf = (req: CallableRequest) => core.clientIp(req.rawRequest.headers['x-forwarded-for'], req.rawRequest.ip);
+export const setKidPin = onCall(opts, (req) => core.setKidPin(deps(), authOf(req), req.data ?? {}, ipOf(req)));
+export const setKidPicturePin = onCall(opts, (req) => core.setKidPicturePin(deps(), authOf(req), req.data ?? {}, ipOf(req)));
 export const kidLockStatus = onCall(opts, (req) => core.kidLockStatus(deps(), authOf(req)));
 export const unlockKidSignIn = onCall(opts, (req) => core.unlockKidSignIn(deps(), authOf(req)));

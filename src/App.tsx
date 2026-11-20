@@ -8,7 +8,7 @@ import { GameDeltaError, type GameDelta } from './engine/game';
 import { avatarOf, learnerOf, type Family, type Kid, type KidGame } from './engine/models';
 import type { RunSummary } from './engine/session';
 import type { RunInfo } from './ui/runShared';
-import { dataMode, getFirebase, kidClaims, registerParent, signInKid, signInParent, signOutParent } from './firebase';
+import { dataMode, getFirebase, kidClaims, kidOpenedByPad, registerParent, signInKid, signInParent, signOutParent } from './firebase';
 import { replayOutbox } from './data/outbox';
 import { settleUpdate } from './update';
 import { FailureToasts } from './ui/FailureToasts';
@@ -36,8 +36,8 @@ type Screen =
   | { name: 'home'; kidId: string }
   | { name: 'run'; kidId: string; key: number; mode?: GameModeId }
   | { name: 'summary'; kidId: string; summary: RunSummary; info: RunInfo }
-  | { name: 'pin' }
-  | { name: 'parent' };
+  | { name: 'pin'; setPinFor?: string }
+  | { name: 'parent'; setPinFor?: string };
 
 /**
  * The release gate for this bundle. Firestore mode reads config/app.minVersion. Local mode has no server, so
@@ -120,6 +120,12 @@ export function App() {
         void (async () => {
           const claims = await kidClaims();
           if (claims) {
+            // A kid session restored from storage (reload, cold start, PWA relaunch, update reload) never opened this page's PIN pad.
+            // Sign it out: the listener then fires with no user and shows the pad.
+            if (!kidOpenedByPad()) {
+              void signOutParent();
+              return;
+            }
             pauseFlow.current = 'off';
             const r = new FirestoreRepo(db, claims.familyUid);
             try {
@@ -379,10 +385,14 @@ export function App() {
       return (
         <Picker
           kids={kids}
-          // A kid with a PIN must type it, so a sibling cannot play as them on a parent's device.
+          // A kid must type a PIN, so a sibling cannot play as them on a parent's device.
           onPick={(k) => {
             setPinError(null);
-            setScreen(k.hasPin && dataMode === 'firestore' ? { name: 'kidpin', kidId: k.id } : { name: 'home', kidId: k.id });
+            // On a grown-up's device every kid signs in with a PIN (digits or pictures). A kid with none goes to the Grown-up PIN,
+            // then that kid's PIN panel, then that kid's pad. Local mode has no sign-in, so it still goes to Home.
+            if (dataMode !== 'firestore') setScreen({ name: 'home', kidId: k.id });
+            else if (k.hasPin || k.hasPicturePin) setScreen({ name: 'kidpin', kidId: k.id });
+            else setScreen({ name: 'pin', setPinFor: k.id });
           }}
           onParent={() => setScreen({ name: 'pin' })}
         />
@@ -450,14 +460,15 @@ export function App() {
       return (
         <PinPad
           title="Grown-up PIN"
+          {...(screen.setPinFor ? { subtitle: 'Ask a grown-up to set your passcode.' } : {})}
           error={pinError}
-          onCancel={pauseFlow.current === 'active' ? () => { setPinError(null); void signOutParent(); } : kids.length ? () => { setPinError(null); setScreen({ name: 'picker' }); } : undefined}
+          onCancel={screen.setPinFor ? () => { setPinError(null); setScreen({ name: 'picker' }); } : pauseFlow.current === 'active' ? () => { setPinError(null); void signOutParent(); } : kids.length ? () => { setPinError(null); setScreen({ name: 'picker' }); } : undefined}
           onComplete={async (p) => {
             if ((await hashPin(salt, p)) === family?.pinHash) {
               setPinError(null);
               // Parent copies of kids can be old by now. Reload them so the area shows stored totals.
               void repo.listKids().then(setKids).catch((e) => reportFailure('Could not load the latest player data.', e));
-              setScreen({ name: 'parent' });
+              setScreen({ name: 'parent', ...(screen.setPinFor ? { setPinFor: screen.setPinFor } : {}) });
               return true;
             }
             setPinError('Wrong PIN. Try again.');
@@ -476,6 +487,10 @@ export function App() {
           onExit={() => setScreen(kids.length ? { name: 'picker' } : { name: 'parent' })}
           onSignOut={dataMode === 'firestore' ? () => void signOutParent() : undefined}
           afterPause={pauseFlow.current === 'active'}
+          {...(screen.setPinFor
+            ? { setPinFor: screen.setPinFor, onKidPinSet: (kidId: string) => { setPinError(null); setScreen({ name: 'kidpin', kidId }); } }
+            : {})}
+          onPinReset={dataMode === 'firestore' ? (kidId) => { setPinError(null); setScreen({ name: 'kidpin', kidId }); } : undefined}
         />
       );
   }
