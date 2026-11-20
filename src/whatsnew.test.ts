@@ -10,9 +10,9 @@ describe('whatsnew', () => {
     expect([...prs].sort((a, b) => b - a)).toEqual(prs);
     expect(WHATS_NEW.map((e) => e.pr)).toContain(10); // backfilled, kept beyond the shown 10
   });
-  it('covers every merged change from #51 to #68 that has an entry (the footer shows the newest 10)', () => {
+  it('covers every merged change from #51 to #69 that has an entry (the footer shows the newest 10)', () => {
     const prs = recentChanges().map((e) => e.pr);
-    for (const n of [51, 54, 55, 56, 57, 59, 60, 62, 64, 68]) expect(prs).toContain(n);
+    for (const n of [51, 54, 55, 56, 57, 59, 60, 62, 64, 69]) expect(prs).toContain(n);
   });
   it('marks changes kids cannot see and changes behind a setting', () => {
     // The whole list, not the newest 10: the last flagged entries scroll out of the footer window as new changes land.
