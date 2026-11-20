@@ -18,6 +18,8 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 
+import { initAppCheck } from './appCheck';
+
 const env = import.meta.env;
 
 const config = {
@@ -40,6 +42,8 @@ let cached: { app: FirebaseApp; auth: Auth; db: Firestore } | null = null;
 export function getFirebase() {
   if (cached) return cached;
   const app = initializeApp(config);
+  // App Check, monitor mode: on only when VITE_RECAPTCHA_SITE_KEY is set. Not awaited; a call made before it is ready logs as "missing".
+  void initAppCheck(app, env.VITE_RECAPTCHA_SITE_KEY as string | undefined, env.VITE_USE_EMULATORS === 'true');
   const auth = getAuth(app);
   // IndexedDB cache: reads and writes keep working offline and sync when the iPad reconnects.
   const db = initializeFirestore(app, {

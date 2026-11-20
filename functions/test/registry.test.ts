@@ -11,6 +11,7 @@ import {
   type AuthContext,
   type Deps,
 } from '../src/core.js';
+import { TEST_PEPPER } from './testPepper.js';
 
 // All uids, names, addresses and PINs below are made up for the tests.
 let db: Firestore;
@@ -18,6 +19,7 @@ const clock = 1_700_000_000_000;
 
 const deps = (): Deps => ({
   db,
+  pepper: TEST_PEPPER,
   now: () => clock,
   auth: { createCustomToken: async (uid, claims) => JSON.stringify({ uid, claims }) },
 });

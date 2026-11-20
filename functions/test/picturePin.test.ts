@@ -4,7 +4,9 @@ import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as core from '../src/core.js';
+import { createHmac } from 'node:crypto';
 import { LIMITS, LOCKED_MESSAGE, MISMATCH_MESSAGE, kidSignIn, parentPinHash, setKidPin, type AuthContext, type Deps } from '../src/core.js';
+import { TEST_PEPPER } from './testPepper.js';
 
 // Picture PIN (UX item 10): 4 of 9 icons, repeats allowed, one letter a to i per icon. Hashed with scrypt exactly like the
 // digit PIN, stored beside it in the same server-only row, and signed in through the same kidSignIn, so the per-IP,
@@ -24,7 +26,7 @@ const PIC_B = 'hhei';
 
 let db: Firestore;
 let clock = 1_700_000_000_000;
-const deps = (): Deps => ({ db, now: () => clock, auth: { createCustomToken: async (uid, claims) => JSON.stringify({ uid, claims }) } });
+const deps = (): Deps => ({ db, pepper: TEST_PEPPER, now: () => clock, auth: { createCustomToken: async (uid, claims) => JSON.stringify({ uid, claims }) } });
 const seedKid = (fam: string, id: string, name: string) => db.doc(`families/${fam}/kids/${id}`).set({ id, name, createdAt: 1, settings: {}, game: {} });
 async function clearAll() {
   for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) await db.recursiveDelete(db.collection(col));
@@ -85,9 +87,12 @@ describe('setKidPicturePin', () => {
     const row = (await db.doc('pinIndex/fam-uid-1/kids/kid-pip').get()).data()!;
     const pic = row.pic as { salt: string; hash: string };
     expect(Buffer.from(pic.salt, 'hex')).toHaveLength(16);
-    expect(pic.hash).toBe(scryptSync(PIC, Buffer.from(pic.salt, 'hex'), 32).toString('hex'));
-    // The digit PIN row fields are untouched and use the same derivation.
-    expect(row.hash).toBe(scryptSync(PIN, Buffer.from(String(row.salt), 'hex'), 32).toString('hex'));
+    // v2: scrypt over HMAC-SHA256(pepper, passcode). The digit PIN row fields are untouched and use the same derivation.
+    const v2 = (p: string, salt: string) => scryptSync(createHmac('sha256', TEST_PEPPER).update(p).digest(), Buffer.from(salt, 'hex'), 32).toString('hex');
+    expect(pic.hash).toBe(v2(PIC, pic.salt));
+    expect((pic as { v?: number }).v).toBe(2);
+    expect(row.hash).toBe(v2(PIN, String(row.salt)));
+    expect(row.v).toBe(2);
     const everything = JSON.stringify([(await db.doc('pinIndex/fam-uid-1/kids/kid-pip').get()).data(), (await db.doc('families/fam-uid-1/kids/kid-pip').get()).data(), (await db.doc('nameKeys/pip').get()).data()]);
     expect(everything).not.toContain(PIC);
   });
@@ -157,21 +162,23 @@ describe('picture PINs use the same limits and lockout as digits', () => {
   beforeEach(async () => {
     await setKidPicturePin(deps(), PARENT, { kidId: 'kid-pip', picture: PIC });
   });
-  it('refuses the 6th wrong picture from one IP, even with the right picture', async () => {
-    for (let i = 0; i < LIMITS.ip.max; i++) expect((await fail(signIn('Pip', 'iiii'))).message).toBe(MISMATCH_MESSAGE);
+  it('refuses the 51st wrong picture from one IP, even with the right picture', async () => {
+    for (let i = 0; i < LIMITS.ip.max; i++) expect((await fail(signIn(`Nobody${i}`, 'iiii'))).message).toBe(MISMATCH_MESSAGE);
     const e = await fail(signIn('Pip', PIC));
     expect(e.code).toBe('resource-exhausted');
     expect(e.message).toBe(LOCKED_MESSAGE);
   });
   it('lets the IP back in after 15 minutes', async () => {
-    for (let i = 0; i < LIMITS.ip.max; i++) await fail(signIn('Pip', 'iiii'));
+    for (let i = 0; i < LIMITS.ip.max; i++) await fail(signIn(`Nobody${i}`, 'iiii'));
+    expect((await fail(signIn('Pip', PIC))).code).toBe('resource-exhausted');
     clock += LIMITS.ip.windowMs + 1;
     expect(claimsOf(await signIn('Pip', PIC)).claims.kidId).toBe('kid-pip');
   });
-  it('wrong digits and wrong pictures share one counter: 3 digit failures plus 2 picture failures lock the IP', async () => {
-    for (const p of ['0000', '1111', '2222', 'iiii', 'hhhh']) await fail(signIn('Pip', p));
-    expect((await fail(signIn('Pip', PIC))).code).toBe('resource-exhausted');
-    expect((await fail(signIn('Pip', PIN))).code).toBe('resource-exhausted');
+  it('wrong digits and wrong pictures share one counter: 6 digit failures plus 4 picture failures lock the name', async () => {
+    const wrongs = ['0000', '1111', '2222', '3333', '4444', '5555', 'iiii', 'hhhh', 'gggg', 'ffff'];
+    for (const [i, p] of wrongs.entries()) await fail(signIn('Pip', p, `10.4.0.${i}`));
+    expect((await fail(signIn('Pip', PIC, '10.4.0.99'))).code).toBe('resource-exhausted');
+    expect((await fail(signIn('Pip', PIN, '10.4.0.98'))).code).toBe('resource-exhausted');
   });
   it('locks a name after 10 wrong pictures from different IPs for an hour', async () => {
     for (let i = 0; i < LIMITS.name.max; i++) await fail(signIn('Pip', 'iiii', `10.1.0.${i}`));
@@ -180,22 +187,25 @@ describe('picture PINs use the same limits and lockout as digits', () => {
     clock += LIMITS.name.windowMs + 1;
     expect(claimsOf(await signIn('Pip', PIC, '10.9.9.9')).claims.kidId).toBe('kid-pip');
   });
-  it('locks the family after 20 wrong pictures spread over names and IPs', async () => {
+  it('locks the family after 100 wrong pictures spread over names and IPs', async () => {
     await setKidPicturePin(deps(), PARENT, { kidId: 'kid-maya', picture: PIC_B });
-    for (let i = 0; i < LIMITS.family.max; i++) await fail(signIn(i % 2 ? 'Pip' : 'Maya', 'iiii', `10.2.${i}.1`));
+    // 99 counted failures are seeded (100 real scrypt tries would take a minute); the 100th is a real wrong picture.
+    const entries = Array.from({ length: LIMITS.family.max - 1 }, (_, i) => ({ id: `seed${i}`, at: clock - 1000 }));
+    await db.doc(`pinIndex/${FAM}/attempts/family`).set({ entries, lockedUntil: 0, lockedBy: null, families: [], updatedAt: clock });
+    await fail(signIn('Pip', 'iiii', '10.2.0.1'));
     expect((await fail(signIn('Maya', PIC_B, '10.77.7.7'))).code).toBe('resource-exhausted');
   });
   it('counts wrong pictures for an unknown name against the IP, like a known name', async () => {
-    for (let i = 0; i < LIMITS.ip.max; i++) await fail(signIn('Nobody', 'iiii'));
+    for (let i = 0; i < LIMITS.ip.max; i++) await fail(signIn(`Nobody${i}`, 'iiii'));
     expect((await fail(signIn('Pip', PIC))).code).toBe('resource-exhausted');
   });
   it('counts parallel picture guesses, so a burst cannot skip the limit', async () => {
     const results = await Promise.allSettled(Array.from({ length: 12 }, () => signIn('Pip', 'iiii')));
     const locked = results.filter((r) => r.status === 'rejected' && (r.reason as { code: string }).code === 'resource-exhausted').length;
-    expect(locked).toBeGreaterThanOrEqual(12 - LIMITS.ip.max);
+    expect(locked).toBeGreaterThanOrEqual(12 - LIMITS.name.max);
   });
   it('a right picture refunds its own entry, like a right digit PIN', async () => {
-    for (let i = 0; i < LIMITS.ip.max - 2; i++) await fail(signIn('Pip', 'iiii'));
+    for (let i = 0; i < LIMITS.name.max - 2; i++) await fail(signIn('Pip', 'iiii'));
     expect(claimsOf(await signIn('Pip', PIC)).claims.kidId).toBe('kid-pip');
     await fail(signIn('Pip', 'iiii'));
     expect(claimsOf(await signIn('Pip', PIC)).claims.kidId).toBe('kid-pip');
@@ -228,7 +238,7 @@ describe('nothing new is exposed without auth', () => {
   it('kidSignIn returns no kid list, name or hero: the only success value is a token, and failures carry one fixed message', async () => {
     await setKidPicturePin(deps(), PARENT, { kidId: 'kid-pip', picture: PIC });
     const ok = await signIn('Pip', PIC);
-    expect(Object.keys(ok)).toEqual(['token']);
+    expect(Object.keys(ok)).toEqual(['token', 'remember']);
     const e1 = await fail(signIn('Pip', 'iiii', '10.3.0.1'));
     const e2 = await fail(signIn('Nobody', 'iiii', '10.3.0.2'));
     expect(Object.keys(e1).sort()).toEqual(Object.keys(e2).sort());

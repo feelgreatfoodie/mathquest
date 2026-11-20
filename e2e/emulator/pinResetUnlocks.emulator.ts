@@ -18,6 +18,8 @@ const OLD_PIN = '4821';
 const NEW_PIN = '7305';
 const WRONG = '1111';
 const PICTURE = 'abcd';
+// Sign-in by display name (the legacy path) locks a name after 10 wrong tries in an hour (LIMITS.name in functions/src/core.ts).
+const NAME_LOCK_TRIES = 10;
 
 const fv = (v: unknown): Record<string, unknown> => {
   if (typeof v === 'boolean') return { booleanValue: v };
@@ -55,7 +57,7 @@ async function seed(): Promise<string> {
 const signIn = (pin: string) => call('kidSignIn', null, { name: KID.name, pin });
 
 async function lockWithWrongPins() {
-  for (let i = 0; i < 5; i++) expect((await signIn(WRONG)).status).toBe(403);
+  for (let i = 0; i < NAME_LOCK_TRIES; i++) expect((await signIn(WRONG)).status).toBe(403);
   // The lock is on: even the right PIN is refused with the locked message.
   const locked = await signIn(OLD_PIN);
   expect(locked.status).toBe(429);
@@ -100,7 +102,7 @@ test('the kid screen tells a locked kid to ask a grown-up to tap Unlock, and the
     await expect(page.locator('.keypad .key').first()).toBeEnabled({ timeout: 15_000 });
   };
   await page.getByPlaceholder('First name').fill(KID.name);
-  for (let i = 0; i < 5; i++) await tap(WRONG);
+  for (let i = 0; i < NAME_LOCK_TRIES; i++) await tap(WRONG);
   await tap(OLD_PIN);
   await expect(page.getByText('Ask a grown-up to open Grown-ups and tap Unlock.')).toBeVisible({ timeout: 15_000 });
 
