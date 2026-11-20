@@ -1,6 +1,6 @@
 import type { KidGame } from '../engine/models';
-import { glowOf } from '../game/shop/looks';
-import { equippedOf } from '../game/shop/shopState';
+import { glowOf, wornLooks } from '../game/shop/looks';
+import { equippedOf, ownedItems } from '../game/shop/shopState';
 import { Sprite } from './sprites';
 
 interface Props {
@@ -25,7 +25,9 @@ function gearClass(id: string): string {
  * renders the plain hero sprite, so a screen that has not been given a shop still looks the same.
  */
 export function HeroFigure({ game, size, className, strike, cheer }: Props) {
-  const worn = equippedOf(game);
+  // PDR rule 3: only owned items show. The weapon and gear come from wornLooks, the pet from the same owned check.
+  const pet = equippedOf(game).pet;
+  const worn = { ...wornLooks(game), ...(pet && ownedItems(game).includes(pet) ? { pet } : {}) } as { weapon?: string; gear?: string; pet?: string };
   const glow = glowOf(game);
   if (!worn.weapon && !worn.gear && !worn.pet) return <Sprite name={game.hero} size={size} className={className} />;
   return (

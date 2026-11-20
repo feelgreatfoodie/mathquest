@@ -216,6 +216,15 @@ describe('legendary glow and titles', () => {
     expect(off).not.toContain('hero-glow');
   });
 
+  it('HeroFigure draws only owned wearables: an equipped weapon, gear or pet that is not owned shows nothing', () => {
+    const html = renderToStaticMarkup(createElement(HeroFigure, { game: { hero: 'knight', items: [], equipped: { gear: 'g-cape', weapon: 'w-bow', pet: 'p-dog' } } as never, size: 96 }));
+    expect(html).not.toMatch(/fig-part|data-gear="g-cape"|data-weapon="w-bow"|data-pet="p-dog"/);
+    const owned = renderToStaticMarkup(createElement(HeroFigure, { game: { hero: 'knight', items: ['g-cape', 'w-bow', 'p-dog'], equipped: { gear: 'g-cape', weapon: 'w-bow', pet: 'p-dog' } } as never, size: 96 }));
+    expect(owned).toContain('data-gear="g-cape"');
+    expect(owned).toContain('data-weapon="w-bow"');
+    expect(owned).toContain('data-pet="p-dog"');
+  });
+
   it('the title badge shows the title, a pre-reader gets a 120 px picture button, and nothing shows without a legendary item', () => {
     const g = { items: [LEGENDARY_STAFF], equipped: {} } as never;
     const reader = renderToStaticMarkup(createElement(TitleBadge, { game: g, name: NAME }));
