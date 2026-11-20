@@ -15,7 +15,8 @@ import { reservedReason } from './reserved.js';
 //   pinIndex/{familyUid}/attempts/family         family failure counter and lock (100 per hour)
 //   pinIndex/_global/attempts/ip_{hash}          network counter and lock (50 per 15 min)
 //   pinIndex/_global/attempts/dev_{hash}         device counter and lock (20 per 15 min, only when the call carries a valid deviceId)
-//   pinIndex/_global/attempts/user_{hash}        username counter: 5 wrong in a row lock 5 min, doubling to 60 min
+//   pinIndex/_global/attempts/user_{hash}        username counter (index usernames only): 5 wrong in a row lock 5 min, doubling to 60 min
+//   pinIndex/_global/attempts/dn_{hash}          the same strike counter for a display name with no username, and for any unknown name
 //   pinIndex/_global/attempts/name_{hash}        legacy display-name counter (10 per hour), for the legacy path only
 //   usernames/{usernameLower}                    { familyUid, kidId, createdAt }: the one kid that owns a username
 //   families/{uid}/devices/{deviceId}            { firstSeen, lastSeen, kids[], label }: written on a good sign-in, parents read it
@@ -319,6 +320,8 @@ const familyCounter = (d: Deps, uid: string) => d.db.doc(`pinIndex/${uid}/attemp
 const ipCounter = (d: Deps, ip: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/ip_${sha(ip).slice(0, 32)}`);
 const nameCounter = (d: Deps, nameKey: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/name_${sha(nameKey).slice(0, 32)}`);
 const userCounter = (d: Deps, usernameLower: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/user_${sha(usernameLower).slice(0, 32)}`);
+/** The strike bucket of a display name (legacy and unknown names). Its own key space, so no family's Unlock or reset can reach a username's user_ bucket. */
+const dnCounter = (d: Deps, nameKey: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/dn_${sha(nameKey).slice(0, 32)}`);
 const deviceCounter = (d: Deps, deviceId: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/dev_${sha(deviceId).slice(0, 32)}`);
 /** Deletes in batches of at most 450: a Firestore batch refuses more than 500 writes, and devices are uncapped. */
 async function deleteAll(d: Deps, refs: FirebaseFirestore.DocumentReference[]): Promise<void> {
@@ -354,9 +357,9 @@ async function familyDeviceIds(d: Deps, familyUid: string, kidId?: string): Prom
 async function clearKidLocks(d: Deps, familyUid: string, nameKey: string, ip: string | undefined, kidId: string): Promise<void> {
   const refs = [familyCounter(d, familyUid), nameCounter(d, nameKey)];
   // The kid's username bucket and the buckets of the devices recorded for this kid.
-  // A legacy kid with no username counts its strikes under its display name, so that bucket goes too.
+  // A legacy kid with no username counts its strikes under its display name (dn_), so that bucket goes too.
   const username = (await familyUsernames(d, familyUid)).get(kidId);
-  refs.push(userCounter(d, nameKey));
+  refs.push(dnCounter(d, nameKey));
   if (username) refs.push(userCounter(d, username));
   for (const id of await familyDeviceIds(d, familyUid, kidId)) refs.push(deviceCounter(d, id));
   if (ip) {
@@ -547,16 +550,17 @@ export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: s
   // username, a legacy display name of a kid with or without a username, or unknown: nothing shows which names exist.
   const buckets: Bucket[] = [{ ref: ipCounter(d, ip), ...LIMITS.ip, ...fam }];
   if (deviceId) buckets.push({ ref: deviceCounter(d, deviceId), ...LIMITS.device, ...fam });
-  let strikeKey = nameKey;
+  let strikeRef = dnCounter(d, nameKey);
   if (row && !legacy && usernameKey) {
-    strikeKey = usernameKey;
+    strikeRef = userCounter(d, usernameKey);
   } else {
     // The legacy name path, or an unknown name: the 10 per hour name bucket counts both alike.
     buckets.push({ ref: nameCounter(d, nameKey), ...LIMITS.name, ...fam });
     // A kid who has a username strikes under it, so the display name is no way around its lock. Otherwise the typed name keys the bucket.
-    if (row) strikeKey = (await familyUsernames(d, row.familyUid)).get(row.kidId) ?? nameKey;
+    const own = row ? (await familyUsernames(d, row.familyUid)).get(row.kidId) : undefined;
+    if (own) strikeRef = userCounter(d, own);
   }
-  buckets.push({ kind: 'strike', ref: userCounter(d, strikeKey), ...fam });
+  buckets.push({ kind: 'strike', ref: strikeRef, ...fam });
   if (row) buckets.push({ ref: familyCounter(d, row.familyUid), ...LIMITS.family });
 
   const entryId = randomBytes(8).toString('hex');
@@ -714,8 +718,8 @@ export async function kidLockStatus(d: Deps, auth: AuthContext | undefined): Pro
   const lockedPlayers: string[] = [];
   for (const n of names) {
     const byName = readCounter((await nameCounter(d, n.nameKey).get()).data());
-    const strikeKeys = n.username ? [n.username, n.nameKey] : [n.nameKey];
-    const byUser = await Promise.all(strikeKeys.map(async (k) => readCounter((await userCounter(d, k).get()).data())));
+    const strikeRefs = n.username ? [userCounter(d, n.username), dnCounter(d, n.nameKey)] : [dnCounter(d, n.nameKey)];
+    const byUser = await Promise.all(strikeRefs.map(async (r) => readCounter((await r.get()).data())));
     if (byName.lockedUntil > now || byUser.some((c) => c.lockedUntil > now)) lockedPlayers.push(n.nameKey);
   }
   const ipLocked = ipDocs.some((x) => readCounter(x.data()).lockedUntil > now);
@@ -734,7 +738,7 @@ export async function unlockKidSignIn(d: Deps, auth: AuthContext | undefined): P
   const refs = [
     familyCounter(d, parent.uid),
     ...names.map((n) => nameCounter(d, n.nameKey)),
-    ...names.map((n) => userCounter(d, n.nameKey)),
+    ...names.map((n) => dnCounter(d, n.nameKey)),
     ...names.flatMap((n) => (n.username ? [userCounter(d, n.username)] : [])),
     ...deviceIds.map((id) => deviceCounter(d, id)),
     ...ipDocs.map((x) => x.ref),

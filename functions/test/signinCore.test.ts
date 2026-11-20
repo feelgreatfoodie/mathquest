@@ -348,6 +348,33 @@ describe('wrong tries never show whether a display name is real', () => {
   });
 });
 
+describe("a family's Unlock and PIN reset never clear another family's username lock", () => {
+  async function lockPipRunner() {
+    for (let i = 0; i < 5; i++) await fail(signIn({ username: 'pip_runner', pin: '0000', ip: `10.30.0.${i}` }));
+    expect((await fail(signIn({ username: 'pip_runner', ip: '10.30.0.50' }))).code).toBe('resource-exhausted');
+  }
+
+  it("family 2 has a player whose display name is Pip_Runner: its Unlock leaves family 1's lock on pip_runner in place", async () => {
+    await lockPipRunner();
+    await player(FAM2, PARENT2, 'kid-twin', 'Pip_Runner', PIN_B); // a display name equal to family 1's username
+    await unlockKidSignIn(deps(), PARENT2);
+    expect((await fail(signIn({ username: 'pip_runner', ip: '10.30.0.51' }))).code).toBe('resource-exhausted');
+  });
+
+  it("the same family 2 player's PIN reset leaves it in place too", async () => {
+    await lockPipRunner();
+    await player(FAM2, PARENT2, 'kid-twin', 'Pip_Runner', PIN_B);
+    await setKidPin(deps(), PARENT2, { kidId: 'kid-twin', pin: PIN });
+    expect((await fail(signIn({ username: 'pip_runner', ip: '10.30.0.52' }))).code).toBe('resource-exhausted');
+  });
+
+  it("family 1's own Unlock still clears it", async () => {
+    await lockPipRunner();
+    await unlockKidSignIn(deps(), PARENT);
+    expect(claimsOf(await signIn({ username: 'pip_runner', ip: '10.30.0.53' })).claims.kidId).toBe('kid-pip');
+  });
+});
+
 describe('Unlock and a PIN reset with hundreds of device docs', () => {
   async function seedDevices(n: number) {
     for (let from = 0; from < n; from += 400) {
