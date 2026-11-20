@@ -20,7 +20,7 @@ import {
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
 import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
-import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type DeviceRecord, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { CampDoc } from '../game/overworld/camp';
 import { REGION_IDS, type RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
@@ -105,6 +105,31 @@ export class FirestoreRepo implements Repo {
 
   async markTourSeen(): Promise<void> {
     await setDoc(this.family(), { tourSeen: true }, { merge: true });
+  }
+
+  async setSchoolMode(on: boolean): Promise<void> {
+    await setDoc(this.family(), { schoolMode: on }, { merge: true });
+  }
+
+  async listDevices(): Promise<DeviceRecord[]> {
+    const snap = await getDocs(collection(this.db, 'families', this.uid, 'devices'));
+    return snap.docs
+      .map((d) => {
+        const x = d.data() as Partial<DeviceRecord>;
+        return {
+          id: d.id,
+          label: typeof x.label === 'string' && x.label ? x.label : 'Browser',
+          firstSeen: typeof x.firstSeen === 'number' ? x.firstSeen : 0,
+          lastSeen: typeof x.lastSeen === 'number' ? x.lastSeen : 0,
+          kids: Array.isArray(x.kids) ? x.kids.filter((k): k is string => typeof k === 'string') : [],
+          revoked: x.revoked === true,
+        };
+      })
+      .sort((a, b) => b.lastSeen - a.lastSeen);
+  }
+
+  async setDeviceRevoked(deviceId: string, revoked: boolean): Promise<void> {
+    await updateDoc(doc(this.db, 'families', this.uid, 'devices', deviceId), { revoked });
   }
 
   async listKids(): Promise<Kid[]> {

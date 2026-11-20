@@ -15,7 +15,7 @@ import { TitleScreen } from './TitleScreen';
  */
 export interface FirstScreenProps {
   /** 'grownups' opens the Google sign-in directly (the grown-up sign-in after a break screen). */
-  initialView?: 'doors' | 'grownups';
+  initialView?: 'doors' | 'username' | 'grownups';
   error: string | null;
   tiles: readonly DeviceTile[];
   /** Which pad this username types on. Rejects when the server cannot be reached. */
@@ -37,7 +37,7 @@ type View =
 const USERNAME_OK = /^[A-Za-z0-9_]{3,20}$/;
 
 export function FirstScreen({ initialView = 'doors', error, tiles, kindOf, onKidSubmit, onParentSignIn, onViewChange }: FirstScreenProps) {
-  const [view, setViewRaw] = useState<View>(() => (initialView === 'grownups' ? { name: 'grownups' } : { name: 'doors' }));
+  const [view, setViewRaw] = useState<View>(() => (initialView === 'grownups' ? { name: 'grownups' } : initialView === 'username' ? { name: 'username' } : { name: 'doors' }));
   const setView = (v: View) => {
     onViewChange?.();
     setViewRaw(v);

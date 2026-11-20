@@ -513,15 +513,17 @@ service cloud.firestore {
       allow update: if isParent(uid) && smallDoc() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinHash', 'hasPin']);
 
       // Devices that signed a player in: families/{uid}/devices/{deviceId} = { firstSeen, lastSeen, kids[], label }. The Admin SDK
-      // (kidSignIn) creates and updates them. The family's grown-ups read them and may change `label` and nothing else, as a
-      // string of 1 to 40 characters. A client cannot create or delete a device, and a kid token reads nothing here.
+      // (kidSignIn) creates and updates them. The family's grown-ups read them and may change `label` and `revoked`, as a
+      // string of 1 to 40 characters, and flip `revoked` (Forget device, and Allow again), a boolean: kidSignIn refuses a revoked
+      // device with failed-precondition. Nothing else changes. A client cannot create or delete a device, and a kid token reads nothing here.
       match /devices/{deviceId} {
         allow read: if isParent(uid);
         allow update: if isParent(uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['label'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['label', 'revoked'])
           && request.resource.data.label is string
           && request.resource.data.label.size() >= 1
-          && request.resource.data.label.size() <= 40;
+          && request.resource.data.label.size() <= 40
+          && request.resource.data.get('revoked', false) is bool;
         allow create, delete: if false;
       }
 

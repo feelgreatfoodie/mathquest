@@ -328,6 +328,23 @@ legend { padding: 0 6px; color: var(--muted); }
 .check input { width: 24px; height: 24px; }
 .add-kid { display: flex; flex-direction: column; gap: 10px; }
 .add-kid label { font-weight: 700; }
+/* L3: the player wizard, the sign-in card and the portal's Sign-in tab. */
+.wizard { display: flex; flex-direction: column; gap: 12px; }
+.username-field { display: flex; flex-direction: column; gap: 8px; }
+.username-field input { font: 700 20px var(--body); min-height: 48px; padding: 6px 12px; border-radius: 10px; border: 2px solid var(--line); background: var(--bg-2); color: var(--text); }
+.signin-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 28px; border: 4px solid var(--kid-color, var(--gold)); border-radius: 16px; background: #fff; color: #111; max-width: 320px; margin: 0 auto; }
+.signin-card-label { font: 700 14px var(--body); letter-spacing: 0.08em; text-transform: uppercase; margin: 0; }
+.signin-card-username { font: 800 30px var(--body); margin: 0; word-break: break-all; }
+.signin-card-note { font: 400 14px var(--body); margin: 0; }
+.device-list, .lockout-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.device-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.device-row p { margin: 2px 0 0; }
+@media print {
+  body * { visibility: hidden; }
+  .signin-card, .signin-card * { visibility: visible; }
+  .signin-card { position: absolute; left: 50%; top: 24px; transform: translateX(-50%); }
+}
+
 
 .kid-name-input {
   width: 100%;

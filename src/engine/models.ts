@@ -201,6 +201,8 @@ export interface Kid {
   hasPin?: boolean;
   /** Set by the setKidPicturePin function: this kid can sign in with 4 pictures too. The hash lives server-side only. */
   hasPicturePin?: boolean;
+  /** The sign-in username (lowercase, 3 to 20 of a-z 0-9 _). Written by the setUsername function, with the usernames index. Not secret: the sign-in card prints it. */
+  username?: string;
   /**
    * The picture on the "Who is playing?" screen: a hero face and a color, free to pick. Top-level and parent-only: a
    * kid token may write only `game` and `inventory`, so it cannot change this, and an old bundle that never writes it
@@ -240,6 +242,21 @@ export interface Family {
   createdAt: number;
   /** The Grown-ups tour was offered on this account. Written alone by Repo.markTourSeen, kept when the PIN changes. */
   tourSeen?: boolean;
+  /** School mode: kidSignIn answers remember: false, so no sign-in tile is left on a device. Off when missing. Written alone by Repo.setSchoolMode. */
+  schoolMode?: boolean;
+}
+
+/** A device that signed a player in (families/{uid}/devices/{deviceId}). The server writes it; a grown-up renames it or forgets it. */
+export interface DeviceRecord {
+  id: string;
+  /** The browser and device family, for example "iPad Safari". Never the raw user agent. */
+  label: string;
+  firstSeen: number;
+  lastSeen: number;
+  /** The players who signed in on it. */
+  kids: string[];
+  /** A grown-up forgot this device: its next sign-in fails until they allow it again. */
+  revoked: boolean;
 }
 
 export interface SessionLog {

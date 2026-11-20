@@ -163,6 +163,27 @@ export interface KidLockStatus {
   failures: number;
   lockedUntil: number;
   lockedPlayers: string[];
+  /** The locked players by id, with when each lock ends. Older servers do not send it. */
+  lockedKids?: { kidId: string; until: number }[];
+  /** Device ids whose own counter is locked. Older servers do not send it. */
+  lockedDevices?: string[];
+}
+
+/** Three free usernames (a color, an animal and 2 digits). Parents only. */
+export async function suggestUsername(): Promise<string[]> {
+  return (await callable<Record<string, never>, { suggestions: string[] }>('suggestUsername')({})).data.suggestions;
+}
+
+export type UsernameVerdict = { free: true } | { free: false; reason: 'invalid' | 'reserved' | 'taken' };
+
+/** Free or taken. Pass the player's id so a name that player already holds reads as free. Parents only. */
+export async function checkUsername(username: string, kidId?: string): Promise<UsernameVerdict> {
+  return (await callable<{ username: string; kidId?: string }, UsernameVerdict>('checkUsername')({ username, ...(kidId ? { kidId } : {}) })).data;
+}
+
+/** Sets a player's username (setUsername). Parents only, and the Grown-up PIN typed in the last 30 minutes. Resolves with the stored, lowercased name. */
+export async function setUsername(kidId: string, username: string): Promise<string> {
+  return (await callable<{ kidId: string; username: string }, { username: string }>('setUsername')({ kidId, username })).data.username;
 }
 
 export async function kidLockStatus(): Promise<KidLockStatus> {
