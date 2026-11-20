@@ -116,8 +116,9 @@ for (const vp of [
       // One row on a tablet; a phone is 393 px wide and wraps to two short rows.
       expect(hud.height).toBeLessThanOrEqual(vp.w >= 700 ? 76 : 152);
       await expect(page.locator('.ow-hearts svg')).toHaveCount(3);
-      const pad = await page.locator('.ow-dir').first().evaluate((e) => getComputedStyle(e).backgroundColor);
-      expect(pad).toMatch(/rgba\(44, 51, 84, 0\.58\)/);
+      // The walk pad has its first look back (adventure-pad-toast, TENSOR task anbU4hhJ): 64 px keys with a rounded 16 px corner.
+      const pad = await page.locator('.ow-dir').first().evaluate((e) => getComputedStyle(e).borderRadius);
+      expect(pad).toBe('16px');
       for (const k of await page.locator('.ow-dir').all()) {
         const b = (await k.boundingBox())!;
         expect(b.width).toBeGreaterThanOrEqual(48);

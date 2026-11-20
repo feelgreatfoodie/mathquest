@@ -1345,6 +1345,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         <DoorLabel ref={doorRef} lines={doorLines} prereader={learner === 'prereader'} count={Math.max((stats[region] ?? NO_STATS).beaten, won ? 1 : 0)} />
         {msg ? (
           <div className="ow-msg" role="status" data-testid="ow-msg">
+            <div className="ow-msg-body">
             {msg.dots ? (
               <div className="ow-lair" data-testid="ow-lair-dots" role="img" aria-label={msg.dots.count.replace('/', ' of ')}>
                 <Sprite name="boss" size={44} />
@@ -1356,6 +1357,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
             ) : null}
             {msg.text ? <p>{msg.text}</p> : null}
             {msg.progress !== undefined ? <div className="progress"><div className="progress-fill" style={{ width: `${msg.progress * 100}%` }} /></div> : null}
+            </div>
             <button type="button" className="icon-btn" aria-label="Close" onClick={() => setMsg(null)}><UiIcon name="close" size={24} /></button>
           </div>
         ) : null}
