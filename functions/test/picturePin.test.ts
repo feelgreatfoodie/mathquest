@@ -242,12 +242,14 @@ describe('nothing new is exposed without auth', () => {
       expect((await fail(fns[name]!(deps(), undefined, { kidId: 'kid-pip', pin: PIN, picture: PIC }))).code, name).toBe('unauthenticated');
     }
   });
-  it('index.ts exports exactly the known callables, and only kidSignIn reads no auth', () => {
+  it('index.ts exports exactly the known callables, and only the 3 public ones (kidSignIn, passcodeKind, signinMode) read no auth', () => {
     const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
     const exported = [...src.matchAll(/export const (\w+) = onCall/g)].map((m) => m[1]).sort();
-    expect(exported).toEqual(['checkParentPin', 'kidLockStatus', 'kidSignIn', 'registerParent', 'setKidPicturePin', 'setKidPin', 'setParentPin', 'unlockKidSignIn']);
+    expect(exported).toEqual(['checkParentPin', 'kidLockStatus', 'kidSignIn', 'passcodeKind', 'registerParent', 'setKidPicturePin', 'setKidPin', 'setParentPin', 'signinMode', 'unlockKidSignIn']);
+    // The public callables (no sign-in): the first screen's three. Each is rate limited or reads one flag, and returns no list.
+    const PUBLIC = new Set(['kidSignIn', 'passcodeKind', 'signinMode']);
     for (const line of src.split('\n').filter((l) => /^export const \w+ = onCall/.test(l))) {
-      if (line.includes('kidSignIn')) continue;
+      if (PUBLIC.has(/^export const (\w+)/.exec(line)![1]!)) continue;
       expect(line, line).toContain('authOf(req)');
     }
   });

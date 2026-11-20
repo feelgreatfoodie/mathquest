@@ -104,6 +104,8 @@ export interface Deps {
     createCustomToken(uid: string, claims: Record<string, unknown>): Promise<string>;
   };
   now?: () => number;
+  /** How long signinMode reuses one config/app read. Default 30 s. The emulator sets 0, so an e2e run can flip the switch between tests. */
+  modeTtlMs?: number;
 }
 
 const nowOf = (d: Deps) => (d.now ? d.now() : Date.now());
@@ -630,6 +632,82 @@ export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: s
   logLine(d, { event: 'kidSignIn', outcome: 'ok', legacy, fam: sha(row.familyUid).slice(0, 16), app: input.app ?? 'missing' });
   const token = await d.auth.createCustomToken(`kid_${row.kidId}`, { role: 'kid', familyUid: row.familyUid, kidId: row.kidId });
   return { token, remember: true };
+}
+
+// ---------- passcodeKind and signinMode (L2) ----------
+
+/**
+ * passcodeKind is public (no sign-in), so it has its own buckets, in their own key space (pk_): spraying it can never lock a
+ * sign-in. Every call counts and none refunds. Sized for a classroom behind one NAT: 30 players type a username once each.
+ */
+export const KIND_LIMITS = {
+  ip: { max: 120, windowMs: 5 * 60_000 },
+  device: { max: 60, windowMs: 5 * 60_000 },
+} as const;
+export const KIND_LOCKED_MESSAGE = 'Too many tries. Wait a minute and try again.';
+
+const kindIpCounter = (d: Deps, ip: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/pk_ip_${sha(ip).slice(0, 32)}`);
+const kindDeviceCounter = (d: Deps, deviceId: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/pk_dev_${sha(deviceId).slice(0, 32)}`);
+
+export interface PasscodeKindInput {
+  username?: unknown;
+  deviceId?: unknown;
+  ip: string | undefined;
+  app?: 'valid' | 'missing';
+}
+
+/**
+ * Which pad a player types on: 'digits' or 'pictures'. A player with a picture passcode gets 'pictures'. Every other name,
+ * known or not, malformed or not, gets the same shape from the same work: 4 reads (the index, the registry, the kid, the row)
+ * and one HMAC. An unknown name gets a kind from a keyed hash of the name, so the answer is stable per name and a miss looks
+ * like a hit. The pepper is the key, so nobody can predict a miss offline.
+ */
+export async function passcodeKind(d: Deps, input: PasscodeKindInput): Promise<{ kind: 'digits' | 'pictures' }> {
+  if (typeof input.username !== 'string' || input.username.length > 64) throw new HttpsError('invalid-argument', 'Type your username.');
+  if (!d.pepper) throw new HttpsError('internal', 'Sign-in is not set up.');
+  const key = normalizeName(input.username);
+  const deviceId = typeof input.deviceId === 'string' && DEVICE_RE.test(input.deviceId) ? input.deviceId : null;
+  const buckets: Bucket[] = [{ ref: kindIpCounter(d, input.ip || 'unknown'), ...KIND_LIMITS.ip }];
+  if (deviceId) buckets.push({ ref: kindDeviceCounter(d, deviceId), ...KIND_LIMITS.device });
+  if (!(await reserve(d, buckets, randomBytes(8).toString('hex')))) throw new HttpsError('resource-exhausted', KIND_LOCKED_MESSAGE);
+
+  const coin = createHmac('sha256', d.pepper).update(`passcodeKind:${key}`).digest()[0]! % 2 === 0 ? 'digits' : 'pictures';
+  // A malformed name reads a placeholder in place of the index doc, so even that costs the same.
+  const claim = (await usernameRef(d, USERNAME_RE.test(key) ? key : GLOBAL).get()).data() as { familyUid?: unknown; kidId?: unknown } | undefined;
+  const found = claim && typeof claim.familyUid === 'string' && typeof claim.kidId === 'string' ? { familyUid: claim.familyUid, kidId: claim.kidId } : null;
+  // The same 4 reads for every name: a miss reads ids that do not exist ("_global" is never a family, a kid or a username).
+  const fam = found?.familyUid ?? GLOBAL;
+  const kid = found?.kidId ?? GLOBAL;
+  const [registry, kidDoc, row] = await Promise.all([parentRef(d, fam).get(), d.db.doc(`families/${fam}/kids/${kid}`).get(), d.db.doc(`pinIndex/${fam}/kids/${kid}`).get()]);
+  if (!found || !registry.exists || !kidDoc.exists || !row.exists) return { kind: coin };
+  return { kind: rowOf(found.familyUid, found.kidId, row.ref, row.data()!).pic ? 'pictures' : 'digits' };
+}
+
+/** How long a config/app read is reused. Bounds the reads a public caller can cause to 1 per instance per window. */
+const MODE_TTL_MS = 30_000;
+let modeCache: { at: number; value: { signin2: boolean; pilot: boolean } } | null = null;
+export const resetSigninModeCache = () => {
+  modeCache = null;
+};
+
+/**
+ * The first-screen switch, readable with no sign-in (config/app is readable only when signed in, and the first screen is not).
+ * config/app.signin2: true shows the two doors to every device, 'pilot' only to devices that opted in on this device, anything
+ * else (or a missing doc) is off. A read that fails answers off, so the screen players know today stays the fallback.
+ */
+export async function signinMode(d: Deps): Promise<{ signin2: boolean; pilot: boolean }> {
+  const now = nowOf(d);
+  if (modeCache && now - modeCache.at < (d.modeTtlMs ?? MODE_TTL_MS) && now >= modeCache.at) return modeCache.value;
+  let value = { signin2: false, pilot: false };
+  try {
+    const v = (await d.db.doc('config/app').get()).data()?.signin2;
+    value = { signin2: v === true, pilot: v === 'pilot' };
+  } catch (err) {
+    console.error('signinMode: config read failed', { error: err instanceof Error ? err.message : String(err) });
+    return value;
+  }
+  modeCache = { at: now, value };
+  return value;
 }
 
 // ---------- setKidPin ----------

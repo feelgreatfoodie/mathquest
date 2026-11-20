@@ -75,7 +75,8 @@ for (const { w, h } of SIZES) {
     test('What is Math Quest? opens signed out, shows 5 cards with their images, and Get started goes to the grown-up sign-in', async ({ page }) => {
       const outside: string[] = [];
       page.on('request', (r) => {
-        if (!r.url().startsWith(LANDING) && !/^(data|blob):/.test(r.url())) outside.push(r.url());
+        // The one allowed call: signinMode (the first-screen switch, no sign-in, no Firestore or Auth host).
+        if (!r.url().startsWith(LANDING) && !/^(data|blob):/.test(r.url()) && !/\/signinMode$/.test(r.url())) outside.push(r.url());
       });
       await page.goto(LANDING);
       await page.getByTestId('title-intro').click();
@@ -98,9 +99,12 @@ for (const { w, h } of SIZES) {
       expect(outside).toEqual([]);
     });
 
-    test('the signed-out title and landing make no Firestore or Auth call', async ({ page }) => {
+    test('the signed-out title and landing make no Firestore or Auth call (only the signinMode switch)', async ({ page }) => {
       const hosts: string[] = [];
-      page.on('request', (r) => hosts.push(new URL(r.url()).host));
+      // signinMode (config/app.signin2 for a signed-out device) is the one Functions call; it reaches no Firestore or Auth host.
+      page.on('request', (r) => {
+        if (!/\/signinMode$/.test(r.url())) hosts.push(new URL(r.url()).host);
+      });
       await page.goto(LANDING);
       await expect(page.getByTestId('title-menu')).toBeVisible();
       await page.getByTestId('title-play').click();

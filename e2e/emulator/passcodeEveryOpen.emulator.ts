@@ -33,7 +33,7 @@ async function call(name: string, token: string, data: object) {
   if (!res.ok) throw new Error(`${name} ${res.status} ${await res.text()}`);
 }
 
-async function seedFamily(): Promise<void> {
+async function seedFamily(): Promise<string> {
   await fetch(`${AUTH}/emulator/v1/projects/${PROJECT}/accounts`, { method: 'DELETE' });
   await fetch(`http://127.0.0.1:8080/emulator/v1/projects/${PROJECT}/databases/(default)/documents`, { method: 'DELETE' });
   const idp = JSON.stringify({ sub: 'parent-pad-sub', email: 'parent-pad@example.com', email_verified: true });
@@ -53,6 +53,14 @@ async function seedFamily(): Promise<void> {
     body: JSON.stringify({ fields: fields({ id: KID.id, name: KID.name, createdAt: 1, hasPin: true, settings: SETTINGS, game: GAME }) }),
   });
   await call('setKidPin', idToken, { kidId: KID.id, pin: PIN });
+  return localId;
+}
+
+/** The two-door first screen (config/app.signin2) and this kid's username, written with the owner token like the release script. */
+const USERNAME = 'pip_tile';
+async function turnOnTwoDoors(fam: string): Promise<void> {
+  await fetch(`${FS}/config/app`, { method: 'PATCH', headers: OWNER, body: JSON.stringify({ fields: fields({ minVersion: 1, signin2: true }) }) });
+  await fetch(`${FS}/usernames/${USERNAME}`, { method: 'PATCH', headers: OWNER, body: JSON.stringify({ fields: fields({ familyUid: fam, kidId: KID.id, createdAt: 1 }) }) });
 }
 
 const home = (page: Page) => page.getByRole('button', { name: 'Switch player' });
@@ -129,5 +137,58 @@ test('no path reaches a kid Home without the pad: reload, cold start and player 
   const cold = await coldStart(browser, page);
   await cold.goto(baseURL ?? '/');
   await expectPadNotHome(cold);
+  await cold.context().close();
+});
+
+/** The same rule for the two-door screen: the tile skips typing the username and never the passcode. */
+async function signInThroughDoors(page: Page, how: 'tile' | 'username') {
+  await expect(page.getByTestId('first-doors')).toBeVisible({ timeout: 20_000 });
+  if (how === 'tile') {
+    await page.getByTestId('tile').click();
+  } else {
+    await page.getByTestId('door-player').click();
+    await page.getByPlaceholder('username').fill(USERNAME);
+    await page.getByTestId('username-next').click();
+  }
+  await expect(page.getByTestId('first-pad')).toBeVisible({ timeout: 10_000 });
+  await expect(home(page)).toHaveCount(0);
+  for (const d of PIN) await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).first().click();
+  await expect(home(page)).toBeVisible({ timeout: 20_000 });
+}
+
+async function expectDoorsNotHome(page: Page) {
+  await expect(page.getByTestId('first-doors')).toBeVisible({ timeout: 20_000 });
+  await expect(home(page)).toHaveCount(0);
+}
+
+test('signin2 on: the tile path needs the pad too (tile, reload, cold start, player switch)', async ({ page, browser, baseURL }) => {
+  const fam = await seedFamily();
+  await turnOnTwoDoors(fam);
+
+  // First sign-in by username. That leaves a tile on this device and a stored kid session.
+  await page.goto('/');
+  await signInThroughDoors(page, 'username');
+  await expect.poll(() => authKeyStored(page), { timeout: 20_000 }).toBe(true);
+
+  // Reload: the stored session must not open Home. The tile shows, and tapping it asks for the passcode.
+  await page.reload();
+  await expectDoorsNotHome(page);
+  await expect(page.getByTestId('tile')).toHaveCount(1);
+  await signInThroughDoors(page, 'tile');
+
+  // Player switch returns to the doors, and a reload after it too. Home is not one tap away.
+  await home(page).click();
+  await expectDoorsNotHome(page);
+  await page.reload();
+  await expectDoorsNotHome(page);
+
+  // Cold start: a new context holding the old storage (signed in as a kid) shows the doors, and the tile opens the pad.
+  await signInThroughDoors(page, 'tile');
+  const cold = await coldStart(browser, page);
+  await cold.goto(baseURL ?? '/');
+  await expectDoorsNotHome(cold);
+  await cold.getByTestId('tile').click();
+  await expect(cold.getByTestId('first-pad')).toBeVisible();
+  await expect(home(cold)).toHaveCount(0);
   await cold.context().close();
 });
