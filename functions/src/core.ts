@@ -192,6 +192,9 @@ interface Counter {
   strikes: number;
   /** Username bucket: when the last lock was set. */
   strikeAt: number;
+  /** Parent bucket: strikes and strikeAt from before the lock that the latest try set, so a right try can take that lock back. */
+  prevStrikes?: number;
+  prevStrikeAt?: number;
 }
 
 const emptyCounter = (): Counter => ({ entries: [], lockedUntil: 0, lockedBy: null, fails: 0, strikes: 0, strikeAt: 0 });
@@ -206,6 +209,7 @@ function readCounter(raw: FirebaseFirestore.DocumentData | undefined): Counter {
     fails: typeof raw.fails === 'number' ? raw.fails : 0,
     strikes: typeof raw.strikes === 'number' ? raw.strikes : 0,
     strikeAt: typeof raw.strikeAt === 'number' ? raw.strikeAt : 0,
+    ...(typeof raw.prevStrikes === 'number' ? { prevStrikes: raw.prevStrikes, prevStrikeAt: typeof raw.prevStrikeAt === 'number' ? raw.prevStrikeAt : 0 } : {}),
   };
 }
 
@@ -260,6 +264,11 @@ async function reserve(d: Deps, buckets: Bucket[], entryId: string): Promise<boo
       if (b.kind === 'strike') {
         c.fails += 1;
         if (c.fails >= LIMITS.username.max) {
+          // The 5th try sets the lock before it is compared. A parent bucket remembers what it held, so a right 5th try can undo it.
+          if (b.keepStrikes) {
+            c.prevStrikes = c.strikes;
+            c.prevStrikeAt = c.strikeAt;
+          }
           c.lockedUntil = now + lockMsFor(c.strikes);
           c.lockedBy = entryId;
           c.strikes += 1;
@@ -275,7 +284,17 @@ async function reserve(d: Deps, buckets: Bucket[], entryId: string): Promise<boo
       }
       const fams = new Set(c.families ?? []);
       if (b.familyUid) fams.add(b.familyUid);
-      tx.set(b.ref, { entries: c.entries, lockedUntil: c.lockedUntil, lockedBy: c.lockedBy, families: [...fams], fails: c.fails, strikes: c.strikes, strikeAt: c.strikeAt, updatedAt: now });
+      tx.set(b.ref, {
+        entries: c.entries,
+        lockedUntil: c.lockedUntil,
+        lockedBy: c.lockedBy,
+        families: [...fams],
+        fails: c.fails,
+        strikes: c.strikes,
+        strikeAt: c.strikeAt,
+        ...(c.prevStrikes !== undefined ? { prevStrikes: c.prevStrikes, prevStrikeAt: c.prevStrikeAt ?? 0 } : {}),
+        updatedAt: now,
+      });
     }
     return true;
   }, TX_OPTS);
@@ -310,8 +329,9 @@ async function refund(d: Deps, buckets: Bucket[], entryId: string, migrate?: Mig
           lockedUntil: c.lockedBy === entryId ? 0 : c.lockedUntil,
           lockedBy: c.lockedBy === entryId ? null : c.lockedBy,
           fails: 0,
-          strikes: b.keepStrikes ? c.strikes : 0,
-          strikeAt: b.keepStrikes ? c.strikeAt : 0,
+          // A right try keeps the strikes, except the one its own 5th-try lock added before the compare: that goes back, with its time.
+          strikes: !b.keepStrikes ? 0 : c.lockedBy === entryId && c.prevStrikes !== undefined ? c.prevStrikes : c.strikes,
+          strikeAt: !b.keepStrikes ? 0 : c.lockedBy === entryId && c.prevStrikes !== undefined ? c.prevStrikeAt ?? 0 : c.strikeAt,
         });
         continue;
       }

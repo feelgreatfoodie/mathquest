@@ -283,6 +283,29 @@ describe('strikes survive a right PIN', () => {
     expect(await lockMs()).toBe(40 * MIN);
   });
 
+  it('a right 5th try leaves no phantom strike: 4 wrong then right, twice, then 5 real wrong tries lock for 5 minutes and a re-sign-in opens it', async () => {
+    await withRow(A);
+    for (let round = 0; round < 2; round++) {
+      for (let i = 0; i < 4; i++) await checkParentPin(deps(), authOf(A), { pin: OTHER });
+      expect(await checkParentPin(deps(), authOf(A), { pin: PIN })).toEqual({ ok: true });
+      expect((await bucketDocs())[0]!.data()).toMatchObject({ strikes: 0, strikeAt: 0, fails: 0, lockedUntil: 0 });
+    }
+    await lockIt();
+    expect(await lockMs()).toBe(5 * MIN);
+    clock += 1000;
+    expect(await checkParentPin(deps(), authOf(A, { authTime: Math.floor(clock / 1000) + 1 }), { pin: PIN })).toEqual({ ok: true });
+  });
+
+  it('a right 5th try after real locks restores the strikes and strikeAt it had before that try', async () => {
+    await withRow(A);
+    await lockIt();
+    const lockedAt = clock;
+    clock += 5 * MIN + 1;
+    for (let i = 0; i < 4; i++) await checkParentPin(deps(), authOf(A), { pin: OTHER });
+    expect(await checkParentPin(deps(), authOf(A), { pin: PIN })).toEqual({ ok: true });
+    expect((await bucketDocs())[0]!.data()).toMatchObject({ strikes: 1, strikeAt: lockedAt, fails: 0, lockedUntil: 0 });
+  });
+
   it('a right PIN still clears the wrong-try count', async () => {
     await withRow(A);
     for (let i = 0; i < 4; i++) await checkParentPin(deps(), authOf(A), { pin: OTHER });
