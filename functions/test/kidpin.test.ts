@@ -45,7 +45,7 @@ async function seedKid(fam: string, id: string, name: string) {
 }
 
 async function clearAll() {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) {
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) {
     await db.recursiveDelete(db.collection(col));
   }
 }

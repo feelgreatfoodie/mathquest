@@ -16,7 +16,7 @@ beforeAll(() => {
 
 async function snapshot() {
   const out: string[] = [];
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) {
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) {
     const walk = async (ref: FirebaseFirestore.CollectionReference) => {
       for (const doc of await ref.listDocuments()) {
         if ((await doc.get()).exists) out.push(`${doc.path}=${JSON.stringify((await doc.get()).data())}`);
@@ -29,7 +29,7 @@ async function snapshot() {
 }
 
 beforeEach(async () => {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 });
 
 const deps = (): Deps => ({ db, pepper: TEST_PEPPER, auth: { createCustomToken: async (uid, claims) => `h.${Buffer.from(JSON.stringify({ uid, claims })).toString('base64url')}.s` } });

@@ -29,7 +29,7 @@ let clock = 1_700_000_000_000;
 const deps = (): Deps => ({ db, pepper: TEST_PEPPER, now: () => clock, auth: { createCustomToken: async (uid, claims) => JSON.stringify({ uid, claims }) } });
 const seedKid = (fam: string, id: string, name: string) => db.doc(`families/${fam}/kids/${id}`).set({ id, name, createdAt: 1, settings: {}, game: {} });
 async function clearAll() {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 }
 const signIn = (name: string, pin: string, ip = '10.0.0.1') => kidSignIn(deps(), { name, pin, ip });
 const claimsOf = (r: { token: string }) => JSON.parse(r.token) as { uid: string; claims: Record<string, string> };

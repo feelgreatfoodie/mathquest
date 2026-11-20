@@ -1,6 +1,6 @@
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions/logger';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { claimUsername, parentPinHash, setKidPin, type AuthContext, type Deps } from '../src/core.js';
 import { TEST_PEPPER } from './testPepper.js';
 
@@ -22,6 +22,11 @@ const req = (data: object, extra: object = {}) => ({ data, rawRequest: { headers
 beforeAll(async () => {
   fns = (await import('../src/index.js')) as unknown as Record<string, Fn>;
   db = getFirestore();
+});
+
+afterAll(async () => {
+  // Leave no usernames or counters behind: the other test files share this emulator.
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 });
 
 beforeEach(async () => {

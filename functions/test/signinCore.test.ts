@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, scryptSync } from 'node:crypto';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Counts every scrypt call core.ts makes, so a test can say "one scrypt" without timing anything.
 const scryptCalls = vi.hoisted(() => ({ n: 0 }));
@@ -102,6 +102,11 @@ async function counters(prefix: string) {
 beforeAll(() => {
   if (!getApps().length) initializeApp({ projectId: 'demo-mathquest' });
   db = getFirestore();
+});
+
+afterAll(async () => {
+  // Leave no usernames or counters behind: the other test files share this emulator.
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 });
 
 beforeEach(async () => {

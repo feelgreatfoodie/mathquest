@@ -53,7 +53,7 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 });
 
 describe('registerParent', () => {
