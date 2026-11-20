@@ -36,8 +36,10 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
       </div>
       <div className="early-home-mute"><MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big chimesOnly={mute.chimesOnly} /></div>
       <CampScene game={kid.game} size={200} className="px-camp-wide" />
-      <GoalJar game={kid.game} learner="prereader" onClick={() => void speak(`Saving for the ${goalName(kid.game.goal ?? '')}! You have ${kid.game.gems}.`)} />
-      <ShopMathEntry kid={kid} repo={repo} onGame={onTipGame ?? (() => undefined)} />
+      <div className="early-home-info">
+        <GoalJar game={kid.game} learner="prereader" onClick={() => void speak(`Saving for the ${goalName(kid.game.goal ?? '')}! You have ${kid.game.gems}.`)} />
+        <ShopMathEntry kid={kid} repo={repo} onGame={onTipGame ?? (() => undefined)} />
+      </div>
       <div className="early-home-row">
         <button
           type="button"

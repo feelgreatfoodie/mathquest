@@ -1518,6 +1518,7 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .early-pictures { background: var(--px-neutral-dark); box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge), inset 0 4px 0 rgba(0, 0, 0, 0.35); padding: 10px 16px; margin: 4px; }
 .og-num { border-radius: 0; }
 .og-item.is-counted { filter: none; outline: 4px solid var(--px-gold); }
+.early-run .arena.early-arena { --scene-h: clamp(110px, calc(100vh - 960px), 300px); }
 .early-run .arena.early-arena { --scene-h: clamp(110px, calc(100dvh - 960px), 300px); }
 
 /* Home: stats in a pixel top bar, a camp scene, mode cards in area colors. */
@@ -1630,3 +1631,173 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .ow-pre .ow-camp-tray .icon-btn { width: 104px; height: 104px; }
 .ow-pre .ow-camp-done { display: none; } /* the camp button in the HUD closes the tray; the pre-reader tray keeps 3 keys so it fits 393 px */
 .ow-pre .ow-camp-dots b { width: 14px; height: 14px; }
+
+/* ---- ipad-fit: every non-Adventure screen fits the iPad Safari viewport, portrait and landscape, no scroll ----
+   --fit is 1% of the viewport height. Safari below 15.4 has no dvh, so it keeps the vh line (it counts the address bar,
+   so the flex items below shrink to make room); the root fill uses 100% there, which is the visible viewport. */
+:root { --fit: 1vh; }
+@supports (height: 1dvh) { :root { --fit: 1dvh; } }
+
+/* Every rule below is for iPad-sized screens (700 px wide and 600 px tall or more). Phones keep their own layouts. */
+@media (min-width: 700px) and (min-height: 600px) {
+/* Picture-player Home: banner, one info row, tiles that fill what is left, flames. */
+.screen.center.early-home { height: 100%; min-height: 0; gap: clamp(6px, calc(1.6 * var(--fit)), 16px); justify-content: flex-start; padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+@supports (height: 100dvh) { .screen.center.early-home { height: 100dvh; } }
+.early-home .px-camp.px-camp-wide { flex: 0 1 calc(28 * var(--fit)); height: auto; min-height: 84px; max-height: 340px; }
+.early-home-info { flex: none; display: flex; flex-wrap: nowrap; gap: 12px; align-items: center; justify-content: center; max-width: 100%; }
+.early-home .goal-jar-prereader { min-height: 120px; min-width: 120px; gap: 10px; padding: 4px 16px; margin-top: 0; }
+.early-home .goal-jar-prereader .jar { width: 40px; height: 52px; }
+.early-home .goal-jar-prereader .tally-num { font-size: 32px; }
+.early-home .goal-jar-prereader .jar-of { font-size: 22px; }
+.early-home .shopmath-entry { min-height: 60px; font-size: 40px; }
+.early-home .early-home-row { flex: 1 1 0; min-height: 120px; width: min(900px, 100%); flex-wrap: nowrap; gap: clamp(8px, calc(2.2 * var(--fit)), 24px); align-items: stretch; }
+.early-home .early-home-row > * { min-width: 120px; min-height: 120px; height: auto; width: auto; flex: 1 1 0; }
+.early-home .early-home-row > .play-btn { flex: 1.6 1 0; }
+.early-home .early-home-row svg { width: auto; height: min(150px, calc(18 * var(--fit))); max-height: 70%; }
+.early-home .early-home-row .shop-btn-gems svg { height: min(36px, calc(5 * var(--fit))); max-height: none; }
+.early-home .shop-btn-gems .tally-num { font-size: min(40px, calc(5.4 * var(--fit))); }
+.early-home .flames { flex: none; min-height: 0; }
+.early-home .flames svg { width: auto; height: min(44px, calc(5.5 * var(--fit))); }
+@media (orientation: portrait) {
+  .early-home .early-home-row { display: grid; grid-template-columns: 1.4fr 1fr; grid-auto-rows: 1fr; }
+  .early-home .early-home-row > * { flex: none; }
+  .early-home .early-home-row > .play-btn { flex: none; }
+}
+
+/* Reader Home: portrait lets the banner take what is left, landscape puts the banner and week on the left and the actions on the right. */
+.screen.center.home-fit { height: 100%; min-height: 0; padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+@supports (height: 100dvh) { .screen.center.home-fit { height: 100dvh; } }
+.home-fit .px-home { width: 100%; height: 100%; min-height: 0; gap: clamp(6px, calc(1.4 * var(--fit)), 14px); }
+.home-fit .px-topbar.px-frame { flex-wrap: nowrap; gap: 6px; padding: 6px 8px; }
+.home-fit .px-topbar .stat { padding: 4px 8px; flex: 1 1 0; min-width: 0; justify-content: center; }
+.home-fit .px-topbar .stat-value { font-size: 18px; }
+.home-fit .px-topbar .stat-label { font-size: 13px; }
+.home-fit .px-camp { flex: 1 1 0; height: auto; min-height: 90px; max-height: 300px; }
+.home-fit .mode-card.px-frame { min-height: 96px; flex: 1 1 0; max-width: none; }
+.home-fit .week-day { padding: 2px 4px; }
+.home-fit .week-day svg { width: 32px; height: 32px; }
+.home-fit .week-streak { display: none; }
+.home-fit .btn-start, .home-fit [data-testid='home-lightning'] { min-height: 60px; }
+@media (orientation: landscape) and (max-height: 860px) {
+  .home-fit .px-home { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-content: stretch; align-items: stretch; gap: 8px 16px; max-width: 1000px; }
+  .home-fit .px-home > * { grid-column: 2; min-width: 0; margin: 0; }
+  .home-fit .px-topbar.px-frame { grid-column: 1 / -1; }
+  .home-fit .px-camp { grid-column: 1; grid-row: 2 / span 4; max-height: none; }
+  .home-fit .week { grid-column: 1; grid-row: 6; }
+  .home-fit .scanline-toggle { grid-column: 1; grid-row: 7; }
+  .home-fit .mode-cards { gap: 10px; }
+  .home-fit .mode-card .mode-status { display: none; }
+}
+
+/* Title and intro: the logo, the cards and the buttons share the height; the card picture takes what is left. */
+.title-screen { height: 100%; min-height: 0; }
+@supports (height: 100dvh) { .title-screen { height: 100dvh; } }
+.px-logo { font-size: clamp(28px, min(9vw, calc(8 * var(--fit))), 72px); margin-bottom: clamp(4px, calc(1.2 * var(--fit)), 14px); }
+.title-head { padding-top: max(10px, env(safe-area-inset-top)); }
+.title-body { min-height: 0; }
+.title-body > .screen { min-height: 0; flex: 1 1 0; padding-top: 0; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+.intro-panel { min-height: 0; max-height: 100%; width: 100%; padding: 12px 16px; gap: clamp(6px, calc(1.2 * var(--fit)), 14px); }
+.intro-track { flex: 1 1 0; min-height: 0; }
+.intro-card { min-height: 0; gap: clamp(4px, calc(1 * var(--fit)), 12px); }
+.intro-card img { flex: 1 1 0; min-height: 0; width: auto; max-width: 100%; height: auto; max-height: calc(34 * var(--fit)); aspect-ratio: 8 / 5; object-fit: contain; }
+.intro-card figcaption { font-size: clamp(15px, calc(2.6 * var(--fit)), 20px); min-height: 0; }
+
+/* Picture Run: the banner, the pictures, the numerals and the answer buttons share the height. */
+.screen.run.early-run { height: 100%; min-height: 0; padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(8px, env(safe-area-inset-bottom)); gap: clamp(2px, calc(0.8 * var(--fit)), 8px); }
+@supports (height: 100dvh) { .screen.run.early-run { height: 100dvh; } }
+.early-run .arena.early-arena { --scene-h: clamp(64px, calc(15 * var(--fit)), 300px); flex: none; }
+.early-run .early-pictures { min-height: 0; flex: 0 1 auto; }
+.early-run .choice-arrow { height: clamp(20px, calc(5 * var(--fit)), 56px); }
+@media (orientation: landscape) and (max-height: 860px) {
+  .early-run .early-numerals { font-size: clamp(44px, calc(10 * var(--fit)), 80px); min-height: 0; }
+  .choice { height: clamp(120px, calc(19 * var(--fit)), 176px); }
+  .choice-num { font-size: clamp(36px, calc(7 * var(--fit)), 56px); }
+  .early-run .og-item svg { max-height: calc(9 * var(--fit)); width: auto; }
+}
+.intro-panel { flex: 1 1 0; }
+
+/* Dungeon Run: the banner has a fixed height that leaves room for the miss card, so the scene never moves when a miss shows.
+   The numbers are the height of the top bar, the miss card, the keypad and the gaps. */
+@media (orientation: landscape) and (min-width: 900px) {
+  :root { --scene-h: clamp(48px, calc(100vh - 500px), 400px); }
+}
+@supports (height: 100dvh) { @media (orientation: landscape) and (min-width: 900px) { :root { --scene-h: clamp(48px, calc(100dvh - 500px), 400px); } } }
+@media (orientation: portrait) and (min-width: 700px) and (max-height: 999px) {
+  :root { --scene-h: clamp(48px, calc(100vh - 846px), 400px); }
+}
+@supports (height: 100dvh) { @media (orientation: portrait) and (min-width: 700px) and (max-height: 999px) { :root { --scene-h: clamp(48px, calc(100dvh - 846px), 400px); } } }
+
+/* Reader end screen: short landscape drops the decorative chest row and hero and puts the stats on fewer lines. */
+@media (orientation: landscape) and (max-height: 860px) and (min-width: 700px) {
+  .px-treasure-screen { gap: 6px; padding-top: 8px; padding-bottom: 8px; }
+  .px-treasure-screen .px-treasure { padding: 0; gap: 8px; }
+  .px-treasure-screen .px-treasure svg { width: auto; height: 40px; }
+  .px-treasure-screen .panel.summary > .bob { display: none; }
+  .px-treasure-screen .panel.summary { gap: 6px; padding: 10px 16px; }
+  .px-treasure-screen .stats { gap: 6px 14px; }
+  .px-treasure-screen .stat { padding: 4px 10px; }
+  .px-treasure-screen .stat-value { font-size: 18px; }
+  .px-treasure-screen .stars svg { width: 40px; height: 40px; }
+}
+
+/* Picture-player end screen: every step stays on one screen, each part scales with the height. */
+.screen.center.sum { height: 100%; min-height: 0; overflow: hidden; justify-content: space-evenly; padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+@supports (height: 100dvh) { .screen.center.sum { height: 100dvh; } }
+.sum .sum-panel { min-height: 0; }
+@media (max-height: 860px) and (min-width: 700px) {
+  .sum { gap: 6px; }
+  .sum .big-stars svg { width: auto; height: calc(8 * var(--fit)); }
+  .sum .sum-gems svg { width: auto; height: calc(11 * var(--fit)); }
+  .sum .sum-gems .sum-total svg { height: calc(8 * var(--fit)); }
+  .sum .tally-num { font-size: calc(9 * var(--fit)); }
+  .sum .sum-hero svg, .sum .sum-hero img { width: auto; height: calc(14 * var(--fit)); }
+  .sum .sum-badge { min-width: 40px; height: 40px; font-size: 26px; }
+  .sum .sum-bar { height: 32px; }
+  .sum .sum-stone { min-height: calc(12 * var(--fit)); min-width: 110px; padding: 6px; }
+  .sum .sum-map { padding-top: calc(7 * var(--fit)); gap: 6px; }
+  .sum .sum-stone-hero { top: calc(-8 * var(--fit)); width: auto; height: calc(8 * var(--fit)); }
+  .sum .sum-op { font-size: 40px; }
+  .sum .sum-streak svg { width: auto; height: calc(6 * var(--fit)); }
+  .sum .sum-btn { width: clamp(120px, calc(17 * var(--fit)), 140px); height: clamp(120px, calc(17 * var(--fit)), 140px); }
+  .sum .sum-btn.sum-play { width: clamp(120px, calc(22 * var(--fit)), 180px); }
+  .sum .sum-btn svg { width: auto; height: calc(9 * var(--fit)); }
+  .sum .sum-buttons { margin-top: 0; gap: 16px; }
+}
+
+/* Shops and vaults: one screen, no inner scroll. The decorative stall and vault door shrink, the tabs share one row, the grid fills what is left. */
+@media (max-height: 940px) and (min-width: 700px) {
+  .modal { padding: 6px; }
+  .panel.shop { max-height: 100%; padding: 8px 14px; gap: 6px; }
+  .panel.shop h2 { display: none; }
+  .panel.shop > p.muted { margin: 0; font-size: 15px; }
+  .panel.shop .px-stall, .panel.shop .px-vault-scene, .pshop .px-stall, .pshop .px-vault-scene { zoom: 0.5; margin: 0; }
+  .shop-tabs { flex-wrap: nowrap; gap: 4px; }
+  .shop-tab { padding: 4px 8px; font-size: 14px; flex: 0 1 auto; min-width: 0; }
+  .panel.shop .goal-jar { min-height: 0; padding: 4px 12px; }
+  .panel.shop .goal-jar .tally-num { font-size: 32px; }
+  .panel.shop .goal-jar .jar { width: 36px; height: 44px; }
+  .shop-grid { row-gap: 12px; }
+  .shop-item { padding: 6px; gap: 4px; }
+  .shop-item svg, .shop-item img { max-height: calc(11 * var(--fit)); width: auto; }
+  .vault { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; align-items: start; }
+  .vault > .vault-new { grid-column: 2; grid-row: 1 / span 4; }
+  .vault > p, .vault > .vault-list { grid-column: 1; margin: 0; }
+  .vault-new { padding: 8px; gap: 6px; }
+  .vault-terms .btn { min-width: 80px; }
+}
+.screen.center.pshop { height: 100%; min-height: 0; padding-top: max(8px, env(safe-area-inset-top)); padding-bottom: max(8px, env(safe-area-inset-bottom)); gap: clamp(4px, calc(1.2 * var(--fit)), 24px); }
+@supports (height: 100dvh) { .screen.center.pshop { height: 100dvh; } }
+.screen.center.pshop-confirm { justify-content: center; }
+.pshop-top { flex: none; }
+.pshop-purse .tally-num { font-size: min(56px, calc(7 * var(--fit))); }
+.pshop-tabs, .pshop-tabs.is-wide { grid-template-columns: repeat(auto-fit, 120px); justify-content: center; flex: none; width: min(900px, 100%); }
+.pshop-grid { flex: 1 1 0; min-height: 0; width: min(900px, 100%); grid-template-columns: repeat(auto-fit, minmax(110px, 210px)); grid-auto-rows: minmax(120px, 1fr); gap: clamp(8px, calc(2 * var(--fit)), 20px); align-content: stretch; }
+.pshop-card { min-height: 120px; padding: 6px; gap: 4px; }
+.pshop-card svg, .pshop-card img { width: auto; height: min(104px, calc(11 * var(--fit))); }
+.pshop-tag { min-height: 0; }
+.pshop-tag .tally-num { font-size: min(40px, calc(5 * var(--fit))); }
+.pvault { min-height: 0; flex: 1 1 0; gap: clamp(6px, calc(2 * var(--fit)), 20px); }
+.pv-new { min-height: 120px; padding: 6px 16px; }
+.pv-chest { min-height: 120px; width: 120px; }
+.pv-chest svg, .pv-new svg { width: auto; max-height: calc(8 * var(--fit)); }
+}
