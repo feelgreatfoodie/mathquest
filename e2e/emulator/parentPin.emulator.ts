@@ -143,3 +143,20 @@ test('a new account sets its first Grown-up PIN on the server, with no hash in t
   expect(fam).not.toHaveProperty('pinHash');
   expect(fam).toHaveProperty('hasPin');
 });
+
+test('a stale Grown-up PIN is asked for again before a kid PIN is saved, and the save goes through', async ({ page }) => {
+  await parentSignIn(page, true);
+  await expect(page.getByRole('heading', { name: 'Who is playing?' })).toBeVisible({ timeout: 20_000 });
+  await page.getByRole('button', { name: 'Grown-ups area' }).click();
+  await tryPin(page, GROWN_PIN);
+  await expect(page.getByRole('button', { name: 'Back to game' })).toBeVisible({ timeout: 15_000 });
+  // The last right check is 31 minutes old.
+  const uid = await parentUid();
+  await fetch(`${FS}/parentPins/${uid}?updateMask.fieldPaths=verifiedAt`, { method: 'PATCH', headers: OWNER, body: JSON.stringify({ fields: fields({ verifiedAt: Date.now() - 31 * 60_000 }) }) });
+  await page.getByTestId('kid-pin-panel').locator('input').fill('4826');
+  await page.getByTestId('kid-pin-panel').getByRole('button', { name: 'Change PIN' }).click();
+  await expect(page.getByTestId('fresh-pin')).toBeVisible({ timeout: 10_000 });
+  await tryPin(page, GROWN_PIN);
+  // The pad closes and the save is retried: a reset on this device hands the kid to the PIN pad.
+  await expect(page.getByRole('heading', { name: `${PIN_KID.name}'s PIN` })).toBeVisible({ timeout: 15_000 });
+});

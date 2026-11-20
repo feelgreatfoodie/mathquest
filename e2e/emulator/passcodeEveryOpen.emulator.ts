@@ -45,6 +45,8 @@ async function seedFamily(): Promise<void> {
   const { idToken, localId } = (await res.json()) as { idToken: string; localId: string };
   await call('registerParent', idToken, {});
   await fetch(`${FS}/families/${localId}`, { method: 'PATCH', headers: OWNER, body: JSON.stringify({ fields: fields({ pinHash: 'x', createdAt: 1 }) }) });
+  // The parent typed the Grown-up PIN a moment ago, which setKidPin needs when a PIN exists.
+  await fetch(`${FS}/parentPins/${localId}`, { method: 'PATCH', headers: OWNER, body: JSON.stringify({ fields: fields({ verifiedAt: Date.now() }) }) });
   await fetch(`${FS}/families/${localId}/kids/${KID.id}`, {
     method: 'PATCH',
     headers: OWNER,

@@ -32,6 +32,7 @@ import { reservedReason } from './reserved.js';
 export const MISMATCH_MESSAGE = "That username and passcode didn't match.";
 export const LOCKED_MESSAGE = 'Too many wrong tries. Ask a grown-up to open Grown-ups and tap Unlock.';
 export const LOCKED_PARENT_MESSAGE = 'Too many wrong tries. Wait a while, or sign in with Google again to try once more.';
+export const PARENT_STALE_MESSAGE = 'Type the Grown-up PIN first.';
 export const FULL_MESSAGE = 'Math Quest is full right now.';
 export const NAME_TAKEN_MESSAGE = 'That name is taken. Try adding a last initial, like EmmaS.';
 
@@ -221,6 +222,8 @@ interface StrikeBucket {
   kind: 'strike';
   ref: FirebaseFirestore.DocumentReference;
   familyUid?: string;
+  /** A success clears the wrong tries and the lock it set, but keeps the strikes (parent PIN). Kid buckets reset strikes on a success. */
+  keepStrikes?: boolean;
 }
 type Bucket = WindowBucket | StrikeBucket;
 
@@ -301,7 +304,15 @@ async function refund(d: Deps, buckets: Bucket[], entryId: string, migrate?: Mig
       if (!raw) continue;
       const c = readCounter(raw);
       if (b.kind === 'strike') {
-        tx.set(b.ref, { ...raw, entries: [], lockedUntil: c.lockedBy === entryId ? 0 : c.lockedUntil, lockedBy: c.lockedBy === entryId ? null : c.lockedBy, fails: 0, strikes: 0, strikeAt: 0 });
+        tx.set(b.ref, {
+          ...raw,
+          entries: [],
+          lockedUntil: c.lockedBy === entryId ? 0 : c.lockedUntil,
+          lockedBy: c.lockedBy === entryId ? null : c.lockedBy,
+          fails: 0,
+          strikes: b.keepStrikes ? c.strikes : 0,
+          strikeAt: b.keepStrikes ? c.strikeAt : 0,
+        });
         continue;
       }
       c.entries = c.entries.filter((e) => e.id !== entryId);
@@ -609,6 +620,9 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
   if (typeof kidId !== 'string' || !ID_RE.test(kidId)) throw new HttpsError('invalid-argument', 'Bad player id.');
   if (typeof pin !== 'string' || !PIN_RE.test(pin)) throw new HttpsError('invalid-argument', 'The PIN must be 4 digits.');
 
+  // Before anything that looks at the parent PIN: a caller who has not typed it recently learns nothing about it.
+  await assertParentVerified(d, parent.uid);
+
   const kidRef = d.db.doc(`families/${parent.uid}/kids/${kidId}`);
   const kidSnap = await kidRef.get();
   if (!kidSnap.exists) throw new HttpsError('not-found', 'That player does not exist.');
@@ -679,6 +693,7 @@ export async function setKidPicturePin(d: Deps, auth: AuthContext | undefined, d
   const { kidId, picture } = data;
   if (typeof kidId !== 'string' || !ID_RE.test(kidId)) throw new HttpsError('invalid-argument', 'Bad player id.');
   if (typeof picture !== 'string' || !PICTURE_RE.test(picture)) throw new HttpsError('invalid-argument', 'Pick 4 pictures.');
+  await assertParentVerified(d, parent.uid);
   const kidRef = d.db.doc(`families/${parent.uid}/kids/${kidId}`);
   if (!(await kidRef.get()).exists) throw new HttpsError('not-found', 'That player does not exist.');
   const rowRef = d.db.doc(`pinIndex/${parent.uid}/kids/${kidId}`);
@@ -767,6 +782,19 @@ function parentPinOf(data: unknown): string {
   return pin;
 }
 
+/**
+ * A caller who holds a parent's Google session but has not typed the grown-up PIN in the last 30 minutes may not use any call that
+ * compares a PIN with it, or that sets a PIN. A parent with no PIN has nothing to guard. This runs before any such comparison, so no
+ * answer depends on the PIN and no try goes uncounted: the only counted way to test a guess is checkParentPin.
+ */
+async function assertParentVerified(d: Deps, uid: string): Promise<void> {
+  const [fam, row] = await Promise.all([familyRef(d, uid).get(), parentPinRef(d, uid).get()]);
+  if (!row.exists && typeof fam.data()?.pinHash !== 'string') return;
+  const at = row.data()?.verifiedAt;
+  const now = nowOf(d);
+  if (!(typeof at === 'number' && at <= now && now - at < PARENT_VERIFY_WINDOW_MS)) throw new HttpsError('failed-precondition', PARENT_STALE_MESSAGE);
+}
+
 /** The v2 row of a parent, when it is well formed. */
 function parentSecret(row: FirebaseFirestore.DocumentData | undefined): Secret | null {
   if (!row || row.v !== 2 || typeof row.salt !== 'string' || typeof row.hash !== 'string') return null;
@@ -808,7 +836,7 @@ async function reopenAfterSignIn(d: Deps, ref: FirebaseFirestore.DocumentReferen
 export async function checkParentPin(d: Deps, auth: AuthContext | undefined, data: { pin?: unknown }): Promise<{ ok: boolean }> {
   const parent = await assertParent(d, auth);
   const pin = parentPinOf(data);
-  const bucket: Bucket = { kind: 'strike', ref: parentCounter(d, parent.uid) };
+  const bucket: Bucket = { kind: 'strike', ref: parentCounter(d, parent.uid), keepStrikes: true };
   await reopenAfterSignIn(d, bucket.ref, parent.authTime);
   const entryId = randomBytes(8).toString('hex');
   if (!(await reserve(d, [bucket], entryId))) throw new HttpsError('resource-exhausted', LOCKED_PARENT_MESSAGE);
@@ -872,7 +900,7 @@ export async function setParentPin(d: Deps, auth: AuthContext | undefined, data:
     const had = r.exists || typeof f.data()?.pinHash === 'string';
     const verifiedAt = r.data()?.verifiedAt;
     if (had && !(typeof verifiedAt === 'number' && verifiedAt <= now && now - verifiedAt < PARENT_VERIFY_WINDOW_MS)) {
-      throw new HttpsError('failed-precondition', 'Type the current Grown-up PIN first.');
+      throw new HttpsError('failed-precondition', PARENT_STALE_MESSAGE);
     }
     tx.set(rowRef, { salt: salt.toString('hex'), hash: hash.toString('hex'), v: 2, updatedAt: now, verifiedAt: had ? now : 0 });
     tx.set(famRef, { pinHash: FieldValue.delete(), hasPin: true, ...(f.exists && typeof f.data()?.createdAt === 'number' ? {} : { createdAt: now }) }, { merge: true });

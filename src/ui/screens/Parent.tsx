@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FocusEvent } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type FocusEvent } from 'react';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { HEROES, levelFor } from '../../engine/game';
 import { itemById } from '../../game/shop/catalog';
@@ -188,7 +188,65 @@ export function ParkedRounds({ kids }: { kids: Kid[] }) {
   );
 }
 
-export function ParentArea({ repo, kids, onKids, onFamily, onExit, onSignOut, afterPause, setPinFor, onKidPinSet, onPinReset }: ParentProps) {
+/**
+ * The server wants the Grown-up PIN typed within the last 30 minutes before it sets a PIN. `fresh(run)` runs the call, and when
+ * the server says the PIN is stale it asks the grown-up for it on a pad over the screen, then runs the call once more.
+ */
+type Fresh = <T>(run: () => Promise<T>) => Promise<T>;
+const FreshPin = createContext<Fresh>((run) => run());
+const STALE_PIN = 'Type the Grown-up PIN first.';
+
+export function ParentArea(props: ParentProps) {
+  const [ask, setAsk] = useState<{ resolve: (ok: boolean) => void } | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
+  const fresh: Fresh = async (run) => {
+    try {
+      return await run();
+    } catch (e) {
+      if ((e as { code?: string }).code !== 'functions/failed-precondition' || !(e as Error).message.includes(STALE_PIN)) throw e;
+      const ok = await new Promise<boolean>((resolve) => {
+        setAskError(null);
+        setAsk({ resolve });
+      });
+      if (!ok) throw e;
+      return run();
+    }
+  };
+  const close = (ok: boolean) => {
+    ask?.resolve(ok);
+    setAsk(null);
+  };
+  return (
+    <FreshPin.Provider value={fresh}>
+      <ParentAreaInner {...props} />
+      {ask ? (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'var(--bg, #14102a)' }} data-testid="fresh-pin">
+          <PinPad
+            title="Grown-up PIN"
+            subtitle="Type it again to save this."
+            error={askError}
+            onCancel={() => close(false)}
+            onComplete={async (p) => {
+              try {
+                if (await props.repo.checkParentPin(p)) {
+                  close(true);
+                  return true;
+                }
+                setAskError('Wrong PIN. Try again.');
+              } catch (e) {
+                setAskError((e as { code?: string }).code === 'functions/resource-exhausted' ? (e as Error).message : 'Could not check the PIN. Try again.');
+              }
+              return false;
+            }}
+          />
+        </div>
+      ) : null}
+    </FreshPin.Provider>
+  );
+}
+
+function ParentAreaInner({ repo, kids, onKids, onFamily, onExit, onSignOut, afterPause, setPinFor, onKidPinSet, onPinReset }: ParentProps) {
+  const fresh = useContext(FreshPin);
   const [askSignOut, setAskSignOut] = useState(false);
   // The light theme is each parent's own choice, kept on this device. It recolors the Grown-ups area only.
   const parentKey = repo.parentKey ?? 'local';
@@ -232,7 +290,7 @@ export function ParentArea({ repo, kids, onKids, onFamily, onExit, onSignOut, af
         onComplete={async (p) => {
           let f: Family;
           try {
-            await repo.setParentPin(p);
+            await fresh(() => repo.setParentPin(p));
             f = (await repo.getFamily()) ?? { pinHash: null, hasPin: true, createdAt: Date.now() };
           } catch (e) {
             reportFailure('The new PIN was not saved.', e);
@@ -483,6 +541,7 @@ export function LockBanner({ kids }: { kids: Kid[] }) {
 
 /** Set or change one kid's sign-in PIN. The PIN goes to the setKidPin function and is never stored client-side. */
 function KidPinPanel({ kid, onSet, onReset, focus }: { kid: Kid; onSet: () => Promise<void>; onReset?: (kidId: string) => void; focus?: boolean }) {
+  const fresh = useContext(FreshPin);
   const [pin, setPin] = useState('');
   const panel = useRef<HTMLElement>(null);
   // Sent here to set this kid's first PIN: bring the panel into view and put the cursor in the PIN box.
@@ -509,7 +568,7 @@ function KidPinPanel({ kid, onSet, onReset, focus }: { kid: Kid; onSet: () => Pr
           setMsg(null);
           try {
             const wasReset = kid.hasPin === true;
-            await setKidPin(kid.id, pin);
+            await fresh(() => setKidPin(kid.id, pin));
             await onSet();
             setPin('');
             // A reset clears the kid's sign-in lock on the server. On this device the kid goes straight to the PIN pad.
@@ -550,6 +609,7 @@ function KidPinPanel({ kid, onSet, onReset, focus }: { kid: Kid; onSet: () => Pr
  * which hashes it like the digit PIN, and is never stored client-side. Off for a kid until it is set; the digit PIN keeps working.
  */
 function KidPicturePinPanel({ kid, onSet }: { kid: Kid; onSet: () => void }) {
+  const fresh = useContext(FreshPin);
   const [code, setCode] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -584,7 +644,7 @@ function KidPicturePinPanel({ kid, onSet }: { kid: Kid; onSet: () => void }) {
               setBusy(true);
               setMsg(null);
               try {
-                await setKidPicturePin(kid.id, pictureCode([...code].map((c) => c.charCodeAt(0) - 97)));
+                await fresh(() => setKidPicturePin(kid.id, pictureCode([...code].map((c) => c.charCodeAt(0) - 97))));
                 onSet();
                 setMsg({ ok: true, text: 'Picture PIN saved.' });
                 setCode(null);

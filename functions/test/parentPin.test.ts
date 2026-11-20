@@ -18,9 +18,11 @@ vi.mock('node:crypto', async (orig) => {
 
 import {
   LOCKED_PARENT_MESSAGE,
+  PARENT_STALE_MESSAGE,
   checkParentPin,
   claimUsername,
   parentPinHash,
+  setKidPicturePin,
   setKidPin,
   setParentPin,
   unlockKidSignIn,
@@ -148,14 +150,61 @@ describe('setParentPin writes the server-only v2 row', () => {
     expect(await checkParentPin(deps(), authOf(A), { pin: OTHER })).toEqual({ ok: true });
   });
 
-  it('setKidPin refuses a kid PIN equal to the parent PIN whether the parent PIN is a v2 row or a legacy hash', async () => {
+  it('setKidPin refuses a kid PIN equal to the parent PIN after a recent check, whether the parent PIN is a v2 row or a legacy hash', async () => {
     await db.doc(`families/${A}/kids/kid-one`).set({ id: 'kid-one', name: 'Pip', createdAt: 1, settings: {}, game: {} });
     await withRow(A);
+    expect(await checkParentPin(deps(), authOf(A), { pin: PIN })).toEqual({ ok: true });
     expect((await fail(setKidPin(deps(), authOf(A), { kidId: 'kid-one', pin: PIN }))).code).toBe('invalid-argument');
     await setKidPin(deps(), authOf(A), { kidId: 'kid-one', pin: OTHER });
     await withLegacy(B);
     await db.doc(`families/${B}/kids/kid-two`).set({ id: 'kid-two', name: 'Maya', createdAt: 1, settings: {}, game: {} });
+    expect(await checkParentPin(deps(), authOf(B), { pin: PIN })).toEqual({ ok: true });
     expect((await fail(setKidPin(deps(), authOf(B), { kidId: 'kid-two', pin: PIN }))).code).toBe('invalid-argument');
+  });
+});
+
+describe('no call answers about the parent PIN before a counted check', () => {
+  const kid = (uid: string) => db.doc(`families/${uid}/kids/kid-one`).set({ id: 'kid-one', name: 'Pip', createdAt: 1, settings: {}, game: {} });
+
+  it('without a recent check, setKidPin fails with the stale message for every PIN, equal to the parent PIN or not, and the equality error never appears', async () => {
+    await kid(A);
+    await withRow(A);
+    const answers: string[] = [];
+    for (const pin of [PIN, OTHER, '0000', '1111']) answers.push((await fail(setKidPin(deps(), authOf(A), { kidId: 'kid-one', pin }))).message);
+    expect(new Set(answers)).toEqual(new Set([PARENT_STALE_MESSAGE]));
+    // Same for a parent on the old pinHash.
+    await kid(B);
+    await withLegacy(B);
+    for (const pin of [PIN, OTHER]) expect((await fail(setKidPin(deps(), authOf(B), { kidId: 'kid-one', pin }))).message).toBe(PARENT_STALE_MESSAGE);
+    expect(await bucketDocs()).toHaveLength(0);
+  });
+
+  it('every guess without a check gets the one same answer, so a sweep of PINs learns nothing', async () => {
+    await kid(A);
+    await withRow(A);
+    const sample = ['0000', PIN, '9999', '1234', '5555'];
+    const codes = new Set<string>();
+    for (const pin of sample) {
+      const e = await fail(setKidPin(deps(), authOf(A), { kidId: 'kid-one', pin }));
+      codes.add(`${e.code}:${e.message}`);
+    }
+    expect(codes.size).toBe(1);
+  });
+
+  it('a check older than 30 minutes is stale again, and setKidPicturePin is gated the same way', async () => {
+    await kid(A);
+    await withRow(A);
+    expect(await checkParentPin(deps(), authOf(A), { pin: PIN })).toEqual({ ok: true });
+    await setKidPin(deps(), authOf(A), { kidId: 'kid-one', pin: OTHER });
+    await setKidPicturePin(deps(), authOf(A), { kidId: 'kid-one', picture: 'abcd' });
+    clock += 31 * MIN;
+    expect((await fail(setKidPin(deps(), authOf(A), { kidId: 'kid-one', pin: '1357' }))).message).toBe(PARENT_STALE_MESSAGE);
+    expect((await fail(setKidPicturePin(deps(), authOf(A), { kidId: 'kid-one', picture: 'efgh' }))).message).toBe(PARENT_STALE_MESSAGE);
+  });
+
+  it('a parent with no PIN yet has nothing to guard: setKidPin works', async () => {
+    await kid(C);
+    await setKidPin(deps(), authOf(C), { kidId: 'kid-one', pin: OTHER });
   });
 });
 
@@ -201,6 +250,57 @@ describe('lockout per parent uid', () => {
     clock += MIN;
     const fresh = authOf(A, { authTime: Math.floor(clock / 1000) });
     expect(await checkParentPin(deps(), fresh, { pin: PIN })).toEqual({ ok: true });
+  });
+});
+
+describe('strikes survive a right PIN', () => {
+  const lockIt = async () => {
+    for (let i = 0; i < 7; i++) {
+      try {
+        await checkParentPin(deps(), authOf(A), { pin: OTHER });
+      } catch (e) {
+        expect((e as { code: string }).code).toBe('resource-exhausted');
+        return;
+      }
+    }
+    throw new Error('never locked');
+  };
+  const lockMs = async () => {
+    const doc = (await bucketDocs())[0]!;
+    return (doc.data().lockedUntil as number) - clock;
+  };
+
+  it('a right PIN after the 3rd lock keeps strikes at 3, so the next lock is the long one (40 min)', async () => {
+    await withRow(A);
+    for (const minutes of [5, 10, 20]) {
+      await lockIt();
+      expect(await lockMs()).toBe(minutes * MIN);
+      clock += minutes * MIN + 1;
+    }
+    expect(await checkParentPin(deps(), authOf(A), { pin: PIN })).toEqual({ ok: true });
+    expect((await bucketDocs())[0]!.data()).toMatchObject({ strikes: 3, fails: 0 });
+    await lockIt();
+    expect(await lockMs()).toBe(40 * MIN);
+  });
+
+  it('a right PIN still clears the wrong-try count', async () => {
+    await withRow(A);
+    for (let i = 0; i < 4; i++) await checkParentPin(deps(), authOf(A), { pin: OTHER });
+    expect(await checkParentPin(deps(), authOf(A), { pin: PIN })).toEqual({ ok: true });
+    for (let i = 0; i < 4; i++) expect(await checkParentPin(deps(), authOf(A), { pin: OTHER })).toEqual({ ok: false });
+  });
+
+  it('strikes reset after 24 hours with no lock: the next lock is 5 minutes again', async () => {
+    await withRow(A);
+    await lockIt();
+    clock += 5 * MIN + 1;
+    await lockIt();
+    expect(await lockMs()).toBe(10 * MIN);
+    clock += 10 * MIN + 1;
+    expect(await checkParentPin(deps(), authOf(A), { pin: PIN })).toEqual({ ok: true });
+    clock += 24 * 60 * MIN;
+    await lockIt();
+    expect(await lockMs()).toBe(5 * MIN);
   });
 });
 

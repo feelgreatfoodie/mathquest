@@ -27,6 +27,9 @@ const PIN = '7305';
 const PIN_B = '2946';
 
 let db: Firestore;
+/** Stamps the Grown-up PIN as typed just now, the way a right checkParentPin does. */
+const verifyParent = () => db.doc(`parentPins/${FAM}`).set({ verifiedAt: clock });
+
 let clock = 1_700_000_000_000;
 
 function deps(): Deps {
@@ -45,7 +48,7 @@ async function seedKid(fam: string, id: string, name: string) {
 }
 
 async function clearAll() {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) {
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'parentPins', 'nameKeys', 'usernames', 'config']) {
     await db.recursiveDelete(db.collection(col));
   }
 }
@@ -74,6 +77,8 @@ beforeEach(async () => {
   await db.doc(`parents/${FAM2}`).set({ email: 'parent-two@example.com', createdAt: 1 });
   await db.doc('meta/parentCount').set({ count: 2 });
   await db.doc(`families/${FAM}`).set({ pinHash: parentPinHash(FAM, PARENT_PIN), createdAt: 1 });
+  // The parent typed the Grown-up PIN a moment ago (setKidPin and setKidPicturePin need that). Tests that move the clock call verifyParent().
+  await verifyParent();
   await seedKid(FAM, 'kid-pip', 'Pip');
   await seedKid(FAM, 'kid-maya', 'Maya');
   await seedKid(FAM, 'kid-leo', 'Leo');

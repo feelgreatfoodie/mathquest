@@ -54,6 +54,9 @@ const DEV_B = 'devB-0123456789abcdef';
 const UA_IPAD = 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 
 let db: Firestore;
+/** Stamps the Grown-up PIN as typed just now, the way a right checkParentPin does. */
+const verifyParent = () => db.doc(`parentPins/${FAM}`).set({ verifiedAt: clock });
+
 let clock = 1_700_000_000_000;
 let logs: Record<string, unknown>[] = [];
 
@@ -83,7 +86,7 @@ async function seedKid(fam: string, id: string, name: string) {
 }
 
 async function clearAll() {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'parentPins', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 }
 
 /** Seeds a kid with a PIN and, with a username, a claimed username. */
@@ -106,7 +109,7 @@ beforeAll(() => {
 
 afterAll(async () => {
   // Leave no usernames or counters behind: the other test files share this emulator.
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'parentPins', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 });
 
 beforeEach(async () => {
@@ -117,6 +120,8 @@ beforeEach(async () => {
   await db.doc(`parents/${FAM2}`).set({ email: 'parent-two@example.com', createdAt: 1 });
   await db.doc('meta/parentCount').set({ count: 2 });
   await db.doc(`families/${FAM}`).set({ pinHash: parentPinHash(FAM, '4821'), createdAt: 1 });
+  // The parent typed the Grown-up PIN a moment ago (setKidPin and setKidPicturePin need that). Tests that move the clock call verifyParent().
+  await verifyParent();
   await player(FAM, PARENT, 'kid-pip', 'Pip', PIN, 'pip_runner');
   await player(FAM, PARENT, 'kid-maya', 'Maya', PIN_B); // no username yet: a legacy player
 });
