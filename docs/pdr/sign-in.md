@@ -88,7 +88,7 @@ Nobody who is not signed in sees a player's name. The design must hold for 1,000
 | per family | 100 wrong per hour | locked 1 h; Unlock in the portal |
 
 - The per-username and per-device buckets carry the load. The network cap is a backstop against spraying.
-- `deviceId` is a random 128-bit id that the client stores in localStorage and sends on each call. A missing or malformed id counts against a shared "no device" bucket at the per-device limit.
+- `deviceId` is a random 128-bit id that the client stores in localStorage and sends on each call. From L2 on, the client always sends one. Until L4, a missing or malformed id skips the device bucket, because clients from before L2 send none; the username, network and family buckets still apply. After L4's minVersion raise, a missing id counts against a shared "no device" bucket at the per-device limit.
 - The portal Unlock (`unlockKidSignIn`) and a passcode reset (#67) clear the username, family and device buckets. They clear the network bucket only when that bucket has counted this family alone, as #67 does.
 - `kidLockStatus` returns locked players by display name to their own grown-ups only.
 
