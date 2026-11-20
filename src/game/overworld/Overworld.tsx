@@ -19,6 +19,7 @@ import { PixelHeart, PixelIcon } from '../../ui/pixel';
 import { QuestionPanel } from '../QuestionPanel';
 import { PixelButton, PixelFrame } from '../../ui/pixel';
 import { ownedItems } from '../shop/shopState';
+import { glowOf, roars, wornLooks } from '../shop/looks';
 import type { GameModeProps } from '../modes/types';
 import { bossReady } from './boss';
 import { TILE, drawScene, viewFor, type Scene } from './draw';
@@ -29,6 +30,7 @@ import {
 } from './lair';
 import { BossBar, DoorLabel, LairHud } from './LairHud';
 import { walkSpeed } from './speed';
+import { SHOT_MS, activeWeapon, boomerangStep, boomerangTarget, bowTarget, type Shot } from './weapons';
 import { BEETLE_GEMS, DOG_CHEST_GEMS, DOG_SNIFF_RANGE, activePet, beetleId, beetleTile, claimPetGrant, lairRingFill, pupCheer, snapPetTap } from './pets';
 import { doorLabel, lairRetryEntity, miniMap, openedLairSpots } from './lairView';
 import { LAIRS, MAPS, findTiles, heroStart, isWalkable, tileAt, type LairDef, type Point, type RegionId, type TileMap, type WalkCtx } from './maps';
@@ -87,6 +89,8 @@ interface OverlayInfo {
   kind: 'win' | 'lose';
   first?: boolean;
   gems?: number;
+  /** The Dino Hood is worn: it roars on the win. */
+  roar?: boolean;
   why?: 'timeout' | 'lose';
 }
 
@@ -208,6 +212,14 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   const pet = activePet(kid.game.equipped?.pet, items);
   const petRef = useRef(pet);
   petRef.current = pet;
+  // Weapons work only while owned and equipped. They start a fight the kid could have walked to: they never touch a question.
+  const weapon = activeWeapon(kid.game.equipped?.weapon, items);
+  const weaponRef = useRef(weapon);
+  weaponRef.current = weapon;
+  /** The Boomerang is armed by a 5-answer streak and thrown by the next right answer (see weapons.ts). */
+  const boomArmed = useRef(false);
+  /** A Bow arrow or a Boomerang in flight. The fight it starts opens when it lands. */
+  const shotRef = useRef<Shot | null>(null);
   /** Spot ids of the Dog's chest the hero has come near on this open: it stays shown after the bark. */
   const dogSeen = useRef(new Set<string>());
   /** The Pup's animation: what it plays and until when (ms on the performance clock). */
@@ -413,6 +425,15 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
 
   // ---- game actions ----
   const say = useCallback((m: Msg | null) => setMsg(m), []);
+
+  /** Sends an arrow or a boomerang at a monster. The hero stops where it is; the fight opens when the shot lands. */
+  const shootAt = useCallback((kind: Shot['kind'], from: Point, to: Point & { id: string }) => {
+    const now = performance.now();
+    shotRef.current = { kind, from, to: { x: to.x, y: to.y }, start: now, until: now + SHOT_MS, entityId: to.id };
+    voice(kind === 'arrow' ? 'Twang!' : 'Boomerang!');
+    say({ text: kind === 'arrow' ? 'Your Bow hit a monster!' : 'Your Boomerang flew to a monster!' });
+  }, [say]);
+
 
   /** Saves one land's camp doc (world/camp_<land>). world/main is never written for a placement. */
   const saveCamp = useCallback(
@@ -763,8 +784,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         const prev = all[w.region] ?? NO_STATS;
         return { ...all, [w.region]: { beaten: prev.beaten + 1, bestMs: prev.bestMs === null ? ms : Math.min(prev.bestMs, ms), bestCorrect: Math.max(prev.bestCorrect, run.correct) } };
       });
-      setOverlay({ kind: 'win', first: reward.first, gems: reward.gems });
-      voice(reward.first ? 'Boss defeated!' : 'You beat the boss again!');
+      const roar = roars(k.game);
+      setOverlay({ kind: 'win', first: reward.first, gems: reward.gems, ...(roar ? { roar: true } : {}) });
+      voice(`${reward.first ? 'Boss defeated!' : 'You beat the boss again!'}${roar ? ' Roar!' : ''}`);
     } else {
       // Driven out: back at the entrance, in a fresh lair of 12 room questions.
       startLair(true);
@@ -995,6 +1017,20 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       // Every 10 graded answers of the trip is a checkpoint.
       const r0 = runnerRef.current;
       if (r0 && baseRef.current && addRun(baseRef.current, r0.summary()).graded - cpGraded.current >= CHECKPOINT_EVERY) checkpoint();
+      // The Boomerang: a 5-answer streak arms it, the next right answer on the map throws it at the nearest monster in range.
+      let throwAt: Entity | null = null;
+      if (fb && !(fb.preview && fb.verdict !== 'correct')) {
+        if (weaponRef.current !== 'boomerang') boomArmed.current = false;
+        else {
+          const step = boomerangStep(boomArmed.current, fb.verdict === 'correct', fb.combo);
+          boomArmed.current = step.armed;
+          if (step.throws && !m.boss) {
+            const live = entsRef.current.filter((e) => e.id !== m.entity?.id);
+            throwAt = boomerangTarget(live, { x: hero.current.x, y: hero.current.y }, curMap(), walkCtx());
+            if (!throwAt) boomArmed.current = true; // nothing in reach: the throw waits for the next right answer
+          }
+        }
+      }
       if (m.boss) {
         if (fb) resolveBoss(fb);
         return;
@@ -1006,8 +1042,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         return setModal({ entry: graded, entity: m.entity });
       }
       resolveEntity(m.entity!, fb);
+      if (throwAt) shootAt('boomerang', { x: hero.current.x, y: hero.current.y }, throwAt);
     },
-    [modal, resolveBoss, resolveEntity, checkpoint],
+    [modal, resolveBoss, resolveEntity, checkpoint, curMap, walkCtx, shootAt],
   );
 
   // ---- movement ----
@@ -1033,7 +1070,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
 
   const tapTile = useCallback(
     (p: Point) => {
-      if (pausedRef.current || !worldRef.current) return;
+      if (pausedRef.current || !worldRef.current || shotRef.current) return;
       unlockSounds();
       const map = curMap();
       const h = hero.current;
@@ -1077,7 +1114,14 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
             h.fy = h.moving.from.y + (h.moving.to.y - h.moving.from.y) * h.moving.p;
           }
         }
-        if (!h.moving && !pausedRef.current) {
+        const shot = shotRef.current;
+        if (shot && now >= shot.until && !h.moving) {
+          // The shot landed: the fight opens, as if the hero had walked up to the monster. A monster that is gone ends the shot.
+          shotRef.current = null;
+          const target = entsRef.current.find((e) => e.id === shot.entityId && e.shown);
+          if (target) openEntity(target);
+        }
+        if (!h.moving && !pausedRef.current && !shotRef.current) {
           const nextTile = pathRef.current.shift();
           if (nextTile) {
             const dx = nextTile.x - h.x;
@@ -1117,6 +1161,10 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       canvas.dataset.tile = String(TILE * Math.min(want, fit)); // CSS px per tile, for the layout tests
       const k = kidRef.current.game;
       const worn = k.equipped?.pet;
+      const looks = wornLooks(k);
+      const wearing = looks.gear || looks.weapon ? { worn: looks } : {};
+      const glow = glowOf(k);
+      const shot = shotRef.current;
       const scene: Scene = {
         map,
         hero: { x: h.fx, y: h.fy, facing: h.facing, frame: h.frame },
@@ -1136,6 +1184,9 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         ...(!lair && beetleAt() ? { mound: beetleAt()! } : {}),
         ...(!lair && petRef.current === 'owl' ? { ring: lairRingFill(w.region, cardsRef.current, kidRef.current.settings) } : {}),
         ...(petRef.current === 'pup' && pupFx.current && pupFx.current.until > performance.now() ? { pupFx: pupFx.current.kind } : {}),
+        ...wearing,
+        ...(glow ? { glow } : {}),
+        ...(shot ? { shot: { kind: shot.kind, from: shot.from, to: shot.to, p: Math.min(1, (performance.now() - shot.start) / (shot.until - shot.start)) } } : {}),
         time,
         marker: markerRef.current,
         still: reducedMotion,
@@ -1219,6 +1270,12 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         lifetime: lifetimeChests(worldRef.current!.openedChests),
         paused: pausedRef.current,
         pet: petRef.current,
+        weapon: weaponRef.current,
+        modalId: modalRef.current?.entity?.id ?? null,
+        worn: wornLooks(kidRef.current.game),
+        glow: glowOf(kidRef.current.game),
+        boomArmed: boomArmed.current,
+        shot: shotRef.current ? { kind: shotRef.current.kind, to: shotRef.current.to } : null,
         mound: beetleAt(),
         pupFx: pupFx.current && pupFx.current.until > performance.now() ? pupFx.current.kind : null,
       }),
@@ -1244,6 +1301,14 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       /** Dev only: plays the Pup's animation for a screenshot. */
       playPupFx: (kind: 'fire' | 'cheer') => {
         pupFx.current = { kind, until: performance.now() + 60_000 };
+      },
+      /** Dev only: stands a monster on a tile, so a test can put two monsters within the Boomerang's reach. */
+      placeEntity: (id: string, x: number, y: number) => {
+        const e = entsRef.current.find((q) => q.id === id);
+        if (e) {
+          e.x = x;
+          e.y = y;
+        }
       },
       teleport: (x: number, y: number) => {
         const h = hero.current;
@@ -1326,6 +1391,21 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       return;
     }
     // A pet's spot (the Beetle's mound, the Dog's shown chest) is a 120 px target: a tap within 60 px of its center counts as a tap on it.
+    if (shotRef.current) return;
+    if (weaponRef.current === 'bow' && !pausedRef.current) {
+      // The Bow: a monster up to 3 tiles away is a 120 px target. The arrow flies, then the same fight opens that walking would open.
+      const at = h.moving ? h.moving.to : { x: h.x, y: h.y };
+      const mark = bowTarget({ x: e.clientX, y: e.clientY }, rect, canvas.width, { t, left, top }, entsRef.current, at, map);
+      if (mark) {
+        unlockSounds();
+        pathRef.current = [];
+        heldRef.current = null;
+        markerRef.current = { x: mark.x, y: mark.y };
+        shootAt('arrow', at, mark);
+        bump((n) => n + 1);
+        return;
+      }
+    }
     const spots: Point[] = [...(beetleAt() ? [beetleAt()!] : []), ...entsRef.current.filter((x) => x.dog && x.shown)];
     const snap = snapPetTap({ x: e.clientX, y: e.clientY }, rect, canvas.width, { t, left, top }, spots);
     tapTile(snap ? { x: snap.x, y: snap.y } : tile);
@@ -1462,6 +1542,12 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         <div className="question-modal ow-overlay" role="dialog" aria-modal="true" data-testid={`boss-${overlay.kind}`}>
           <PixelFrame tone={overlay.kind === 'win' ? 'gold' : 'neutral'} className="ow-overlay-frame">
             <Sprite name="boss" size={120} />
+            {overlay.roar ? (
+              <span className="ow-roar" data-testid="boss-roar" aria-label="Your Dino Hood roars">
+                <Sprite name="g-dinohood" size={120} className="roar-hood" />
+                <span className="pixel roar-word" aria-hidden="true">ROAR!</span>
+              </span>
+            ) : null}
             <h2 className="pixel">{overlay.kind === 'win' ? (overlay.first ? 'Boss defeated!' : 'Boss beaten again!') : 'The boss drove you out!'}</h2>
             {learner === 'prereader' ? null : (
               <p>

@@ -820,6 +820,20 @@ legend { padding: 0 6px; color: var(--muted); }
 @keyframes strike-glow { 40% { transform: scale(1.35); filter: drop-shadow(0 0 12px #67e8f9); } 100% { transform: none; } }
 @media (prefers-reduced-motion: reduce) { .hero-fig .fig-part { animation: none !important; } }
 
+/* ---- Item powers: legendary glow, titles, the Dino Hood roar ---- */
+.hero-fig.hero-glow-gold { animation: hero-glow-gold 1.6s ease-in-out infinite alternate; }
+.hero-fig.hero-glow-cyan { animation: hero-glow-cyan 1.6s ease-in-out infinite alternate; }
+@keyframes hero-glow-gold { from { filter: drop-shadow(0 0 4px #facc15); } to { filter: drop-shadow(0 0 14px #facc15); } }
+@keyframes hero-glow-cyan { from { filter: drop-shadow(0 0 4px #67e8f9); } to { filter: drop-shadow(0 0 14px #67e8f9); } }
+.kid-title { display: inline-flex; align-items: center; gap: 6px; margin: 4px 0; color: var(--gold, #facc15); text-shadow: 0 0 8px rgba(250, 204, 21, 0.5); }
+button.kid-title-pic { min-width: 120px; min-height: 120px; justify-content: center; border: 3px solid var(--gold, #facc15); border-radius: 18px; background: rgba(250, 204, 21, 0.14); cursor: pointer; }
+.ow-roar { display: inline-flex; flex-direction: column; align-items: center; }
+.ow-roar .roar-hood { animation: roar-shake 0.5s ease-in-out 3; }
+.ow-roar .roar-word { color: #4ade80; font-size: 28px; animation: roar-pop 0.5s ease-out; }
+@keyframes roar-shake { 25% { transform: translateX(-6px) rotate(-4deg) scale(1.1); } 75% { transform: translateX(6px) rotate(4deg) scale(1.1); } }
+@keyframes roar-pop { from { transform: scale(0.4); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .hero-fig.hero-glow-gold, .hero-fig.hero-glow-cyan, .ow-roar .roar-hood, .ow-roar .roar-word { animation: none !important; } }
+
 
 /* ---- UX-2 (items 4, 5, 7, 11, 12, 13) ---- */
 .entry-box.is-active { animation: box-pulse 1s ease-in-out infinite alternate; }

@@ -9,6 +9,7 @@ import { summaryCounts } from '../../engine/runLabel';
 import type { RunSummary } from '../../engine/session';
 import { levelStep, mapRows } from '../../engine/summaryView';
 import { HeroShop } from '../HeroShop';
+import { TitleBadge } from '../TitleBadge';
 import type { RunInfo } from '../runShared';
 import { Sprite, UiIcon } from '../sprites';
 import { chime, unlockSounds } from './sounds';
@@ -208,6 +209,7 @@ export function PrereaderSummary({ kid, summary, info, loadCards, onGame, onAgai
         <div className="sum-panel sum-xp" data-testid="sum-xp">
           <div className="sum-hero">
             <HeroFigure game={kid.game} size={130} className="bob" />
+            <TitleBadge game={kid.game} name={kid.name} picture />
             <span className="sum-badge" data-testid="sum-level">{badge}</span>
           </div>
           <div className="sum-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(barFrac * 100)}>
