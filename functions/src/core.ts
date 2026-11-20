@@ -1,8 +1,9 @@
-import { createHash, createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, scrypt, timingSafeEqual } from 'node:crypto';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions/logger';
 import { FieldValue, type Firestore, type Transaction } from 'firebase-admin/firestore';
 import { reservedReason } from './reserved.js';
+import { ANIMALS, COLORS } from './words.js';
 
 // ---------------------------------------------------------------------------------------------
 // Kid PIN sign-in. All logic lives here so tests can run it against the Firestore emulator.
@@ -19,7 +20,8 @@ import { reservedReason } from './reserved.js';
 //   pinIndex/_global/attempts/dn_{hash}          the same strike counter for a display name with no username, and for any unknown name
 //   pinIndex/_global/attempts/name_{hash}        legacy display-name counter (10 per hour), for the legacy path only
 //   usernames/{usernameLower}                    { familyUid, kidId, createdAt }: the one kid that owns a username
-//   families/{uid}/devices/{deviceId}            { firstSeen, lastSeen, kids[], label }: written on a good sign-in, parents read it
+//   families/{uid}/devices/{deviceId}            { firstSeen, lastSeen, kids[], label, revoked? }: written on a good sign-in, parents read it; revoked: true (Forget) refuses the next sign-in
+//   families/{uid}.schoolMode                    true: kidSignIn answers remember: false (nothing stays on the device)
 //   parentPins/{uid}                             { salt, hash, v: 2, updatedAt, verifiedAt }: the grown-up PIN (peppered scrypt), server-only
 //   pinIndex/_global/attempts/par_{hash}         the same strike counter for one parent uid: 5 wrong lock 5 min, doubling to 60 min
 //   families/{uid}                               { hasPin, createdAt, tourSeen }; a pinHash here is the old browser SHA-256, migrated on the first right check
@@ -34,6 +36,7 @@ export const LOCKED_MESSAGE = 'Too many wrong tries. Ask a grown-up to open Grow
 export const LOCKED_PARENT_MESSAGE = 'Too many wrong tries. Wait a while, or sign in with Google again to try once more.';
 export const PARENT_STALE_MESSAGE = 'Type the Grown-up PIN first.';
 export const FULL_MESSAGE = 'Math Quest is full right now.';
+export const DEVICE_FORGOTTEN_MESSAGE = 'This device was forgotten. Ask a grown-up.';
 export const NAME_TAKEN_MESSAGE = 'That name is taken. Try adding a last initial, like EmmaS.';
 
 /** Parent accounts that may register when config/app has no maxParents. Raise config/app.maxParents to let more families in. */
@@ -518,6 +521,74 @@ export async function claimUsername(d: Deps, familyUid: string, kidId: string, u
   return { username: lower };
 }
 
+// ---------- the grown-up's username callables (L3) ----------
+
+/** suggestUsername, checkUsername and setUsername each allow 30 calls a minute per parent. Every call counts and none refunds. */
+export const NAME_TOOL_LIMIT = { max: 30, windowMs: 60_000 } as const;
+export const NAME_TOOL_LOCKED_MESSAGE = 'Too many username checks. Wait a minute and try again.';
+
+const toolCounter = (d: Deps, fn: string, uid: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/un_${fn}_${sha(uid).slice(0, 32)}`);
+
+/** Counts one call against the caller's own bucket for `fn`. Runs after the caller is known to be a parent, so a stranger cannot fill a parent's bucket. */
+async function limitParentTool(d: Deps, fn: string, uid: string): Promise<void> {
+  if (!(await reserve(d, [{ ref: toolCounter(d, fn, uid), ...NAME_TOOL_LIMIT }], randomBytes(8).toString('hex')))) {
+    throw new HttpsError('resource-exhausted', NAME_TOOL_LOCKED_MESSAGE);
+  }
+}
+
+/** Free means no index entry, or an entry whose kid is gone (claimUsername treats that claim as free too). `mine` is the kid asking, who may keep a name it holds. */
+async function usernameFree(d: Deps, lower: string, mine?: { familyUid: string; kidId: string }): Promise<boolean> {
+  const claim = await usernameRef(d, lower).get();
+  if (!claim.exists) return true;
+  const o = claim.data() as { familyUid?: unknown; kidId?: unknown };
+  if (mine && o.familyUid === mine.familyUid && o.kidId === mine.kidId) return true;
+  if (typeof o.familyUid !== 'string' || typeof o.kidId !== 'string') return true;
+  return !(await d.db.doc(`families/${o.familyUid}/kids/${o.kidId}`).get()).exists;
+}
+
+/** Three free usernames, each a color, an animal and 2 digits. Built from the word lists only: a player's name never goes in. */
+export async function suggestUsername(d: Deps, auth: AuthContext | undefined): Promise<{ suggestions: string[] }> {
+  const parent = await assertParent(d, auth);
+  await limitParentTool(d, 'suggest', parent.uid);
+  const out: string[] = [];
+  for (let round = 0; round < 5 && out.length < 3; round++) {
+    const batch = new Set<string>();
+    while (batch.size < 9) batch.add(`${COLORS[randomInt(COLORS.length)]}${ANIMALS[randomInt(ANIMALS.length)]}${String(randomInt(100)).padStart(2, '0')}`);
+    const fresh = [...batch].filter((n) => USERNAME_RE.test(n) && !reservedReason(n) && !out.includes(n));
+    const free = await Promise.all(fresh.map((n) => usernameFree(d, n)));
+    for (const [i, n] of fresh.entries()) if (free[i] && out.length < 3) out.push(n);
+  }
+  if (out.length < 3) throw new HttpsError('unavailable', 'Could not find free usernames. Try again.');
+  return { suggestions: out };
+}
+
+export type UsernameVerdict = { free: true } | { free: false; reason: 'invalid' | 'reserved' | 'taken' };
+
+/** Free or taken, for the wizard's live check. `kidId` is the player being named: a name that kid already holds is free. */
+export async function checkUsername(d: Deps, auth: AuthContext | undefined, data: { username?: unknown; kidId?: unknown }): Promise<UsernameVerdict> {
+  const parent = await assertParent(d, auth);
+  await limitParentTool(d, 'check', parent.uid);
+  if (typeof data.username !== 'string' || data.username.length > 64) return { free: false, reason: 'invalid' };
+  const lower = data.username.trim().toLowerCase();
+  if (!USERNAME_RE.test(lower)) return { free: false, reason: 'invalid' };
+  if (reservedReason(lower)) return { free: false, reason: 'reserved' };
+  const kidId = typeof data.kidId === 'string' && ID_RE.test(data.kidId) ? data.kidId : null;
+  return (await usernameFree(d, lower, kidId ? { familyUid: parent.uid, kidId } : undefined)) ? { free: true } : { free: false, reason: 'taken' };
+}
+
+/**
+ * Sets one of the caller's players' username. Parents only, 30 a minute per parent, and the grown-up PIN typed in the last 30
+ * minutes (the same gate as setKidPin). The caller's own uid is the family, so a parent can never name another family's player.
+ * The index and the kid doc change in one transaction (claimUsername); nothing else on the kid is written.
+ */
+export async function setUsername(d: Deps, auth: AuthContext | undefined, data: { kidId?: unknown; username?: unknown }): Promise<{ username: string }> {
+  const parent = await assertParent(d, auth);
+  await limitParentTool(d, 'set', parent.uid);
+  if (typeof data.kidId !== 'string' || !ID_RE.test(data.kidId)) throw new HttpsError('invalid-argument', 'Bad player id.');
+  await assertParentVerified(d, parent.uid);
+  return claimUsername(d, parent.uid, data.kidId, data.username);
+}
+
 // ---------- devices ----------
 
 /** The browser and device family from a user-agent string, for the label a grown-up sees: "iPad Safari". Never the raw string. */
@@ -620,6 +691,14 @@ export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: s
   }
   await refund(d, buckets, entryId, migrate);
 
+  // L3. A grown-up forgot this device: the right passcode no longer opens it. Checked only after the passcode verified and its
+  // entry was refunded, so a stranger cannot use the answer to learn which usernames exist, and the player's own counters stay clean.
+  const [famDoc, devDoc] = await Promise.all([familyRef(d, row.familyUid).get(), deviceId ? deviceRef(d, row.familyUid, deviceId).get() : Promise.resolve(null)]);
+  if (devDoc?.data()?.revoked === true) {
+    logLine(d, { event: 'kidSignIn', outcome: 'revoked-device', legacy, fam: sha(row.familyUid).slice(0, 16), app: input.app ?? 'missing' });
+    throw new HttpsError('failed-precondition', DEVICE_FORGOTTEN_MESSAGE);
+  }
+
   if (deviceId) {
     try {
       await recordDevice(d, row.familyUid, row.kidId, deviceId, input.userAgent);
@@ -631,7 +710,8 @@ export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: s
   // The line carries a hash of the family only: no name, no kid id, no username. L4 starts when 7 days show no legacy: true.
   logLine(d, { event: 'kidSignIn', outcome: 'ok', legacy, fam: sha(row.familyUid).slice(0, 16), app: input.app ?? 'missing' });
   const token = await d.auth.createCustomToken(`kid_${row.kidId}`, { role: 'kid', familyUid: row.familyUid, kidId: row.kidId });
-  return { token, remember: true };
+  // School mode (a family setting, off by default): nothing is remembered on this device.
+  return { token, remember: famDoc.data()?.schoolMode !== true };
 }
 
 // ---------- passcodeKind and signinMode (L2) ----------
@@ -814,6 +894,10 @@ export interface LockStatus {
   lockedUntil: number;
   /** Players whose name is locked on its own. */
   lockedPlayers: string[];
+  /** The same players by id, with when each lock ends (the portal's Lockouts view). */
+  lockedKids: { kidId: string; until: number }[];
+  /** Device ids whose own counter is locked. */
+  lockedDevices: string[];
 }
 
 async function familyBuckets(d: Deps, uid: string) {
@@ -831,20 +915,28 @@ export async function kidLockStatus(d: Deps, auth: AuthContext | undefined): Pro
   const failures = fam.entries.filter((e) => e.at > now - LIMITS.family.windowMs).length;
   const { names, ipDocs, deviceIds } = await familyBuckets(d, parent.uid);
   const lockedPlayers: string[] = [];
+  const lockedKids: { kidId: string; until: number }[] = [];
   for (const n of names) {
     const byName = readCounter((await nameCounter(d, n.nameKey).get()).data());
     const strikeRefs = n.username ? [userCounter(d, n.username), dnCounter(d, n.nameKey)] : [dnCounter(d, n.nameKey)];
     const byUser = await Promise.all(strikeRefs.map(async (r) => readCounter((await r.get()).data())));
-    if (byName.lockedUntil > now || byUser.some((c) => c.lockedUntil > now)) lockedPlayers.push(n.nameKey);
+    const until = Math.max(byName.lockedUntil, ...byUser.map((c) => c.lockedUntil));
+    if (until > now) {
+      lockedPlayers.push(n.nameKey);
+      lockedKids.push({ kidId: n.kidId, until });
+    }
   }
   const ipLocked = ipDocs.some((x) => readCounter(x.data()).lockedUntil > now);
-  let deviceLocked = false;
-  for (let i = 0; i < deviceIds.length && !deviceLocked; i += 300) {
-    const snaps = await d.db.getAll(...deviceIds.slice(i, i + 300).map((id) => deviceCounter(d, id)));
-    deviceLocked = snaps.some((x) => readCounter(x.data()).lockedUntil > now);
+  const lockedDevices: string[] = [];
+  for (let i = 0; i < deviceIds.length; i += 300) {
+    const ids = deviceIds.slice(i, i + 300);
+    const snaps = await d.db.getAll(...ids.map((id) => deviceCounter(d, id)));
+    snaps.forEach((x, j) => {
+      if (readCounter(x.data()).lockedUntil > now) lockedDevices.push(ids[j]!);
+    });
   }
   const lockedUntil = Math.max(fam.lockedUntil, 0);
-  return { locked: fam.lockedUntil > now || lockedPlayers.length > 0 || ipLocked || deviceLocked, failures, lockedUntil, lockedPlayers };
+  return { locked: fam.lockedUntil > now || lockedPlayers.length > 0 || ipLocked || lockedDevices.length > 0, failures, lockedUntil, lockedPlayers, lockedKids, lockedDevices };
 }
 
 export async function unlockKidSignIn(d: Deps, auth: AuthContext | undefined): Promise<{ ok: true }> {

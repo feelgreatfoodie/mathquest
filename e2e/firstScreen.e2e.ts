@@ -183,6 +183,27 @@ test.describe('first screen flow', () => {
     expect(await calls(page)).toEqual([]);
   });
 
+  // L2 review carry-in (VECTOR 9giyM0YE): the form never asks passcodeKind about an empty name.
+  test('an empty or blank username disables Next, and Enter on the form makes no passcodeKind call', async ({ page }) => {
+    await seed(page, []);
+    await page.goto(URL_DOOR);
+    await page.getByTestId('door-player').tap();
+    const input = page.getByPlaceholder('username');
+    await expect(page.getByTestId('username-next')).toBeDisabled();
+    await input.press('Enter');
+    await input.fill('   ');
+    await expect(page.getByTestId('username-next')).toBeDisabled();
+    await input.press('Enter');
+    await input.fill('abc');
+    await input.fill('');
+    await expect(page.getByTestId('username-next')).toBeDisabled();
+    await input.press('Enter');
+    await page.waitForTimeout(150);
+    expect(await calls(page)).toEqual([]);
+    await expect(page.getByTestId('first-username')).toBeVisible();
+    await expect(page.getByTestId('first-pad')).toHaveCount(0);
+  });
+
   test('a locked passcodeKind shows its calm line on the username form and the player stays there', async ({ page }) => {
     await seed(page, []);
     await page.goto(URL_DOOR);

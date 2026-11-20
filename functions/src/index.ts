@@ -81,3 +81,8 @@ export const checkParentPin = onCall(pepperOpts, (req) => (appVerdict('checkPare
 export const setParentPin = onCall(pepperOpts, (req) => (appVerdict('setParentPin', req), core.setParentPin(deps(true), authOf(req), req.data ?? {})));
 export const kidLockStatus = onCall(opts, (req) => (appVerdict('kidLockStatus', req), core.kidLockStatus(deps(), authOf(req))));
 export const unlockKidSignIn = onCall(opts, (req) => (appVerdict('unlockKidSignIn', req), core.unlockKidSignIn(deps(), authOf(req))));
+// L3: the grown-up's username tools. suggest and check read the index only; set writes it and needs the grown-up PIN typed recently.
+// App Check stays in monitor mode: enforcing it is its own step, after 7 days of logs.
+export const suggestUsername = onCall(opts, (req) => (appVerdict('suggestUsername', req), core.suggestUsername(deps(), authOf(req))));
+export const checkUsername = onCall(opts, (req) => (appVerdict('checkUsername', req), core.checkUsername(deps(), authOf(req), req.data ?? {})));
+export const setUsername = onCall(opts, (req) => (appVerdict('setUsername', req), core.setUsername(deps(), authOf(req), req.data ?? {})));

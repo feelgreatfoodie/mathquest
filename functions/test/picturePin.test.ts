@@ -245,7 +245,7 @@ describe('nothing new is exposed without auth', () => {
   it('index.ts exports exactly the known callables, and only the 3 public ones (kidSignIn, passcodeKind, signinMode) read no auth', () => {
     const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
     const exported = [...src.matchAll(/export const (\w+) = onCall/g)].map((m) => m[1]).sort();
-    expect(exported).toEqual(['checkParentPin', 'kidLockStatus', 'kidSignIn', 'passcodeKind', 'registerParent', 'setKidPicturePin', 'setKidPin', 'setParentPin', 'signinMode', 'unlockKidSignIn']);
+    expect(exported).toEqual(['checkParentPin', 'checkUsername', 'kidLockStatus', 'kidSignIn', 'passcodeKind', 'registerParent', 'setKidPicturePin', 'setKidPin', 'setParentPin', 'setUsername', 'signinMode', 'suggestUsername', 'unlockKidSignIn']);
     // The public callables (no sign-in): the first screen's three. Each is rate limited or reads one flag, and returns no list.
     const PUBLIC = new Set(['kidSignIn', 'passcodeKind', 'signinMode']);
     for (const line of src.split('\n').filter((l) => /^export const \w+ = onCall/.test(l))) {

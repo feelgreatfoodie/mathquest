@@ -16,7 +16,7 @@ import { UpdatePrompt, UpdateScreen } from './ui/UpdateScreen';
 import { reportFailure } from './ui/failures';
 import type { VaultApi } from './ui/vaultApi';
 import { forgetDeviceKids, rememberKids } from './data/deviceKids';
-import { readTiles, rememberTile, type PasscodeKind } from './data/deviceTiles';
+import { forgetTiles, readTiles, rememberTile, type PasscodeKind } from './data/deviceTiles';
 import { applyPilotParam, signin2Active } from './data/signin2';
 import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
@@ -81,6 +81,9 @@ export function App() {
   const [signin2, setSignin2] = useState<boolean | null>(dataMode === 'firestore' ? null : false);
   // The username and pad kind of the last sign-in from the two-door screen. Its tile is written once that kid's hero and color load.
   const pendingTile = useRef<{ username: string; kind: PasscodeKind } | null>(null);
+  // School mode: the last sign-in on this device answered remember: false. Back on Home then signs out to an empty username form, not the doors.
+  const schoolSession = useRef(false);
+  const firstView = useRef<'doors' | 'username'>('doors');
 
   const load = useCallback(async (r: Repo) => {
     try {
@@ -198,6 +201,11 @@ export function App() {
       live = false;
     };
   }, [signedOutScreen, signin2]);
+
+  // The first screen reads firstView once, when it opens. Once it is on screen the request is spent, so a later sign-out starts on the doors.
+  useEffect(() => {
+    if (signedOutScreen) firstView.current = 'doors';
+  }, [signedOutScreen]);
 
   // The Kid-tab faces. Written only here, and only while a parent or a kid is signed in on this device (repo is set by a
   // sign-in), from kids this session already loaded. A kid session knows only itself, so it merges. Nothing is fetched.
@@ -378,7 +386,7 @@ export function App() {
     return (
       <FirstScreen
         key={screen.name}
-        {...(screen.name === 'signin' ? { initialView: 'grownups' as const } : {})}
+        {...(screen.name === 'signin' ? { initialView: 'grownups' as const } : firstView.current === 'username' ? { initialView: 'username' as const } : {})}
         error={screen.name === 'signin' ? error : (pinError ?? error)}
         tiles={readTiles()}
         kindOf={fetchPasscodeKind}
@@ -394,9 +402,12 @@ export function App() {
             ({ remember }) => {
               // School mode (remember: false) leaves nothing on this device.
               pendingTile.current = remember ? { username: username.toLowerCase(), kind } : null;
+              schoolSession.current = !remember;
               return true;
             },
-            (e: { message?: string }) => {
+            (e: { message?: string; code?: string }) => {
+              // A grown-up forgot this device: no tile on it may stay, so the next open shows no hero to tap.
+              if (e.code === 'functions/failed-precondition') forgetTiles();
               setPinError(e.message ?? "That username and passcode didn't match.");
               return false;
             },
@@ -494,7 +505,13 @@ export function App() {
           onTipGame={(g) => showGame(kid.id, g)}
           repo={repo}
           onStart={(mode) => void startRun(kid.id, mode)}
-          onBack={() => (kidSession ? void signOutParent() : setScreen({ name: 'picker' }))}
+          onBack={() => {
+            if (!kidSession) return setScreen({ name: 'picker' });
+            // School mode: the next player meets an empty username form. Any other session meets the doors.
+            firstView.current = schoolSession.current ? 'username' : 'doors';
+            schoolSession.current = false;
+            void signOutParent();
+          }}
         />
       ) : null;
     case 'run':

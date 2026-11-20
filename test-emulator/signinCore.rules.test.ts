@@ -87,9 +87,19 @@ describe('devices: grown-ups read and rename, nobody creates or deletes', () => 
 
   it('the parent cannot change any other field, nor add one, nor send a bad label', async () => {
     const db = parentDb();
-    for (const patch of [{ kids: ['kid-other'] }, { firstSeen: 5 }, { lastSeen: 5 }, { revoked: true }, { label: 'ok', kids: [] }, { label: '' }, { label: 'x'.repeat(41) }, { label: 7 }, { label: null }]) {
+    for (const patch of [{ kids: ['kid-other'] }, { firstSeen: 5 }, { lastSeen: 5 }, { revoked: 'yes' }, { revoked: 1 }, { revoked: null }, { revoked: true, kids: [] }, { revoked: true, label: '' }, { label: 'ok', kids: [] }, { label: '' }, { label: 'x'.repeat(41) }, { label: 7 }, { label: null }]) {
       await assertFails(updateDoc(doc(db, path), patch));
     }
+  });
+
+  it('the parent forgets a device (revoked: true), allows it again, and changes label and revoked together', async () => {
+    await assertSucceeds(updateDoc(doc(parentDb(), path), { revoked: true }));
+    await assertSucceeds(updateDoc(doc(parentDb(), path), { revoked: false }));
+    await assertSucceeds(updateDoc(doc(parentDb(), path), { revoked: true, label: 'Classroom iPad 3' }));
+  });
+
+  it('nobody else sets revoked: signed out, a stranger, a kid token and another family\'s parent', async () => {
+    for (const db of [anonDb(), strangerDb(), kidDb(), otherParentDb()]) await assertFails(updateDoc(doc(db, path), { revoked: true }));
   });
 
   it('nobody else changes a label', async () => {

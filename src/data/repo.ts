@@ -4,7 +4,7 @@ import type { RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
 import type { GameModeId } from '../game/modes/types';
 import type { VaultDeposit, VaultTerm } from '../game/vault';
-import type { CardMap, CardState, Family, Kid, KidAvatar, KidGame, KidSettings, PurchaseLog, SessionLog } from '../engine/models';
+import type { CardMap, CardState, DeviceRecord, Family, Kid, KidAvatar, KidGame, KidSettings, PurchaseLog, SessionLog } from '../engine/models';
 
 /** Storage boundary. Firestore in production; localStorage for offline demos and dev. */
 export interface Repo {
@@ -23,6 +23,12 @@ export interface Repo {
   setParentPin(pin: string): Promise<void>;
   /** Writes the single field tourSeen: true on the parent's own family doc and nothing else. */
   markTourSeen(): Promise<void>;
+  /** Writes the single field `schoolMode` on the parent's own family doc and nothing else. */
+  setSchoolMode(on: boolean): Promise<void>;
+  /** The devices that signed a player in, most recent first. Offline mode has none. */
+  listDevices(): Promise<DeviceRecord[]>;
+  /** Forget a device (`true`) or allow it again (`false`): writes the single field `revoked` on its record. */
+  setDeviceRevoked(deviceId: string, revoked: boolean): Promise<void>;
   listKids(): Promise<Kid[]>;
   getKid(kidId: string): Promise<Kid | null>;
   /** Creates a kid. Fails when the id exists, so a stale copy can never replace a stored kid. */

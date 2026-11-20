@@ -29,6 +29,7 @@ import { UiIcon } from '../sprites';
 import { PinPad } from '../PinPad';
 import { Sprite } from '../sprites';
 import { Tour, TourOffer } from '../tour/Tour';
+import { KidUsernamePanel, PlayerWizard, SignInPortal, useSignin2 } from './SignInPortal';
 
 export { makeKid };
 
@@ -252,7 +253,9 @@ function ParentAreaInner({ repo, kids, onKids, onFamily, onExit, onSignOut, afte
   const parentKey = repo.parentKey ?? 'local';
   const [theme, setTheme] = useState<Theme>(() => readTheme(parentKey));
   const resumed = afterPause && onSignOut ? () => setAskSignOut(true) : undefined;
-  const [selected, setSelected] = useState<string | 'add'>(setPinFor && kids.some((k) => k.id === setPinFor) ? setPinFor : kids[0]?.id ?? 'add');
+  // L3: behind config/app.signin2. Off, the Grown-ups area is exactly what it was.
+  const signin2 = useSignin2();
+  const [selected, setSelected] = useState<string | 'add' | 'signin'>(setPinFor && kids.some((k) => k.id === setPinFor) ? setPinFor : kids[0]?.id ?? 'add');
   const [changingPin, setChangingPin] = useState(false);
   const kid = kids.find((k) => k.id === selected);
   // The Grown-ups tour: offered once on this account (tourSeen on the family doc), replayed by the Tour button.
@@ -343,8 +346,15 @@ function ParentAreaInner({ repo, kids, onKids, onFamily, onExit, onSignOut, afte
           </button>
         ))}
         <button type="button" className={`tab ${selected === 'add' ? 'is-active' : ''}`} onClick={() => setSelected('add')}>+ Add player</button>
+        {signin2 ? <button type="button" className={`tab ${selected === 'signin' ? 'is-active' : ''}`} data-testid="tab-signin" onClick={() => setSelected('signin')}>Sign-in</button> : null}
       </nav>
-      {selected === 'add' || !kid ? (
+      {signin2 && selected === 'signin' ? (
+        <SignInPortal repo={repo} kids={kids} />
+      ) : signin2 && selected === 'add' ? (
+        <section className="panel">
+          <PlayerWizard repo={repo} kids={kids} fresh={fresh} onAdded={(k) => onKids([...kids, k])} onOpen={setSelected} />
+        </section>
+      ) : selected === 'add' || !kid ? (
         <section className="panel">
           <AddKidForm
             existing={kids.map((x) => x.name)}
@@ -432,6 +442,7 @@ function ParentAreaInner({ repo, kids, onKids, onFamily, onExit, onSignOut, afte
           focusPin={kid.id === setPinFor && !kid.hasPin}
           {...(onPinReset ? { onPinReset } : {})}
           onPicturePinSet={() => onKids(kids.map((x) => (x.id === kid.id ? { ...x, hasPicturePin: true } : x)))}
+          {...(signin2 ? { usernamePanel: <KidUsernamePanel kid={kid} fresh={fresh} onSet={(username) => onKids(kids.map((x) => (x.id === kid.id ? { ...x, username } : x)))} /> } : {})}
           onDelete={async () => {
             try {
               await repo.deleteKid(kid.id);
@@ -749,7 +760,7 @@ function VaultHistory({ deposits }: { deposits: VaultDeposit[] }) {
   );
 }
 
-function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudio, onLightningFloor, onPinSet, onPicturePinSet, onDelete, onPinReset, focusPin }: { focusPin?: boolean; onPinReset?: (kidId: string) => void; repo: Repo; kid: Kid; onResumed?: () => void; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onLightningFloor: (ms: number | null) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
+function KidDetail({ usernamePanel, repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudio, onLightningFloor, onPinSet, onPicturePinSet, onDelete, onPinReset, focusPin }: { usernamePanel?: React.ReactNode; focusPin?: boolean; onPinReset?: (kidId: string) => void; repo: Repo; kid: Kid; onResumed?: () => void; onSettings: (s: KidSettings) => Promise<void>; onAvatar: (a: KidAvatar) => Promise<void>; onAudio: (a: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }) => Promise<void>; onLightningFloor: (ms: number | null) => Promise<void>; onPinSet: () => Promise<void>; onPicturePinSet: () => void; onDelete: () => Promise<void> }) {
   const [cards, setCards] = useState<CardMap | null>(null);
   const [sessions, setSessions] = useState<SessionLog[]>([]);
   // The live build: this bundle's, or a newer one a log shows. A log older than it came from a device still on an old bundle.
@@ -972,6 +983,7 @@ function KidDetail({ repo, kid: kidProp, onResumed, onSettings, onAvatar, onAudi
         )}
       </section>
 
+      {usernamePanel}
       <KidPinPanel kid={kid} onSet={onPinSet} focus={focusPin} {...(onPinReset ? { onReset: onPinReset } : {})} />
       <KidPicturePinPanel kid={kid} onSet={onPicturePinSet} />
 

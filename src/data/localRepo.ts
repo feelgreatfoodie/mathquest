@@ -1,7 +1,7 @@
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
 import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, maturesAtOf, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
-import { normalizeKid, type CardMap, type CardState, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { normalizeKid, type CardMap, type CardState, type DeviceRecord, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { CampDoc } from '../game/overworld/camp';
 import type { RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
@@ -55,6 +55,19 @@ export class LocalRepo implements Repo {
   async markTourSeen(): Promise<void> {
     const f = read<Family | null>('family', null);
     if (f) write('family', { ...f, tourSeen: true });
+  }
+
+  async setSchoolMode(on: boolean): Promise<void> {
+    const f = read<Family | null>('family', null);
+    if (f) write('family', { ...f, schoolMode: on });
+  }
+
+  async listDevices(): Promise<DeviceRecord[]> {
+    return [];
+  }
+
+  async setDeviceRevoked(): Promise<void> {
+    // Offline mode has no sign-in and no devices.
   }
 
   async listKids(): Promise<Kid[]> {
