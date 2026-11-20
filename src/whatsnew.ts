@@ -15,6 +15,7 @@ export interface WhatsNewEntry {
 }
 
 export const WHATS_NEW: readonly WhatsNewEntry[] = [
+  { pr: 70, text: 'A player with no PIN can no longer start playing from the Who is playing? screen on a grown-up\'s device. It asks for the Grown-up PIN ("Ask a grown-up to set your passcode."), opens that player\'s PIN box in the Grown-ups area, and then shows that player\'s PIN pad. Every player now signs in with a PIN, as digits or pictures.' },
   { pr: 69, text: 'The Dungeon scene stays still on a wrong answer on a landscape iPad. A miss on a question like 10 × 6 used to push the card down and the screen shifted by a few pixels. The crossed-out guess now sits above the right answer, so the card keeps its size.' },
   { pr: 66, text: 'On the pre-reader Home with the iPad upright, the Home button and the sound button now sit in their own row above the picture, 120 pixels each, so nothing covers them and a tap always reaches them. Sideways, nothing changes.' },
   { pr: 65, text: 'The PIN pad now opens every time the app opens. Before, a player who signed in once could open the app later, or after an update, and land on Home with no PIN. Now closing and reopening the app, reloading it, or an update that reloads it shows the PIN pad first, and the player types the PIN again. Playing a round, Lightning Round and a lair work as before, and Switch player still returns to the PIN pad.' },
