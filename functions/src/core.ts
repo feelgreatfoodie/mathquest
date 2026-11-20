@@ -244,11 +244,31 @@ export const lockMsFor = (strikes: number) => Math.min(LIMITS.username.baseLockM
 const TX_OPTS = { maxAttempts: 10 } as const;
 
 /**
+ * True for a Firestore transaction that lost to contention: gRPC ABORTED (10), or the emulator's code 3 with the message
+ * "Transaction is invalid or closed.", which it returns once the retries run out. Any other error, code 3 included, is not contention.
+ */
+export function isContention(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const { code, message } = err as { code?: unknown; message?: unknown };
+  return code === 10 || (code === 3 && typeof message === 'string' && /Transaction is invalid or closed/i.test(message));
+}
+
+/** Runs a counter transaction. Contention ends as HttpsError 'aborted' (a client may retry; nothing was verified), any other error as it is. */
+async function runCounterTx<T>(d: Deps, fn: (tx: Transaction) => Promise<T>): Promise<T> {
+  try {
+    return await d.db.runTransaction(fn, TX_OPTS);
+  } catch (err) {
+    if (isContention(err)) throw new HttpsError('aborted', 'Busy right now. Try again.');
+    throw err;
+  }
+}
+
+/**
  * Counts an attempt BEFORE the PIN is checked, so parallel guesses cannot skip the count.
  * A correct PIN refunds its own entry. Returns false when any bucket is locked (nothing is written).
  */
 async function reserve(d: Deps, buckets: Bucket[], entryId: string): Promise<boolean> {
-  return d.db.runTransaction(async (tx: Transaction) => {
+  return runCounterTx(d, async (tx: Transaction) => {
     const now = nowOf(d);
     const snaps = await Promise.all(buckets.map((b) => tx.get(b.ref)));
     const next: Counter[] = [];
@@ -302,7 +322,7 @@ async function reserve(d: Deps, buckets: Bucket[], entryId: string): Promise<boo
       });
     }
     return true;
-  }, TX_OPTS);
+  });
 }
 
 /** A v1 hash that verified, and the v2 hash that replaces it. */
@@ -321,7 +341,7 @@ interface Migration {
  * and a wrong passcode never reaches this function.
  */
 async function refund(d: Deps, buckets: Bucket[], entryId: string, migrate?: Migration): Promise<void> {
-  await d.db.runTransaction(async (tx) => {
+  await runCounterTx(d, async (tx) => {
     const [snaps, rowSnap] = await Promise.all([Promise.all(buckets.map((b) => tx.get(b.ref))), migrate ? tx.get(migrate.rowRef) : Promise.resolve(null)]);
     for (const [i, b] of buckets.entries()) {
       const raw = snaps[i]!.data();
@@ -355,7 +375,7 @@ async function refund(d: Deps, buckets: Bucket[], entryId: string, migrate?: Mig
         tx.set(migrate.rowRef, migrate.picture ? { pic: { ...row.pic, ...next } } : next, { merge: true });
       }
     }
-  }, TX_OPTS);
+  });
 }
 
 const familyCounter = (d: Deps, uid: string) => d.db.doc(`pinIndex/${uid}/attempts/family`);
