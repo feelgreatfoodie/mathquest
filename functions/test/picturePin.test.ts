@@ -204,7 +204,9 @@ describe('picture PINs use the same limits and lockout as digits', () => {
     // call may also end aborted, which verifies nothing, so the count of refusals is not asserted. 12 uncounted guesses would give 12.
     const results = await Promise.allSettled(Array.from({ length: 12 }, () => signIn('Pip', 'iiii')));
     const codes = results.map((r) => (r.status === 'rejected' ? (r.reason as { code: string }).code : 'ok'));
-    expect(codes).not.toContain('ok');
+    // Every call ends in a code that means "counted or refused": a crash (internal, unavailable) must not pass as a limit that held.
+    const allowed = ['permission-denied', 'resource-exhausted', 'aborted'];
+    expect(codes.filter((c) => !allowed.includes(c))).toEqual([]);
     expect(codes.filter((c) => c === 'permission-denied').length).toBeLessThanOrEqual(LIMITS.username.max);
   });
   it('a right picture refunds its own entry, like a right digit PIN', async () => {
