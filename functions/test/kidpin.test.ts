@@ -304,11 +304,12 @@ describe('brute-force limits', () => {
   });
 
   it('counts parallel guesses, so a burst cannot skip the limit', async () => {
-    // 5 wrong in a row lock a name, so exactly 5 of 12 parallel wrong tries are counted and answered, and the rest are refused.
+    // The property: at most 5 wrong guesses are ever verified (answered permission-denied) and none succeeds. Under contention a call
+    // may also end aborted, which verifies nothing, so the count of refusals is not asserted. 12 uncounted guesses would give 12.
     const results = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => signIn('Pip', '0000', `3.3.3.${i}`)));
     const codes = results.map((r) => (r.status === 'rejected' ? (r.reason as { code: string }).code : 'ok'));
-    expect(codes.filter((c) => c === 'permission-denied')).toHaveLength(LIMITS.username.max);
-    expect(codes.filter((c) => c === 'resource-exhausted')).toHaveLength(12 - LIMITS.username.max);
+    expect(codes).not.toContain('ok');
+    expect(codes.filter((c) => c === 'permission-denied').length).toBeLessThanOrEqual(LIMITS.username.max);
   });
 });
 
