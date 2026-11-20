@@ -19,6 +19,9 @@ import {
 } from 'firebase/firestore';
 
 import { initAppCheck } from './appCheck';
+import { deviceId } from './data/deviceId';
+import type { PasscodeKind } from './data/deviceTiles';
+import { parseMode, type SigninMode } from './data/signin2';
 
 const env = import.meta.env;
 
@@ -88,9 +91,18 @@ function callable<I, O>(name: string) {
 let kidPadOpened = false;
 export const kidOpenedByPad = (): boolean => kidPadOpened;
 
-/** First name + PIN to the kidSignIn function, then sign this device in as that kid. */
-export async function signInKid(name: string, pin: string): Promise<void> {
-  const res = await callable<{ name: string; pin: string }, { token: string }>('kidSignIn')({ name, pin });
+/**
+ * The typed name or username plus the passcode (4 digits, or 4 picture letters) to the kidSignIn function, then sign this
+ * device in as that kid. Every call carries this device's id. `as` says which field the first string is: today's name form
+ * sends a display name, the two-door first screen sends a username. Resolves with `remember` (false when the family turned
+ * school mode on): only a true one may leave a tile on this device.
+ */
+export async function signInKid(who: string, pin: string, as: 'name' | 'username' = 'name'): Promise<{ remember: boolean }> {
+  const res = await callable<{ name?: string; username?: string; pin: string; deviceId: string }, { token: string; remember?: boolean }>('kidSignIn')({
+    [as]: who,
+    pin,
+    deviceId: deviceId(),
+  });
   // Set before the sign-in: the auth listener fires inside signInWithCustomToken and must already see the flag.
   kidPadOpened = true;
   try {
@@ -99,6 +111,26 @@ export async function signInKid(name: string, pin: string): Promise<void> {
     kidPadOpened = false;
     throw e;
   }
+  return { remember: res.data.remember !== false };
+}
+
+/**
+ * Public, no sign-in: the first-screen switch. A plain POST to the callable's HTTPS endpoint, with no Firebase SDK: starting the
+ * SDK would start Auth, which loads Google's sign-in frame, and a signed-out title makes no Auth or Firestore call. Rejects when
+ * the server cannot be reached or answers an error.
+ */
+export async function fetchSigninMode(): Promise<SigninMode> {
+  const project = config.projectId as string;
+  const url = env.VITE_USE_EMULATORS === 'true' ? `http://127.0.0.1:5001/${project}/${FUNCTIONS_REGION}/signinMode` : `https://${FUNCTIONS_REGION}-${project}.cloudfunctions.net/signinMode`;
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: {} }) });
+  if (!res.ok) throw new Error(`signinMode ${res.status}`);
+  return parseMode(((await res.json()) as { result?: unknown }).result);
+}
+
+/** Public, no sign-in: which pad this username types on. The server answers the same shape for names that do not exist. */
+export async function fetchPasscodeKind(username: string): Promise<PasscodeKind> {
+  const res = await callable<{ username: string; deviceId: string }, { kind?: string }>('passcodeKind')({ username, deviceId: deviceId() });
+  return res.data.kind === 'pictures' ? 'pictures' : 'digits';
 }
 
 /** Registers this Google account as a parent (idempotent). Throws "Math Quest is full right now." at the cap. */

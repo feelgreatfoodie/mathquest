@@ -31,6 +31,8 @@ function deps(withPepper = false): Deps {
   return {
     db: getFirestore(),
     pepper: withPepper ? MQ_PIN_PEPPER.value() : '',
+    // The emulator never reuses the first-screen switch, so an e2e run can flip config/app.signin2 between tests.
+    ...(process.env.FUNCTIONS_EMULATOR === 'true' ? { modeTtlMs: 0 } : {}),
     auth: {
       createCustomToken: (uid, claims) => auth.createCustomToken(uid, claims),
     },
@@ -67,6 +69,11 @@ export const kidSignIn = onCall(signInOpts, (req) =>
     app: appVerdict('kidSignIn', req),
   }),
 );
+// The first screen's two public callables. Neither needs a sign-in. passcodeKind hashes with the pepper, so it binds the secret.
+export const passcodeKind = onCall(pepperOpts, (req) =>
+  core.passcodeKind(deps(true), { username: req.data?.username, deviceId: req.data?.deviceId, ip: ipOf(req), app: appVerdict('passcodeKind', req) }),
+);
+export const signinMode = onCall(opts, (req) => (appVerdict('signinMode', req), core.signinMode(deps())));
 export const registerParent = onCall(opts, (req) => (appVerdict('registerParent', req), core.registerParent(deps(), authOf(req))));
 export const setKidPin = onCall(pepperOpts, (req) => (appVerdict('setKidPin', req), core.setKidPin(deps(true), authOf(req), req.data ?? {}, ipOf(req))));
 export const setKidPicturePin = onCall(pepperOpts, (req) => (appVerdict('setKidPicturePin', req), core.setKidPicturePin(deps(true), authOf(req), req.data ?? {}, ipOf(req))));

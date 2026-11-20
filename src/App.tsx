@@ -8,16 +8,19 @@ import { GameDeltaError, type GameDelta } from './engine/game';
 import { avatarOf, learnerOf, type Family, type Kid, type KidGame } from './engine/models';
 import type { RunSummary } from './engine/session';
 import type { RunInfo } from './ui/runShared';
-import { dataMode, getFirebase, kidClaims, kidOpenedByPad, registerParent, signInKid, signInParent, signOutParent } from './firebase';
+import { dataMode, fetchPasscodeKind, fetchSigninMode, getFirebase, kidClaims, kidOpenedByPad, registerParent, signInKid, signInParent, signOutParent } from './firebase';
 import { replayOutbox } from './data/outbox';
 import { settleUpdate } from './update';
 import { FailureToasts } from './ui/FailureToasts';
 import { UpdatePrompt, UpdateScreen } from './ui/UpdateScreen';
 import { reportFailure } from './ui/failures';
 import type { VaultApi } from './ui/vaultApi';
-import { rememberKids } from './data/deviceKids';
+import { forgetDeviceKids, rememberKids } from './data/deviceKids';
+import { readTiles, rememberTile, type PasscodeKind } from './data/deviceTiles';
+import { applyPilotParam, signin2Active } from './data/signin2';
 import { PinPad } from './ui/PinPad';
 import { KidHome, Landing, Picker, Summary } from './ui/screens/KidScreens';
+import { FirstScreen } from './ui/screens/FirstScreen';
 import { applyCrt, readCrt } from './ui/pixel';
 import { mayHaveAuthSession } from './authHint';
 import { ParentArea, Setup } from './ui/screens/Parent';
@@ -74,6 +77,10 @@ export function App() {
   // 'active' once the parent has. Active sends the parent to the Parent PIN, and out of the parent area by signing out, so the
   // parent session never carries on into kid play.
   const pauseFlow = useRef<'off' | 'armed' | 'active'>('off');
+  // config/app.signin2, as the signinMode callable answers it. null = not asked yet. Local mode has no sign-in, so it is off.
+  const [signin2, setSignin2] = useState<boolean | null>(dataMode === 'firestore' ? null : false);
+  // The username and pad kind of the last sign-in from the two-door screen. Its tile is written once that kid's hero and color load.
+  const pendingTile = useRef<{ username: string; kind: PasscodeKind } | null>(null);
 
   const load = useCallback(async (r: Repo) => {
     try {
@@ -170,16 +177,47 @@ export function App() {
     };
   }, [load]);
 
+  // The first-screen switch is asked once, when a signed-out screen first shows. Until it answers (2.5 s at most), that screen is
+  // the loading line, so a device never flashes the name faces of the older screen. A failed call is off: the screen players know today.
+  const signedOutScreen = screen.name === 'kidsignin' || screen.name === 'signin';
+  useEffect(() => {
+    if (!signedOutScreen || signin2 !== null) return;
+    let live = true;
+    applyPilotParam(location.search);
+    const give = (on: boolean) => {
+      if (!live) return;
+      // The names the older cache holds leave this device the moment the two-door screen is on.
+      if (on) forgetDeviceKids();
+      setSignin2(on);
+    };
+    void Promise.race([fetchSigninMode(), new Promise<never>((_, no) => setTimeout(() => no(new Error('slow')), 2500))]).then(
+      (mode) => give(signin2Active(mode)),
+      () => give(false),
+    );
+    return () => {
+      live = false;
+    };
+  }, [signedOutScreen, signin2]);
+
   // The Kid-tab faces. Written only here, and only while a parent or a kid is signed in on this device (repo is set by a
   // sign-in), from kids this session already loaded. A kid session knows only itself, so it merges. Nothing is fetched.
   useEffect(() => {
     if (!repo || repo.mode !== 'firestore' || !kids.length) return;
+    // The two-door screen shows no names, so it never writes them: it writes a tile (the username and a hero picture) instead.
+    if (signin2 === true) {
+      const k = kids[0]!;
+      if (kidSession && pendingTile.current && kids.length === 1) {
+        rememberTile({ username: pendingTile.current.username, kind: pendingTile.current.kind, hero: avatarOf(k).hero, color: avatarOf(k).color });
+        pendingTile.current = null;
+      }
+      return;
+    }
     rememberKids(
       kids.map((k) => ({ kidId: k.id, name: k.name, hero: avatarOf(k).hero, color: avatarOf(k).color, ...(k.hasPicturePin ? { picture: true } : {}) })),
       undefined,
       { merge: kidSession },
     );
-  }, [repo, kids, kidSession]);
+  }, [repo, kids, kidSession, signin2]);
 
   // Behind config/app.minVersion: the update screen replaces the app. Checked after sign-in, whenever the
   // app comes back to the front, and before each run.
@@ -335,6 +373,42 @@ export function App() {
 
   function renderScreen() {
   if (screen.name === 'boot') return <div className="screen center"><p className="pixel blink">Loading…</p></div>;
+  if ((screen.name === 'kidsignin' || screen.name === 'signin') && signin2 === null) return <div className="screen center"><p className="pixel blink">Loading…</p></div>;
+  if ((screen.name === 'kidsignin' || screen.name === 'signin') && signin2 === true)
+    return (
+      <FirstScreen
+        key={screen.name}
+        {...(screen.name === 'signin' ? { initialView: 'grownups' as const } : {})}
+        error={screen.name === 'signin' ? error : (pinError ?? error)}
+        tiles={readTiles()}
+        kindOf={fetchPasscodeKind}
+        onViewChange={() => {
+          setPinError(null);
+          setError(null);
+        }}
+        onKidSubmit={(username, code, kind) => {
+          setPinError(null);
+          setError(null);
+          authStart.current?.();
+          return signInKid(username, code, 'username').then(
+            ({ remember }) => {
+              // School mode (remember: false) leaves nothing on this device.
+              pendingTile.current = remember ? { username: username.toLowerCase(), kind } : null;
+              return true;
+            },
+            (e: { message?: string }) => {
+              setPinError(e.message ?? "That username and passcode didn't match.");
+              return false;
+            },
+          );
+        }}
+        onParentSignIn={() => {
+          setError(null);
+          authStart.current?.();
+          signInParent().catch((e: Error) => setError(e.message));
+        }}
+      />
+    );
   if (screen.name === 'kidsignin' || screen.name === 'signin')
     return (
       <Landing
