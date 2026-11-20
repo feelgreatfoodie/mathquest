@@ -2,6 +2,7 @@ import { PixelIcon, PixelMap, PixelPlay } from '../pixel';
 import { useState } from 'react';
 import { GoalJar, goalName } from '../GoalJar';
 import { CampScene } from '../CampScene';
+import { TitleBadge } from '../TitleBadge';
 import { ShopMathEntry } from '../ShopMathCard';
 import type { Repo } from '../../data/repo';
 import type { Kid, KidGame } from '../../engine/models';
@@ -36,6 +37,7 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
       </div>
       <div className="early-home-mute"><MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big chimesOnly={mute.chimesOnly} /></div>
       <CampScene game={kid.game} size={200} className="px-camp-wide" />
+      <TitleBadge game={kid.game} name={kid.name} picture />
       <div className="early-home-info">
         <GoalJar game={kid.game} learner="prereader" onClick={() => void speak(`Saving for the ${goalName(kid.game.goal ?? '')}! You have ${kid.game.gems}.`)} />
         <ShopMathEntry kid={kid} repo={repo} onGame={onTipGame ?? (() => undefined)} />

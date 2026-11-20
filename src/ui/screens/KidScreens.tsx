@@ -3,6 +3,8 @@ import { AVATAR_SWATCH } from '../AvatarPicker';
 import { GoalJar } from '../GoalJar';
 import { ShopMathEntry } from '../ShopMathCard';
 import { CampScene } from '../CampScene';
+import { HeroFigure } from '../HeroFigure';
+import { TitleBadge } from '../TitleBadge';
 import { cardLabel } from '../../engine/modules';
 import { dayKey, levelFor, type GameDelta } from '../../engine/game';
 import { displayStreak, weekDays } from '../../engine/habit';
@@ -334,6 +336,7 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault }: { 
         <CampScene game={kid.game}>
           <div className="px-camp-name">
             <h1 className="pixel">{kid.name}</h1>
+            <TitleBadge game={kid.game} name={kid.name} />
             <div className="level">
               <span className="pixel small">LV {lv.level}</span>
               <div className="progress px-bar"><div className="progress-fill xp" style={{ width: `${(lv.into / lv.span) * 100}%` }} /></div>
@@ -418,7 +421,8 @@ function ReaderSummary({ kid, summary, info, loadCards, onAgain, onHome }: Summa
             <PixelIcon key={i} name="star" size={54} className={i <= stars ? 'px-star on' : 'px-star'} />
           ))}
         </div>
-        <Sprite name={kid.game.hero} size={96} className="bob" />
+        <HeroFigure game={kid.game} size={96} className="bob" />
+        <TitleBadge game={kid.game} name={kid.name} className="kid-title-end" />
         <div className="stats">
           <Stat label="correct" value={`${counts.right}/${counts.total}`} />
           <Stat label="fast answers" value={summary.fast} />

@@ -1,4 +1,5 @@
 import { ITEM_SPRITES } from '../../ui/itemSprites';
+import { lookSpot, type LookSpot } from '../shop/looks';
 import { SPRITES } from '../../ui/sprites';
 import type { Placed } from './camp';
 import type { Entity } from './encounters';
@@ -327,6 +328,12 @@ export interface Scene {
   pupFx?: 'fire' | 'cheer';
   /** The tent and flags the kid placed in this land (see camp.ts). Decor only: the hero walks over them. */
   camp?: Placed[];
+  /** The wearables on the hero: gear (cape, helm, hat, hood, armor) and the weapon in hand. Owned and equipped only (see looks.ts). */
+  worn?: { gear?: string; weapon?: string };
+  /** The legendary glow around the hero: gold for the armor, cyan for the staff. */
+  glow?: 'gold' | 'cyan';
+  /** A Bow arrow or a Boomerang in flight: from and to in tiles, `p` from 0 to 1. Decor: the fight starts when it lands. */
+  shot?: { kind: 'arrow' | 'boomerang'; from: Point; to: Point; p: number };
 }
 
 const variantOf = (x: number, y: number) => (x * 7 + y * 13) % VARIANTS;
@@ -429,7 +436,27 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
     draw: () => {
       if (s.petSprite) sprite(s.petSprite, h.x + (h.facing === 'left' ? 0.55 : -0.5), h.y + 0.15, bob * 0.5, h.facing !== 'left', 0.7);
       if (s.pupFx) pupEffect(g, (h.x + (h.facing === 'left' ? 0.55 : -0.5)) * t - left, (h.y + 0.15) * t - top, t, s.time, s.pupFx, h.facing === 'left');
-      sprite(s.heroSprite, h.x, h.y, bob, h.facing === 'left');
+      if (s.glow) heroGlow(g, (h.x + 0.5) * t - left, (h.y + 0.55) * t - top + bob * scale, t, s.glow, s.time, !!s.still);
+      const flip = h.facing === 'left';
+      const gearSpot = s.worn?.gear ? lookSpot(s.worn.gear) : null;
+      const weaponSpot = s.worn?.weapon ? lookSpot(s.worn.weapon) : null;
+      const part = (name: string, spot: LookSpot) => {
+        const w = Math.round(t * spot.size);
+        const fx = flip ? 1 - spot.x - spot.size : spot.x;
+        const dx = Math.round(h.x * t - left + fx * t);
+        const dy = Math.round(h.y * t - top + spot.y * t + bob * scale);
+        if (flip) {
+          g.save();
+          g.translate(dx + w, dy);
+          g.scale(-1, 1);
+          g.drawImage(spriteCanvas(name), 0, 0, TILE, TILE, 0, 0, w, w);
+          g.restore();
+        } else g.drawImage(spriteCanvas(name), 0, 0, TILE, TILE, dx, dy, w, w);
+      };
+      if (gearSpot?.behind) part(s.worn!.gear!, gearSpot);
+      sprite(s.heroSprite, h.x, h.y, bob, flip);
+      if (gearSpot && !gearSpot.behind) part(s.worn!.gear!, gearSpot);
+      if (weaponSpot) part(s.worn!.weapon!, weaponSpot);
       if (h.facing === 'up') {
         // From behind: the face is covered.
         g.fillStyle = 'rgba(17,24,39,0.55)';
@@ -438,6 +465,20 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
     },
   });
   items.sort((a, b) => a.y - b.y).forEach((i) => i.draw());
+  if (s.shot) {
+    // The arrow flies straight; the boomerang spins out and back. Both are the item's own sprite.
+    const { from, to, p, kind } = s.shot;
+    const q = kind === 'boomerang' ? Math.sin(Math.min(1, p) * Math.PI) : p;
+    const px0 = from.x + (to.x - from.x) * q;
+    const py0 = from.y + (to.y - from.y) * q;
+    const cx = (px0 + 0.5) * t - left;
+    const cy = (py0 + 0.5) * t - top;
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(kind === 'boomerang' ? p * Math.PI * 6 : Math.atan2(to.y - from.y, to.x - from.x) + Math.PI / 4);
+    g.drawImage(spriteCanvas(kind === 'boomerang' ? 'w-boomerang' : 'w-bow'), 0, 0, TILE, TILE, -t / 2, -t / 2, t, t);
+    g.restore();
+  }
 
   if (s.marker) {
     g.strokeStyle = '#fbbf24';
@@ -456,6 +497,17 @@ export function drawScene(g: G, width: number, height: number, scale: number, s:
     g.fillStyle = grad;
     g.fillRect(0, 0, width, height);
   }
+}
+
+/** A soft glow behind the hero: two stacked ellipses, pulsing once a second. It holds still under reduced motion. */
+function heroGlow(g: G, cx: number, cy: number, t: number, kind: 'gold' | 'cyan', time: number, still: boolean) {
+  const [r, gr, b] = kind === 'gold' ? [250, 204, 21] : [103, 232, 249];
+  const pulse = still ? 1 : 0.85 + 0.15 * Math.sin(time * 4);
+  const grad = g.createRadialGradient(cx, cy, t * 0.1, cx, cy, t * 0.9 * pulse);
+  grad.addColorStop(0, `rgba(${r},${gr},${b},0.55)`);
+  grad.addColorStop(1, `rgba(${r},${gr},${b},0)`);
+  g.fillStyle = grad;
+  g.fillRect(cx - t, cy - t, t * 2, t * 2);
 }
 
 /** A soft shadow on the ground under a tree or a rock: two stepped bands, the second one narrower and lighter. */
