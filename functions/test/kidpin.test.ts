@@ -15,6 +15,7 @@ import {
   type AuthContext,
   type Deps,
 } from '../src/core.js';
+import { TEST_PEPPER } from './testPepper.js';
 
 // All names, ids, addresses and PINs below are made up for the tests.
 const FAM = 'fam-uid-1';
@@ -31,6 +32,7 @@ let clock = 1_700_000_000_000;
 function deps(): Deps {
   return {
     db,
+    pepper: TEST_PEPPER,
     now: () => clock,
     auth: {
       createCustomToken: async (uid, claims) => JSON.stringify({ uid, claims }),
@@ -43,7 +45,7 @@ async function seedKid(fam: string, id: string, name: string) {
 }
 
 async function clearAll() {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) {
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) {
     await db.recursiveDelete(db.collection(col));
   }
 }
@@ -225,11 +227,23 @@ describe('setKidPin', () => {
   });
 });
 
+/** Fills the network bucket of one IP: `first` once (so its family is counted), then unknown names, so no name or family limit is reached. */
+async function fillIp(ip: string, first = 'Ghost') {
+  await fail(signIn(first, '0000', ip));
+  for (let i = 1; i < LIMITS.ip.max; i++) await fail(signIn(`Ghost${i}`, '0000', ip));
+}
+
+/** Puts the family counter one wrong try short of its limit (99 entries inside the hour); the next wrong try locks the family. */
+async function seedFamilyNearLimit(fam: string) {
+  const entries = Array.from({ length: LIMITS.family.max - 1 }, (_, i) => ({ id: `seed${i}`, at: clock - 1000 }));
+  await db.doc(`pinIndex/${fam}/attempts/family`).set({ entries, lockedUntil: 0, lockedBy: null, families: [], updatedAt: clock });
+}
+
 describe('brute-force limits', () => {
   const wrong = (name: string, ip: string) => fail(signIn(name, '0000', ip));
 
-  it('refuses the 6th failure from one IP, even with the right PIN', async () => {
-    for (let i = 0; i < LIMITS.ip.max; i++) expect((await wrong('Pip', '9.9.9.9')).code).toBe('permission-denied');
+  it('refuses the 51st failure from one IP, even with the right PIN', async () => {
+    for (let i = 0; i < LIMITS.ip.max; i++) expect((await wrong(`Ghost${i}`, '9.9.9.9')).code).toBe('permission-denied');
     const e = await fail(signIn('Pip', PIN, '9.9.9.9'));
     expect(e.code).toBe('resource-exhausted');
     expect(e.message).toBe(LOCKED_MESSAGE);
@@ -239,7 +253,7 @@ describe('brute-force limits', () => {
   });
 
   it('lets the IP back in after 15 minutes', async () => {
-    for (let i = 0; i < LIMITS.ip.max; i++) await wrong('Pip', '9.9.9.9');
+    await fillIp('9.9.9.9');
     expect((await fail(signIn('Pip', PIN, '9.9.9.9'))).code).toBe('resource-exhausted');
     clock += 15 * 60_000 + 1;
     expect(claimsOf(await signIn('Pip', PIN, '9.9.9.9')).claims.kidId).toBe('kid-pip');
@@ -266,14 +280,10 @@ describe('brute-force limits', () => {
     expect(e.message).toBe(LOCKED_MESSAGE);
   });
 
-  it('locks the family after 20 failures, so the 21st is refused even with a right PIN', async () => {
-    // 7 + 7 + 6 failures across three names and 20 different IPs: no IP or name limit is reached.
-    const names = ['Pip', 'Maya', 'Leo'];
-    let n = 0;
-    for (const [i, name] of names.entries()) {
-      for (let j = 0; j < (i === 2 ? 6 : 7); j++) expect((await wrong(name, `5.5.5.${n++}`)).code).toBe('permission-denied');
-    }
-    expect(n).toBe(LIMITS.family.max);
+  it('locks the family after 100 failures, so the 101st is refused even with a right PIN', async () => {
+    // 99 counted failures are seeded (100 real scrypt tries would take a minute); the 100th is a real wrong try.
+    await seedFamilyNearLimit(FAM);
+    expect((await wrong('Pip', '5.5.5.1')).code).toBe('permission-denied');
     const e = await fail(signIn('Zed', PIN, '5.5.5.250'));
     expect(e.code).toBe('resource-exhausted');
     expect(e.message).toBe(LOCKED_MESSAGE);
@@ -283,34 +293,39 @@ describe('brute-force limits', () => {
   });
 
   it('does not reset the counters on a success', async () => {
-    for (let i = 0; i < 4; i++) await wrong('Pip', '4.4.4.4');
-    expect(claimsOf(await signIn('Pip', PIN, '4.4.4.4')).claims.kidId).toBe('kid-pip');
-    expect((await wrong('Pip', '4.4.4.4')).code).toBe('permission-denied'); // the 5th failure
-    expect((await fail(signIn('Pip', PIN, '4.4.4.4'))).code).toBe('resource-exhausted');
+    // A success clears the 5-in-a-row count, so 2 wrong then a success, 5 times, never locks that way. The name counter still
+    // holds all 10 wrong tries: the success refunded only its own entry, so the next try is refused.
+    for (let round = 0; round < 5; round++) {
+      await wrong('Pip', `4.4.4.${round * 2}`);
+      await wrong('Pip', `4.4.4.${round * 2 + 1}`);
+      if (round < 4) expect(claimsOf(await signIn('Pip', PIN, `4.4.4.${100 + round}`)).claims.kidId).toBe('kid-pip');
+    }
+    expect((await fail(signIn('Pip', PIN, '4.4.4.102'))).code).toBe('resource-exhausted');
   });
 
   it('counts parallel guesses, so a burst cannot skip the limit', async () => {
-    const results = await Promise.allSettled(Array.from({ length: 8 }, () => signIn('Pip', '0000', '3.3.3.3')));
+    // The property: at most 5 wrong guesses are ever verified (answered permission-denied) and none succeeds. Under contention a call
+    // may also end aborted, which verifies nothing, so the count of refusals is not asserted. 12 uncounted guesses would give 12.
+    const results = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => signIn('Pip', '0000', `3.3.3.${i}`)));
     const codes = results.map((r) => (r.status === 'rejected' ? (r.reason as { code: string }).code : 'ok'));
-    expect(codes.filter((c) => c === 'permission-denied')).toHaveLength(LIMITS.ip.max);
-    expect(codes.filter((c) => c === 'resource-exhausted')).toHaveLength(8 - LIMITS.ip.max);
+    // Every call ends in a code that means "counted or refused": a crash (internal, unavailable) must not pass as a limit that held.
+    const allowed = ['permission-denied', 'resource-exhausted', 'aborted'];
+    expect(codes.filter((c) => !allowed.includes(c))).toEqual([]);
+    expect(codes.filter((c) => c === 'permission-denied').length).toBeLessThanOrEqual(LIMITS.username.max);
   });
 });
 
 describe('parent lock status and unlock', () => {
   async function lockFamily() {
-    const names = ['Pip', 'Maya', 'Leo'];
-    let n = 0;
-    for (const [i, name] of names.entries()) {
-      for (let j = 0; j < (i === 2 ? 6 : 7); j++) await fail(signIn(name, '0000', `2.2.2.${n++}`));
-    }
+    await seedFamilyNearLimit(FAM);
+    await fail(signIn('Pip', '0000', '2.2.2.1'));
   }
 
   it('shows the lock and the failure count to the parent', async () => {
     await lockFamily();
     const s = await kidLockStatus(deps(), PARENT);
     expect(s.locked).toBe(true);
-    expect(s.failures).toBe(20);
+    expect(s.failures).toBe(LIMITS.family.max);
   });
 
   it('clears the lock when the parent unlocks', async () => {
@@ -324,7 +339,7 @@ describe('parent lock status and unlock', () => {
   });
 
   it('clears an IP lock and a name lock on unlock', async () => {
-    for (let i = 0; i < LIMITS.ip.max; i++) await fail(signIn('Pip', '0000', '1.2.3.4'));
+    await fillIp('1.2.3.4', 'Pip');
     expect((await kidLockStatus(deps(), PARENT)).locked).toBe(true);
     await unlockKidSignIn(deps(), PARENT);
     expect(claimsOf(await signIn('Pip', PIN, '1.2.3.4')).claims.kidId).toBe('kid-pip');
@@ -346,9 +361,8 @@ describe('parent lock status and unlock', () => {
 describe('a parent PIN reset clears the kid sign-in lock', () => {
   const NEW_PIN = '1357';
   const IP = '3.3.3.3';
-  const lockByName = async (name: string, ip: string) => {
-    for (let i = 0; i < LIMITS.ip.max; i++) await fail(signIn(name, '0000', ip));
-  };
+  // Fills the network bucket of one IP; the first try is on `name`, so that bucket counts that name's family.
+  const lockByName = (name: string, ip: string) => fillIp(ip, name);
 
   it('lets the kid in with the new PIN after an IP lock, clearing the name, family and ip counters', async () => {
     await lockByName('Pip', IP);
@@ -370,8 +384,8 @@ describe('a parent PIN reset clears the kid sign-in lock', () => {
   });
 
   it('clears a family lock', async () => {
-    let n = 0;
-    for (const name of ['Pip', 'Maya', 'Leo']) for (let j = 0; j < 7; j++) await fail(signIn(name, '0000', `5.5.5.${n++}`));
+    await seedFamilyNearLimit(FAM);
+    await fail(signIn('Pip', '0000', '5.5.5.1'));
     expect((await kidLockStatus(deps(), PARENT)).locked).toBe(true);
     await setKidPin(deps(), PARENT, { kidId: 'kid-zed', pin: NEW_PIN }, '5.5.5.250');
     expect(claimsOf(await signIn('Zed', NEW_PIN, '5.5.5.250')).claims.kidId).toBe('kid-zed');

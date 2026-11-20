@@ -15,7 +15,7 @@ beforeAll(() => {
 });
 
 beforeEach(async () => {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
   await db.doc('families/fam-1').set({ createdAt: 1 });
   await db.doc('families/fam-1/kids/k1').set({ id: 'k1', name: 'Emma' });
   await db.doc('pinIndex/fam-1/kids/k1').set({ nameKey: 'emma', salt: 'aa', hash: 'bb' });

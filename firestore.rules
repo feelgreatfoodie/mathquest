@@ -477,6 +477,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // The username index: usernames/{usernameLower} = { familyUid, kidId, createdAt }. A username is not secret (it is printed
+    // on the sign-in card), but the index maps it to a family and a kid, so no client reads or writes it. kidSignIn does one
+    // `get` with the Admin SDK.
+    match /usernames/{document=**} {
+      allow read, write: if false;
+    }
+
     // The release gate: config/app holds { minVersion }, the oldest build allowed to write. Any signed-in
     // account, kid or parent, reads it (one public number). No client writes it: the release script sets it
     // through the Admin SDK, which skips these rules. Every other config doc stays closed.
@@ -495,6 +502,19 @@ service cloud.firestore {
     match /families/{uid} {
       allow read: if isParent(uid);
       allow write: if isParent(uid) && smallDoc();
+
+      // Devices that signed a player in: families/{uid}/devices/{deviceId} = { firstSeen, lastSeen, kids[], label }. The Admin SDK
+      // (kidSignIn) creates and updates them. The family's grown-ups read them and may change `label` and nothing else, as a
+      // string of 1 to 40 characters. A client cannot create or delete a device, and a kid token reads nothing here.
+      match /devices/{deviceId} {
+        allow read: if isParent(uid);
+        allow update: if isParent(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['label'])
+          && request.resource.data.label is string
+          && request.resource.data.label.size() >= 1
+          && request.resource.data.label.size() <= 40;
+        allow create, delete: if false;
+      }
 
       match /kids/{kidId} {
         allow read: if isParent(uid) || isKid(uid, kidId);

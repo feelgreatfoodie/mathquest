@@ -1,35 +1,49 @@
-import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { HttpsError } from 'firebase-functions/v2/https';
-import type { Firestore, Transaction } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions/logger';
+import { FieldValue, type Firestore, type Transaction } from 'firebase-admin/firestore';
+import { reservedReason } from './reserved.js';
 
 // ---------------------------------------------------------------------------------------------
 // Kid PIN sign-in. All logic lives here so tests can run it against the Firestore emulator.
 // index.ts wires it to callable functions.
 //
 // Data (server-only; firestore.rules deny every client read and write):
-//   pinIndex/{familyUid}/kids/{kidId}            { nameKey, salt, hash, updatedAt, pic?: { salt, hash, updatedAt } }
-//                                                pic is the picture PIN (4 of 9 icons), derived exactly like the digit PIN
-//   pinIndex/{familyUid}/attempts/family         family failure counter and lock
-//   pinIndex/_global/attempts/ip_{hash}          per-IP failure counter and lock
-//   pinIndex/_global/attempts/name_{hash}        per-name failure counter and lock
+//   pinIndex/{familyUid}/kids/{kidId}            { nameKey, salt, hash, v?, updatedAt, pic?: { salt, hash, v?, updatedAt } }
+//                                                pic is the picture PIN (4 of 9 icons), derived exactly like the digit PIN.
+//                                                v: 2 is the peppered hash, scrypt(HMAC-SHA256(pepper, passcode), salt). No v is v1: scrypt(passcode, salt).
+//   pinIndex/{familyUid}/attempts/family         family failure counter and lock (100 per hour)
+//   pinIndex/_global/attempts/ip_{hash}          network counter and lock (50 per 15 min)
+//   pinIndex/_global/attempts/dev_{hash}         device counter and lock (20 per 15 min, only when the call carries a valid deviceId)
+//   pinIndex/_global/attempts/user_{hash}        username counter (index usernames only): 5 wrong in a row lock 5 min, doubling to 60 min
+//   pinIndex/_global/attempts/dn_{hash}          the same strike counter for a display name with no username, and for any unknown name
+//   pinIndex/_global/attempts/name_{hash}        legacy display-name counter (10 per hour), for the legacy path only
+//   usernames/{usernameLower}                    { familyUid, kidId, createdAt }: the one kid that owns a username
+//   families/{uid}/devices/{deviceId}            { firstSeen, lastSeen, kids[], label }: written on a good sign-in, parents read it
 //   parents/{uid}                                { email, createdAt }: a registered parent account
 //   meta/parentCount                             { count }: how many parents are registered
-//   nameKeys/{nameKey}                           { familyUid, kidId }: the one kid that owns a name
-// IP and name counters sit in _global so an unknown name is counted exactly like a known one.
+//   nameKeys/{nameKey}                           { familyUid, kidId }: the one kid that owns a display name
+// Every counter sits in _global so an unknown name is counted exactly like a known one.
 // ---------------------------------------------------------------------------------------------
 
-export const MISMATCH_MESSAGE = "That name and PIN didn't match";
+export const MISMATCH_MESSAGE = "That username and passcode didn't match.";
 export const LOCKED_MESSAGE = 'Too many wrong tries. Ask a grown-up to open Grown-ups and tap Unlock.';
 export const FULL_MESSAGE = 'Math Quest is full right now.';
 export const NAME_TAKEN_MESSAGE = 'That name is taken. Try adding a last initial, like EmmaS.';
 
-/** Parent accounts that may register. Raise it to let more families in. */
+/** Parent accounts that may register when config/app has no maxParents. Raise config/app.maxParents to let more families in. */
 export const MAX_PARENTS = 20;
 
 export const LIMITS = {
-  ip: { max: 5, windowMs: 15 * 60_000 },
+  /** Network (client IP): sized for a classroom behind one NAT. A backstop against spraying. */
+  ip: { max: 50, windowMs: 15 * 60_000 },
+  /** One deviceId. Skipped when the call carries no valid deviceId (clients before L2 send none). */
+  device: { max: 20, windowMs: 15 * 60_000 },
+  /** Legacy display-name path only. Removed with the path in L4. */
   name: { max: 10, windowMs: 60 * 60_000 },
-  family: { max: 20, windowMs: 60 * 60_000 },
+  family: { max: 100, windowMs: 60 * 60_000 },
+  /** 5 wrong in a row lock baseLockMs x 2^strikes (cap capLockMs). Strikes reset after strikeResetMs without a lock. */
+  username: { max: 5, baseLockMs: 5 * 60_000, capLockMs: 60 * 60_000, strikeResetMs: 24 * 60 * 60_000 },
 } as const;
 
 // Number of X-Forwarded-For entries the trusted infrastructure appended, counted from the right.
@@ -61,6 +75,8 @@ const PIN_RE = /^\d{4}$/;
 /** A picture PIN: 4 icons out of 9, one letter a to i each, repeats allowed (6,561 combinations). Letters never collide with digits. */
 const PICTURE_RE = /^[a-i]{4}$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+const DEVICE_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
 export interface AuthContext {
   uid: string;
@@ -72,6 +88,10 @@ export interface AuthContext {
 
 export interface Deps {
   db: Firestore;
+  /** MQ_PIN_PEPPER. Keys every v2 passcode hash. Never logged, never stored. */
+  pepper: string;
+  /** Structured log sink. Defaults to the Cloud Functions logger. */
+  log?: (entry: Record<string, unknown>) => void;
   /** The parts of firebase-admin Auth that this code uses. */
   auth: {
     createCustomToken(uid: string, claims: Record<string, unknown>): Promise<string>;
@@ -90,12 +110,23 @@ const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 /** Same derivation as hashPin() in the web app, so the server can compare against family.pinHash. */
 export const parentPinHash = (uid: string, pin: string) => sha(`mathquest:${uid}:${pin}`);
 
-function scryptAsync(pin: string, salt: Buffer): Promise<Buffer> {
+function scryptAsync(pin: string | Buffer, salt: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     scrypt(pin, salt, 32, (err, key) => (err ? reject(err) : resolve(key)));
   });
 }
 
+/** v2 hash: scrypt(HMAC-SHA256(pepper, passcode), salt). One scrypt call, same cost as v1. */
+function hashV2(d: Deps, passcode: string, salt: Buffer): Promise<Buffer> {
+  // An empty pepper means a function without the secret bound. Hashing without a key would be a silent downgrade.
+  if (!d.pepper) return Promise.reject(new HttpsError('internal', 'Sign-in is not set up.'));
+  return scryptAsync(createHmac('sha256', d.pepper).update(passcode).digest(), salt);
+}
+
+/** The v1 derivation, kept only to verify rows written before the pepper. */
+const hashV1 = (passcode: string, salt: Buffer) => scryptAsync(passcode, salt);
+
+const logLine = (d: Deps, entry: Record<string, unknown>) => (d.log ? d.log(entry) : logger.info(String(entry.event), entry));
 const DUMMY_SALT = Buffer.from('mathquest-dummy-salt-not-a-secret');
 const DUMMY_HASH = Buffer.alloc(32, 7);
 
@@ -123,11 +154,14 @@ export async function registerParent(d: Deps, auth: AuthContext | undefined): Pr
   if (auth.emailVerified !== true || !auth.email) throw new HttpsError('permission-denied', 'Verify your Google email first.');
   const email = auth.email.toLowerCase();
   await d.db.runTransaction(async (tx) => {
-    const [mine, counter] = await Promise.all([tx.get(parentRef(d, auth.uid)), tx.get(parentCountRef(d))]);
+    const [mine, counter, config] = await Promise.all([tx.get(parentRef(d, auth.uid)), tx.get(parentCountRef(d)), tx.get(d.db.doc('config/app'))]);
     if (mine.exists) return;
     const raw = counter.data()?.count;
     const count = typeof raw === 'number' ? raw : 0;
-    if (count >= MAX_PARENTS) throw new HttpsError('resource-exhausted', FULL_MESSAGE);
+    // config/app.maxParents sets the cap (the Admin SDK writes it; clients cannot). Anything but a whole number from 1 up falls back to MAX_PARENTS.
+    const cfg = config.data()?.maxParents;
+    const max = typeof cfg === 'number' && Number.isInteger(cfg) && cfg >= 1 ? cfg : MAX_PARENTS;
+    if (count >= max) throw new HttpsError('resource-exhausted', FULL_MESSAGE);
     tx.set(parentRef(d, auth.uid), { email, createdAt: nowOf(d) });
     tx.set(parentCountRef(d), { count: count + 1 });
   });
@@ -145,9 +179,15 @@ interface Counter {
   lockedUntil: number;
   lockedBy: string | null;
   families?: string[];
+  /** Username bucket: wrong tries since the last lock or success. */
+  fails: number;
+  /** Username bucket: locks since the last success or 24 h without a lock. */
+  strikes: number;
+  /** Username bucket: when the last lock was set. */
+  strikeAt: number;
 }
 
-const emptyCounter = (): Counter => ({ entries: [], lockedUntil: 0, lockedBy: null });
+const emptyCounter = (): Counter => ({ entries: [], lockedUntil: 0, lockedBy: null, fails: 0, strikes: 0, strikeAt: 0 });
 
 function readCounter(raw: FirebaseFirestore.DocumentData | undefined): Counter {
   if (!raw) return emptyCounter();
@@ -156,15 +196,34 @@ function readCounter(raw: FirebaseFirestore.DocumentData | undefined): Counter {
     lockedUntil: typeof raw.lockedUntil === 'number' ? raw.lockedUntil : 0,
     lockedBy: typeof raw.lockedBy === 'string' ? raw.lockedBy : null,
     families: Array.isArray(raw.families) ? (raw.families as string[]) : [],
+    fails: typeof raw.fails === 'number' ? raw.fails : 0,
+    strikes: typeof raw.strikes === 'number' ? raw.strikes : 0,
+    strikeAt: typeof raw.strikeAt === 'number' ? raw.strikeAt : 0,
   };
 }
 
-interface Bucket {
+/** A sliding window: `max` wrong tries inside `windowMs` lock the bucket for `windowMs`. */
+interface WindowBucket {
+  kind?: 'window';
   ref: FirebaseFirestore.DocumentReference;
   max: number;
   windowMs: number;
   familyUid?: string;
 }
+/** The username bucket: LIMITS.username. */
+interface StrikeBucket {
+  kind: 'strike';
+  ref: FirebaseFirestore.DocumentReference;
+  familyUid?: string;
+}
+type Bucket = WindowBucket | StrikeBucket;
+
+/** Lock length for a bucket that already has `strikes` locks: 5, 10, 20, 40, 60, 60 min. */
+export const lockMsFor = (strikes: number) => Math.min(LIMITS.username.baseLockMs * 2 ** strikes, LIMITS.username.capLockMs);
+
+// The network counter is one doc that every sign-in behind one school NAT writes at the bell. Ten attempts instead of the
+// default five let a classroom's parallel sign-ins retry past that contention.
+const TX_OPTS = { maxAttempts: 10 } as const;
 
 /**
  * Counts an attempt BEFORE the PIN is checked, so parallel guesses cannot skip the count.
@@ -177,32 +236,68 @@ async function reserve(d: Deps, buckets: Bucket[], entryId: string): Promise<boo
     const next: Counter[] = [];
     for (const [i, b] of buckets.entries()) {
       const c = readCounter(snaps[i]!.data());
-      c.entries = c.entries.filter((e) => e.at > now - b.windowMs);
-      if (c.lockedUntil > now || c.entries.length >= b.max) return false;
+      if (b.kind === 'strike') {
+        // 24 h with no lock forgive the strikes.
+        if (c.strikes > 0 && c.lockedUntil <= now && now - c.strikeAt >= LIMITS.username.strikeResetMs) c.strikes = 0;
+        if (c.lockedUntil > now) return false;
+      } else {
+        c.entries = c.entries.filter((e) => e.at > now - b.windowMs);
+        if (c.lockedUntil > now || c.entries.length >= b.max) return false;
+      }
       next.push(c);
     }
     for (const [i, b] of buckets.entries()) {
       const c = next[i]!;
-      c.entries.push({ id: entryId, at: now });
-      if (c.entries.length >= b.max) {
-        c.lockedUntil = now + b.windowMs;
-        c.lockedBy = entryId;
+      if (b.kind === 'strike') {
+        c.fails += 1;
+        if (c.fails >= LIMITS.username.max) {
+          c.lockedUntil = now + lockMsFor(c.strikes);
+          c.lockedBy = entryId;
+          c.strikes += 1;
+          c.strikeAt = now;
+          c.fails = 0;
+        }
+      } else {
+        c.entries.push({ id: entryId, at: now });
+        if (c.entries.length >= b.max) {
+          c.lockedUntil = now + b.windowMs;
+          c.lockedBy = entryId;
+        }
       }
       const fams = new Set(c.families ?? []);
       if (b.familyUid) fams.add(b.familyUid);
-      tx.set(b.ref, { entries: c.entries, lockedUntil: c.lockedUntil, lockedBy: c.lockedBy, families: [...fams], updatedAt: now });
+      tx.set(b.ref, { entries: c.entries, lockedUntil: c.lockedUntil, lockedBy: c.lockedBy, families: [...fams], fails: c.fails, strikes: c.strikes, strikeAt: c.strikeAt, updatedAt: now });
     }
     return true;
-  });
+  }, TX_OPTS);
 }
 
-async function refund(d: Deps, buckets: Bucket[], entryId: string): Promise<void> {
+/** A v1 hash that verified, and the v2 hash that replaces it. */
+interface Migration {
+  rowRef: FirebaseFirestore.DocumentReference;
+  picture: boolean;
+  /** The v1 hash that verified. The write only lands while the row still holds it, so a reset in between is never overwritten. */
+  oldHash: Buffer;
+  salt: Buffer;
+  hash: Buffer;
+}
+
+/**
+ * A correct passcode refunds its own entry. A success also clears the username bucket (fails and strikes back to 0).
+ * With `migrate`, the same transaction rewrites a v1 row as v2: the v1 row stays readable until this commit lands,
+ * and a wrong passcode never reaches this function.
+ */
+async function refund(d: Deps, buckets: Bucket[], entryId: string, migrate?: Migration): Promise<void> {
   await d.db.runTransaction(async (tx) => {
-    const snaps = await Promise.all(buckets.map((b) => tx.get(b.ref)));
+    const [snaps, rowSnap] = await Promise.all([Promise.all(buckets.map((b) => tx.get(b.ref))), migrate ? tx.get(migrate.rowRef) : Promise.resolve(null)]);
     for (const [i, b] of buckets.entries()) {
       const raw = snaps[i]!.data();
       if (!raw) continue;
       const c = readCounter(raw);
+      if (b.kind === 'strike') {
+        tx.set(b.ref, { ...raw, entries: [], lockedUntil: c.lockedBy === entryId ? 0 : c.lockedUntil, lockedBy: c.lockedBy === entryId ? null : c.lockedBy, fails: 0, strikes: 0, strikeAt: 0 });
+        continue;
+      }
       c.entries = c.entries.filter((e) => e.id !== entryId);
       if (c.lockedBy === entryId) {
         c.lockedBy = null;
@@ -210,40 +305,92 @@ async function refund(d: Deps, buckets: Bucket[], entryId: string): Promise<void
       }
       tx.set(b.ref, { ...raw, entries: c.entries, lockedUntil: c.lockedUntil, lockedBy: c.lockedBy });
     }
-  });
+    if (migrate && rowSnap?.exists) {
+      const row = rowSnap.data()!;
+      const cur = migrate.picture ? row.pic : row;
+      if (cur && cur.v !== 2 && String(cur.hash) === migrate.oldHash.toString('hex')) {
+        const next = { salt: migrate.salt.toString('hex'), hash: migrate.hash.toString('hex'), v: 2, updatedAt: nowOf(d) };
+        tx.set(migrate.rowRef, migrate.picture ? { pic: { ...row.pic, ...next } } : next, { merge: true });
+      }
+    }
+  }, TX_OPTS);
 }
 
 const familyCounter = (d: Deps, uid: string) => d.db.doc(`pinIndex/${uid}/attempts/family`);
 const ipCounter = (d: Deps, ip: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/ip_${sha(ip).slice(0, 32)}`);
 const nameCounter = (d: Deps, nameKey: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/name_${sha(nameKey).slice(0, 32)}`);
+const userCounter = (d: Deps, usernameLower: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/user_${sha(usernameLower).slice(0, 32)}`);
+/** The strike bucket of a display name (legacy and unknown names). Its own key space, so no family's Unlock or reset can reach a username's user_ bucket. */
+const dnCounter = (d: Deps, nameKey: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/dn_${sha(nameKey).slice(0, 32)}`);
+const deviceCounter = (d: Deps, deviceId: string) => d.db.doc(`pinIndex/${GLOBAL}/attempts/dev_${sha(deviceId).slice(0, 32)}`);
+/** Deletes in batches of at most 450: a Firestore batch refuses more than 500 writes, and devices are uncapped. */
+async function deleteAll(d: Deps, refs: FirebaseFirestore.DocumentReference[]): Promise<void> {
+  for (let i = 0; i < refs.length; i += 450) {
+    const batch = d.db.batch();
+    refs.slice(i, i + 450).forEach((r) => batch.delete(r));
+    await batch.commit();
+  }
+}
+
+const usernameRef = (d: Deps, usernameLower: string) => d.db.doc(`usernames/${usernameLower}`);
+const deviceRef = (d: Deps, familyUid: string, deviceId: string) => d.db.doc(`families/${familyUid}/devices/${deviceId}`);
+
+/** Usernames this family owns, read from the server-owned index. The kid doc's own username field is never trusted for a lock. */
+async function familyUsernames(d: Deps, familyUid: string): Promise<Map<string, string>> {
+  const snap = await d.db.collection('usernames').where('familyUid', '==', familyUid).get();
+  return new Map(snap.docs.map((x) => [String(x.data().kidId), x.id]));
+}
+
+/** Device ids recorded for one kid (or, with no kidId, for the whole family). Clients cannot create device docs. */
+async function familyDeviceIds(d: Deps, familyUid: string, kidId?: string): Promise<string[]> {
+  const col = d.db.collection(`families/${familyUid}/devices`);
+  const snap = await (kidId ? col.where('kids', 'array-contains', kidId) : col).get();
+  return snap.docs.map((x) => x.id);
+}
 
 /**
  * A parent who sets or resets a kid's PIN expects the kid to get straight in, so the same call clears the kid's name counter,
- * the family counter and the caller's ip counter. The ip counter is shared by every family behind that address, so it is only
+ * username counter, the counters of the devices recorded for that kid, the family counter and the caller's ip counter. The ip counter is shared by every family behind that address, so it is only
  * deleted when it has counted nobody but this family: a parent cannot reset their own kid's PIN to wipe the ip limit while
  * guessing at other families' kids (those guesses add the other family to the counter's `families` list).
  */
-async function clearKidLocks(d: Deps, familyUid: string, nameKey: string, ip: string | undefined): Promise<void> {
+async function clearKidLocks(d: Deps, familyUid: string, nameKey: string, ip: string | undefined, kidId: string): Promise<void> {
   const refs = [familyCounter(d, familyUid), nameCounter(d, nameKey)];
+  // The kid's username bucket and the buckets of the devices recorded for this kid.
+  // A legacy kid with no username counts its strikes under its display name (dn_), so that bucket goes too.
+  const username = (await familyUsernames(d, familyUid)).get(kidId);
+  refs.push(dnCounter(d, nameKey));
+  if (username) refs.push(userCounter(d, username));
+  for (const id of await familyDeviceIds(d, familyUid, kidId)) refs.push(deviceCounter(d, id));
   if (ip) {
     const ipRef = ipCounter(d, ip);
     const fams = readCounter((await ipRef.get()).data()).families ?? [];
     if (fams.every((f) => f === familyUid)) refs.push(ipRef);
   }
-  const batch = d.db.batch();
-  refs.forEach((r) => batch.delete(r));
-  await batch.commit();
+  await deleteAll(d, refs);
 }
 
 // ---------- index lookups ----------
 
+interface Secret {
+  salt: Buffer;
+  hash: Buffer;
+  /** 2 is the peppered hash, 1 (no v on the row) the old scrypt. */
+  v: 1 | 2;
+}
+
 interface PinRow {
   familyUid: string;
   kidId: string;
-  salt: Buffer;
-  hash: Buffer;
+  rowRef: FirebaseFirestore.DocumentReference;
+  digit: Secret;
   /** The picture PIN, when a parent set one. */
-  pic: { salt: Buffer; hash: Buffer } | null;
+  pic: Secret | null;
+}
+
+function rowOf(familyUid: string, kidId: string, ref: FirebaseFirestore.DocumentReference, row: FirebaseFirestore.DocumentData): PinRow {
+  const pic: Secret | null = row.pic && typeof row.pic === 'object' && row.pic.salt && row.pic.hash ? { salt: Buffer.from(String(row.pic.salt), 'hex'), hash: Buffer.from(String(row.pic.hash), 'hex'), v: row.pic.v === 2 ? 2 : 1 } : null;
+  return { familyUid, kidId, rowRef: ref, digit: { salt: Buffer.from(String(row.salt), 'hex'), hash: Buffer.from(String(row.hash), 'hex'), v: row.v === 2 ? 2 : 1 }, pic };
 }
 
 async function familyRegistered(d: Deps, uid: string): Promise<boolean> {
@@ -273,39 +420,147 @@ async function findRows(d: Deps, nameKey: string): Promise<PinRow[]> {
     for (const doc of snap.docs) {
       const kid = await d.db.doc(`families/${familyUid}/kids/${doc.id}`).get();
       if (!kid.exists) continue;
-      const row = doc.data();
-      const pic = row.pic && typeof row.pic === 'object' && row.pic.salt && row.pic.hash ? { salt: Buffer.from(String(row.pic.salt), 'hex'), hash: Buffer.from(String(row.pic.hash), 'hex') } : null;
-      out.push({ familyUid, kidId: doc.id, salt: Buffer.from(String(row.salt), 'hex'), hash: Buffer.from(String(row.hash), 'hex'), pic });
+      out.push(rowOf(familyUid, doc.id, doc.ref, doc.data()));
     }
   }
   return out;
 }
 
+/** One `get` on the username index, then the kid's own pinIndex row. Null when the username, the family, the kid or the row is missing. */
+async function findByUsername(d: Deps, usernameLower: string): Promise<PinRow | null> {
+  const claim = (await usernameRef(d, usernameLower).get()).data() as { familyUid?: unknown; kidId?: unknown } | undefined;
+  if (!claim || typeof claim.familyUid !== 'string' || typeof claim.kidId !== 'string') return null;
+  if (!(await familyRegistered(d, claim.familyUid))) return null;
+  const [kid, row] = await Promise.all([d.db.doc(`families/${claim.familyUid}/kids/${claim.kidId}`).get(), d.db.doc(`pinIndex/${claim.familyUid}/kids/${claim.kidId}`).get()]);
+  if (!kid.exists || !row.exists) return null;
+  return rowOf(claim.familyUid, claim.kidId, row.ref, row.data()!);
+}
+
+// ---------- usernames ----------
+
+export const USERNAME_INVALID_MESSAGE = 'A username is 3 to 20 letters, digits or _.';
+export const USERNAME_RESERVED_MESSAGE = "That username isn't allowed. Pick another one.";
+export const USERNAME_TAKEN_MESSAGE = 'That username is taken. Pick another one.';
+
+/**
+ * Claims a username for one kid: the index entry usernames/{lower} and kids/{kidId}.username, in one transaction. Server-side
+ * only (L3 adds the parent callable, which must check the caller owns familyUid). Refuses a bad shape, a reserved word, and
+ * a name another kid owns. A claim whose kid doc is gone is stale and counts as free. A kid that already has another username
+ * gives it up in the same transaction. Claiming a kid's own username again changes nothing.
+ */
+export async function claimUsername(d: Deps, familyUid: string, kidId: string, username: unknown): Promise<{ username: string }> {
+  if (typeof username !== 'string') throw new HttpsError('invalid-argument', USERNAME_INVALID_MESSAGE);
+  const lower = username.trim().toLowerCase();
+  if (!USERNAME_RE.test(lower)) throw new HttpsError('invalid-argument', USERNAME_INVALID_MESSAGE);
+  if (reservedReason(lower)) throw new HttpsError('invalid-argument', USERNAME_RESERVED_MESSAGE);
+  if (!ID_RE.test(kidId) || !ID_RE.test(familyUid)) throw new HttpsError('invalid-argument', 'Bad player id.');
+  const kidRef = d.db.doc(`families/${familyUid}/kids/${kidId}`);
+  await d.db.runTransaction(async (tx) => {
+    const [kid, claim] = await Promise.all([tx.get(kidRef), tx.get(usernameRef(d, lower))]);
+    if (!kid.exists) throw new HttpsError('not-found', 'That player does not exist.');
+    const owner = claim.data() as { familyUid?: string; kidId?: string } | undefined;
+    const mine = owner?.familyUid === familyUid && owner?.kidId === kidId;
+    if (claim.exists && !mine) {
+      const ownerKid = await tx.get(d.db.doc(`families/${owner?.familyUid}/kids/${owner?.kidId}`));
+      if (ownerKid.exists) throw new HttpsError('already-exists', USERNAME_TAKEN_MESSAGE);
+    }
+    // The username this kid holds now, from the index (never from the kid doc field), is released.
+    const old = String(kid.data()?.username ?? '');
+    let release: FirebaseFirestore.DocumentReference | null = null;
+    if (old && old !== lower && USERNAME_RE.test(old)) {
+      const oldClaim = await tx.get(usernameRef(d, old));
+      const o = oldClaim.data();
+      if (oldClaim.exists && o?.familyUid === familyUid && o?.kidId === kidId) release = oldClaim.ref;
+    }
+    if (!mine) tx.set(usernameRef(d, lower), { familyUid, kidId, createdAt: nowOf(d) });
+    tx.update(kidRef, { username: lower });
+    if (release) tx.delete(release);
+  });
+  return { username: lower };
+}
+
+// ---------- devices ----------
+
+/** The browser and device family from a user-agent string, for the label a grown-up sees: "iPad Safari". Never the raw string. */
+export function deviceLabel(ua: unknown): string {
+  const s = typeof ua === 'string' ? ua : '';
+  const os = /iPad/.test(s) ? 'iPad' : /iPhone|iPod/.test(s) ? 'iPhone' : /Android/.test(s) ? 'Android' : /CrOS/.test(s) ? 'Chromebook' : /Windows/.test(s) ? 'Windows' : /Macintosh|Mac OS X/.test(s) ? 'Mac' : /Linux/.test(s) ? 'Linux' : '';
+  const browser = /EdgiOS|Edg\//.test(s) ? 'Edge' : /CriOS|Chrome\//.test(s) ? 'Chrome' : /FxiOS|Firefox\//.test(s) ? 'Firefox' : /Safari\//.test(s) ? 'Safari' : '';
+  return [os, browser].filter(Boolean).join(' ') || 'Browser';
+}
+
+/** Records a good sign-in on the device: firstSeen once, lastSeen and the kid every time. The label is set once, so a grown-up's rename stays. */
+async function recordDevice(d: Deps, familyUid: string, kidId: string, deviceId: string, userAgent: unknown): Promise<void> {
+  const ref = deviceRef(d, familyUid, deviceId);
+  const now = nowOf(d);
+  await d.db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (snap.exists) tx.update(ref, { lastSeen: now, kids: FieldValue.arrayUnion(kidId) });
+    else tx.set(ref, { firstSeen: now, lastSeen: now, kids: [kidId], label: deviceLabel(userAgent) });
+  });
+}
+
 // ---------- kidSignIn ----------
 
 export interface SignInInput {
-  name: unknown;
-  pin: unknown;
+  /** The typed username. L2 clients send this. */
+  username?: unknown;
+  /** The typed display name. Clients before L2 send this: the legacy path. */
+  name?: unknown;
+  /** 4 digits, or 4 picture letters a to i. */
+  pin?: unknown;
+  /** Alias of `pin` for a picture passcode. */
+  picturePin?: unknown;
+  /** Random id the client keeps in localStorage. Missing or malformed skips the device bucket (until L4). */
+  deviceId?: unknown;
   ip: string | undefined;
+  userAgent?: unknown;
+  /** App Check verdict, for the log line only. */
+  app?: 'valid' | 'missing';
 }
 
-export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: string }> {
-  const { name, pin } = input;
+/**
+ * Sign-in by username (the usernames index), or by display name through the legacy path while players still lack usernames.
+ * Counts the attempt in every bucket before it checks the passcode, refunds on success, migrates a v1 hash to v2 on a correct
+ * passcode, and answers every miss with one message and one scrypt.
+ */
+export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: string; remember: boolean }> {
+  const typed = typeof input.username === 'string' ? input.username : input.name;
+  const pin = input.pin ?? input.picturePin;
   // `pin` is 4 digits, or 4 picture letters a to i. Both take the same path, the same counters and the same scrypt.
   const isPicture = typeof pin === 'string' && PICTURE_RE.test(pin);
-  if (typeof name !== 'string' || typeof pin !== 'string' || !name.trim() || name.length > 40 || !(PIN_RE.test(pin) || isPicture)) {
-    throw new HttpsError('invalid-argument', 'Type your name and a 4-digit PIN.');
+  if (typeof typed !== 'string' || typeof pin !== 'string' || !typed.trim() || typed.length > 40 || !(PIN_RE.test(pin) || isPicture)) {
+    throw new HttpsError('invalid-argument', 'Type your username and a 4-digit PIN.');
   }
-  const nameKey = normalizeName(name);
+  const nameKey = normalizeName(typed);
+  const usernameKey = USERNAME_RE.test(nameKey) ? nameKey : null;
+  const deviceId = typeof input.deviceId === 'string' && DEVICE_RE.test(input.deviceId) ? input.deviceId : null;
   const ip = input.ip || 'unknown';
 
-  const rows = await findRows(d, nameKey);
-  const row = rows[0] ?? null;
+  // The username index first, so a username that equals another player's display name wins. A miss falls back to today's name path.
+  let row = usernameKey ? await findByUsername(d, usernameKey) : null;
+  let legacy = false;
+  if (!row) {
+    row = (await findRows(d, nameKey))[0] ?? null;
+    legacy = row !== null;
+  }
+  const fam = row ? { familyUid: row.familyUid } : {};
 
-  const buckets: Bucket[] = [
-    { ref: ipCounter(d, ip), ...LIMITS.ip, ...(row ? { familyUid: row.familyUid } : {}) },
-    { ref: nameCounter(d, nameKey), ...LIMITS.name, ...(row ? { familyUid: row.familyUid } : {}) },
-  ];
+  // Every path counts exactly one strike bucket (5 in a row), so six wrong tries get the same answers whether the name is a
+  // username, a legacy display name of a kid with or without a username, or unknown: nothing shows which names exist.
+  const buckets: Bucket[] = [{ ref: ipCounter(d, ip), ...LIMITS.ip, ...fam }];
+  if (deviceId) buckets.push({ ref: deviceCounter(d, deviceId), ...LIMITS.device, ...fam });
+  let strikeRef = dnCounter(d, nameKey);
+  if (row && !legacy && usernameKey) {
+    strikeRef = userCounter(d, usernameKey);
+  } else {
+    // The legacy name path, or an unknown name: the 10 per hour name bucket counts both alike.
+    buckets.push({ ref: nameCounter(d, nameKey), ...LIMITS.name, ...fam });
+    // A kid who has a username strikes under it, so the display name is no way around its lock. Otherwise the typed name keys the bucket.
+    const own = row ? (await familyUsernames(d, row.familyUid)).get(row.kidId) : undefined;
+    if (own) strikeRef = userCounter(d, own);
+  }
+  buckets.push({ kind: 'strike', ref: strikeRef, ...fam });
   if (row) buckets.push({ ref: familyCounter(d, row.familyUid), ...LIMITS.family });
 
   const entryId = randomBytes(8).toString('hex');
@@ -313,14 +568,31 @@ export async function kidSignIn(d: Deps, input: SignInInput): Promise<{ token: s
 
   // An unknown name still pays for one scrypt, so timing does not reveal which names exist.
   // A picture tried on a kid with no picture PIN, like an unknown name, pays one scrypt and fails the same way.
-  const secret = row ? (isPicture ? row.pic : { salt: row.salt, hash: row.hash }) : null;
-  const derived = await scryptAsync(pin, secret ? secret.salt : DUMMY_SALT);
+  const secret = row ? (isPicture ? row.pic : row.digit) : null;
+  const derived = secret ? (secret.v === 2 ? await hashV2(d, pin, secret.salt) : await hashV1(pin, secret.salt)) : await scryptAsync(pin, DUMMY_SALT);
   const ok = timingSafeEqual(derived, secret ? secret.hash : DUMMY_HASH) && secret !== null;
-  if (!ok || !row) throw new HttpsError('permission-denied', MISMATCH_MESSAGE);
+  if (!ok || !row || !secret) throw new HttpsError('permission-denied', MISMATCH_MESSAGE);
 
-  await refund(d, buckets, entryId);
+  // Correct passcode on a v1 row: write v2 in the refund transaction. A wrong passcode never gets here.
+  let migrate: Migration | undefined;
+  if (secret.v === 1) {
+    const salt = randomBytes(16);
+    migrate = { rowRef: row.rowRef, picture: isPicture, oldHash: secret.hash, salt, hash: await hashV2(d, pin, salt) };
+  }
+  await refund(d, buckets, entryId, migrate);
+
+  if (deviceId) {
+    try {
+      await recordDevice(d, row.familyUid, row.kidId, deviceId, input.userAgent);
+    } catch (err) {
+      // A device record is a convenience for the grown-up. It never blocks a player who typed the right passcode.
+      console.error('kidSignIn: device record failed', { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  // The line carries a hash of the family only: no name, no kid id, no username. L4 starts when 7 days show no legacy: true.
+  logLine(d, { event: 'kidSignIn', outcome: 'ok', legacy, fam: sha(row.familyUid).slice(0, 16), app: input.app ?? 'missing' });
   const token = await d.auth.createCustomToken(`kid_${row.kidId}`, { role: 'kid', familyUid: row.familyUid, kidId: row.kidId });
-  return { token };
+  return { token, remember: true };
 }
 
 // ---------- setKidPin ----------
@@ -357,7 +629,7 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
     }
   }
   const salt = randomBytes(16);
-  const hash = await scryptAsync(pin, salt);
+  const hash = await hashV2(d, pin, salt);
   const rowRef = d.db.doc(`pinIndex/${parent.uid}/kids/${kidId}`);
 
   // Names are unique across every family. The claim doc nameKeys/{nameKey} is the lock: two
@@ -384,11 +656,11 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
     }
     tx.set(claimRef, { familyUid: parent.uid, kidId });
     // merge: a new digit PIN keeps the picture PIN the parent set.
-    tx.set(rowRef, { nameKey, salt: salt.toString('hex'), hash: hash.toString('hex'), updatedAt: nowOf(d) }, { merge: true });
+    tx.set(rowRef, { nameKey, salt: salt.toString('hex'), hash: hash.toString('hex'), v: 2, updatedAt: nowOf(d) }, { merge: true });
     if (releaseOld) tx.delete(releaseOld);
   });
   await kidRef.update({ hasPin: true });
-  await clearKidLocks(d, parent.uid, nameKey, ip);
+  await clearKidLocks(d, parent.uid, nameKey, ip, kidId);
   return { ok: true };
 }
 
@@ -396,7 +668,7 @@ export async function setKidPin(d: Deps, auth: AuthContext | undefined, data: { 
 
 /**
  * Sets the picture PIN of one of the caller's kids. Parents only. The kid must already have a digit PIN (the row and the
- * name claim exist), so the digit PIN keeps working and a picture is an extra way in. Hashed with scrypt and a fresh
+ * name claim exist), so the digit PIN keeps working and a picture is an extra way in. Hashed (v2, peppered scrypt) with a fresh
  * 16-byte salt exactly like setKidPin, stored in the same server-only row. The kid doc gets one flag, hasPicturePin,
  * so the parent screen can show it. The picture itself is never stored or logged.
  */
@@ -411,10 +683,10 @@ export async function setKidPicturePin(d: Deps, auth: AuthContext | undefined, d
   const row = await rowRef.get();
   if (!row.exists) throw new HttpsError('failed-precondition', 'Set a PIN for this player first.');
   const salt = randomBytes(16);
-  const hash = await scryptAsync(picture, salt);
-  await rowRef.update({ pic: { salt: salt.toString('hex'), hash: hash.toString('hex'), updatedAt: nowOf(d) } });
+  const hash = await hashV2(d, picture, salt);
+  await rowRef.update({ pic: { salt: salt.toString('hex'), hash: hash.toString('hex'), v: 2, updatedAt: nowOf(d) } });
   await kidRef.update({ hasPicturePin: true });
-  await clearKidLocks(d, parent.uid, String(row.data()?.nameKey ?? ''), ip);
+  await clearKidLocks(d, parent.uid, String(row.data()?.nameKey ?? ''), ip, kidId);
   return { ok: true };
 }
 
@@ -431,9 +703,10 @@ export interface LockStatus {
 
 async function familyBuckets(d: Deps, uid: string) {
   const rows = await d.db.collection(`pinIndex/${uid}/kids`).get();
-  const names = rows.docs.map((r) => ({ kidId: r.id, nameKey: String(r.data().nameKey) }));
+  const usernames = await familyUsernames(d, uid);
+  const names = rows.docs.map((r) => ({ kidId: r.id, nameKey: String(r.data().nameKey), username: usernames.get(r.id) ?? null }));
   const ips = await d.db.collection(`pinIndex/${GLOBAL}/attempts`).where('families', 'array-contains', uid).get();
-  return { names, ipDocs: ips.docs.filter((x) => x.id.startsWith('ip_')) };
+  return { names, ipDocs: ips.docs.filter((x) => x.id.startsWith('ip_')), deviceIds: await familyDeviceIds(d, uid) };
 }
 
 export async function kidLockStatus(d: Deps, auth: AuthContext | undefined): Promise<LockStatus> {
@@ -441,23 +714,35 @@ export async function kidLockStatus(d: Deps, auth: AuthContext | undefined): Pro
   const now = nowOf(d);
   const fam = readCounter((await familyCounter(d, parent.uid).get()).data());
   const failures = fam.entries.filter((e) => e.at > now - LIMITS.family.windowMs).length;
-  const { names, ipDocs } = await familyBuckets(d, parent.uid);
+  const { names, ipDocs, deviceIds } = await familyBuckets(d, parent.uid);
   const lockedPlayers: string[] = [];
   for (const n of names) {
-    const c = readCounter((await nameCounter(d, n.nameKey).get()).data());
-    if (c.lockedUntil > now) lockedPlayers.push(n.nameKey);
+    const byName = readCounter((await nameCounter(d, n.nameKey).get()).data());
+    const strikeRefs = n.username ? [userCounter(d, n.username), dnCounter(d, n.nameKey)] : [dnCounter(d, n.nameKey)];
+    const byUser = await Promise.all(strikeRefs.map(async (r) => readCounter((await r.get()).data())));
+    if (byName.lockedUntil > now || byUser.some((c) => c.lockedUntil > now)) lockedPlayers.push(n.nameKey);
   }
   const ipLocked = ipDocs.some((x) => readCounter(x.data()).lockedUntil > now);
+  let deviceLocked = false;
+  for (let i = 0; i < deviceIds.length && !deviceLocked; i += 300) {
+    const snaps = await d.db.getAll(...deviceIds.slice(i, i + 300).map((id) => deviceCounter(d, id)));
+    deviceLocked = snaps.some((x) => readCounter(x.data()).lockedUntil > now);
+  }
   const lockedUntil = Math.max(fam.lockedUntil, 0);
-  return { locked: fam.lockedUntil > now || lockedPlayers.length > 0 || ipLocked, failures, lockedUntil, lockedPlayers };
+  return { locked: fam.lockedUntil > now || lockedPlayers.length > 0 || ipLocked || deviceLocked, failures, lockedUntil, lockedPlayers };
 }
 
 export async function unlockKidSignIn(d: Deps, auth: AuthContext | undefined): Promise<{ ok: true }> {
   const parent = await assertParent(d, auth);
-  const { names, ipDocs } = await familyBuckets(d, parent.uid);
-  const refs = [familyCounter(d, parent.uid), ...names.map((n) => nameCounter(d, n.nameKey)), ...ipDocs.map((x) => x.ref)];
-  const batch = d.db.batch();
-  refs.forEach((r) => batch.delete(r));
-  await batch.commit();
+  const { names, ipDocs, deviceIds } = await familyBuckets(d, parent.uid);
+  const refs = [
+    familyCounter(d, parent.uid),
+    ...names.map((n) => nameCounter(d, n.nameKey)),
+    ...names.map((n) => dnCounter(d, n.nameKey)),
+    ...names.flatMap((n) => (n.username ? [userCounter(d, n.username)] : [])),
+    ...deviceIds.map((id) => deviceCounter(d, id)),
+    ...ipDocs.map((x) => x.ref),
+  ];
+  await deleteAll(d, refs);
   return { ok: true };
 }

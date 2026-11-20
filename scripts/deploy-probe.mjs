@@ -21,7 +21,7 @@ import { randomBytes, randomInt, scryptSync } from 'node:crypto';
 // The add-kid defaults live in gameDefaults.ts (no imports). Node strips the types on import (22.18+).
 import { DEFAULT_GAME } from '../src/engine/gameDefaults.ts';
 
-export const MISMATCH_MESSAGE = "That name and PIN didn't match";
+export const MISMATCH_MESSAGE = "That username and passcode didn't match.";
 const GLOBAL = '_global';
 
 export const callableUrl = (project) => `https://us-west1-${project}.cloudfunctions.net/kidSignIn`;

@@ -1,24 +1,36 @@
 import { initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions/logger';
+import { defineSecret } from 'firebase-functions/params';
 import { onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import * as core from './core.js';
 import type { AuthContext, Deps } from './core.js';
 
 initializeApp();
 
+// The pepper that keys every v2 passcode hash. Secret Manager holds it; the runtime account has secretAccessor on it.
+// Every function that hashes or verifies a passcode lists it in `secrets`. The emulator reads functions/.secret.local.
+const MQ_PIN_PEPPER = defineSecret('MQ_PIN_PEPPER');
+
 // Dedicated runtime service account: Firestore access plus Token Creator on itself, which
 // createCustomToken needs to sign kid tokens. The project has no default compute account.
 const opts = {
   region: 'us-west1',
-  maxInstances: 5,
+  maxInstances: 10,
   serviceAccount: 'mathquest-fn@rezzed-mathquest.iam.gserviceaccount.com',
 } as const;
 
-function deps(): Deps {
+// kidSignIn is the front door at the bell: one warm instance, room for a class of 30.
+const signInOpts = { ...opts, minInstances: 1, maxInstances: 20, secrets: [MQ_PIN_PEPPER] };
+const pepperOpts = { ...opts, secrets: [MQ_PIN_PEPPER] };
+
+/** `withPepper` only for the functions that list the secret in `secrets`; reading an unbound secret is an error. */
+function deps(withPepper = false): Deps {
   const auth = getAuth();
   return {
     db: getFirestore(),
+    pepper: withPepper ? MQ_PIN_PEPPER.value() : '',
     auth: {
       createCustomToken: (uid, claims) => auth.createCustomToken(uid, claims),
     },
@@ -31,12 +43,32 @@ function authOf(req: CallableRequest): AuthContext | undefined {
   return { uid: req.auth.uid, email: t.email, emailVerified: t.email_verified, provider: t.firebase?.sign_in_provider };
 }
 
-export const kidSignIn = onCall(opts, (req) =>
-  core.kidSignIn(deps(), { name: req.data?.name, pin: req.data?.pin, ip: core.clientIp(req.rawRequest.headers['x-forwarded-for'], req.rawRequest.ip) }),
-);
-export const registerParent = onCall(opts, (req) => core.registerParent(deps(), authOf(req)));
+/**
+ * App Check, monitor mode: one structured line per call with the verdict, and no enforceAppCheck, so nothing is refused.
+ * `req.app` is set only for a valid token. L3 turns enforcement on after 7 days of these lines show the kids' devices passing.
+ */
+function appVerdict(fn: string, req: CallableRequest): 'valid' | 'missing' {
+  const app = req.app ? 'valid' : 'missing';
+  logger.info('appcheck', { event: 'appcheck', fn, app });
+  return app;
+}
+
 const ipOf = (req: CallableRequest) => core.clientIp(req.rawRequest.headers['x-forwarded-for'], req.rawRequest.ip);
-export const setKidPin = onCall(opts, (req) => core.setKidPin(deps(), authOf(req), req.data ?? {}, ipOf(req)));
-export const setKidPicturePin = onCall(opts, (req) => core.setKidPicturePin(deps(), authOf(req), req.data ?? {}, ipOf(req)));
-export const kidLockStatus = onCall(opts, (req) => core.kidLockStatus(deps(), authOf(req)));
-export const unlockKidSignIn = onCall(opts, (req) => core.unlockKidSignIn(deps(), authOf(req)));
+
+export const kidSignIn = onCall(signInOpts, (req) =>
+  core.kidSignIn(deps(true), {
+    username: req.data?.username,
+    name: req.data?.name,
+    pin: req.data?.pin,
+    picturePin: req.data?.picturePin,
+    deviceId: req.data?.deviceId,
+    ip: ipOf(req),
+    userAgent: req.rawRequest.headers['user-agent'],
+    app: appVerdict('kidSignIn', req),
+  }),
+);
+export const registerParent = onCall(opts, (req) => (appVerdict('registerParent', req), core.registerParent(deps(), authOf(req))));
+export const setKidPin = onCall(pepperOpts, (req) => (appVerdict('setKidPin', req), core.setKidPin(deps(true), authOf(req), req.data ?? {}, ipOf(req))));
+export const setKidPicturePin = onCall(pepperOpts, (req) => (appVerdict('setKidPicturePin', req), core.setKidPicturePin(deps(true), authOf(req), req.data ?? {}, ipOf(req))));
+export const kidLockStatus = onCall(opts, (req) => (appVerdict('kidLockStatus', req), core.kidLockStatus(deps(), authOf(req))));
+export const unlockKidSignIn = onCall(opts, (req) => (appVerdict('unlockKidSignIn', req), core.unlockKidSignIn(deps(), authOf(req))));

@@ -4,6 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 // @ts-expect-error plain .mjs script, no types
 import { probe } from '../../scripts/deploy-probe.mjs';
 import { kidSignIn, type Deps } from '../src/core.js';
+import { TEST_PEPPER } from './testPepper.js';
 
 // Runs the probe against the emulator, with fetch replaced by a direct call to core.kidSignIn.
 let db: Firestore;
@@ -15,7 +16,7 @@ beforeAll(() => {
 
 async function snapshot() {
   const out: string[] = [];
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) {
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) {
     const walk = async (ref: FirebaseFirestore.CollectionReference) => {
       for (const doc of await ref.listDocuments()) {
         if ((await doc.get()).exists) out.push(`${doc.path}=${JSON.stringify((await doc.get()).data())}`);
@@ -28,10 +29,10 @@ async function snapshot() {
 }
 
 beforeEach(async () => {
-  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys']) await db.recursiveDelete(db.collection(col));
+  for (const col of ['families', 'pinIndex', 'parents', 'meta', 'nameKeys', 'usernames', 'config']) await db.recursiveDelete(db.collection(col));
 });
 
-const deps = (): Deps => ({ db, auth: { createCustomToken: async (uid, claims) => `h.${Buffer.from(JSON.stringify({ uid, claims })).toString('base64url')}.s` } });
+const deps = (): Deps => ({ db, pepper: TEST_PEPPER, auth: { createCustomToken: async (uid, claims) => `h.${Buffer.from(JSON.stringify({ uid, claims })).toString('base64url')}.s` } });
 
 /** Stands in for the deployed function: same core code, wrapped in the callable HTTP shape. */
 const PAGE = 'https://demo-mathquest.web.app/';
@@ -80,7 +81,7 @@ describe('deploy-probe against the emulator', () => {
 
   it('fails, and still cleans up, when the deployed function refuses the right PIN (the 11-17 symptom)', async () => {
     const before = await snapshot();
-    const refuse = fakeFetch(() => new Response(JSON.stringify({ error: { message: "That name and PIN didn't match", status: 'PERMISSION_DENIED' } }), { status: 403 }));
+    const refuse = fakeFetch(() => new Response(JSON.stringify({ error: { message: "That username and passcode didn't match.", status: 'PERMISSION_DENIED' } }), { status: 403 }));
     const r = await probe({ db, project: 'demo-mathquest', fetchImpl: refuse });
     expect(r.ok).toBe(false);
     expect(r.problems.join()).toContain('right PIN: HTTP 403');

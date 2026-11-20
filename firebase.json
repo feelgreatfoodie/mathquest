@@ -22,7 +22,7 @@
     "source": "functions",
     "codebase": "default",
     "runtime": "nodejs22",
-    "ignore": ["node_modules", ".git", "firebase-debug.log", "test", ".env.example"],
+    "ignore": ["node_modules", ".git", "firebase-debug.log", "test", ".env.example", ".secret.local"],
     "predeploy": ["npm --prefix \"$RESOURCE_DIR\" ci", "npm --prefix \"$RESOURCE_DIR\" run build"]
   },
   "firestore": {
