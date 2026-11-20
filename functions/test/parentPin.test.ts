@@ -204,6 +204,44 @@ describe('lockout per parent uid', () => {
   });
 });
 
+describe('a Google sign-in opens only the first 2 locks', () => {
+  it('4 locks with a sign-in after each: the 1st and 2nd open at once, the 3rd and 4th stay locked until the timer ends', async () => {
+    await withRow(A);
+    const signedInAfter = () => authOf(A, { authTime: Math.floor(clock / 1000) + 1 });
+    // Wrong tries until the lock refuses one (5 wrong set it, the 6th is refused).
+    const lockIt = async () => {
+      for (let i = 0; i < 7; i++) {
+        try {
+          await checkParentPin(deps(), authOf(A), { pin: OTHER });
+        } catch (e) {
+          expect((e as { code: string }).code).toBe('resource-exhausted');
+          return;
+        }
+      }
+      throw new Error('never locked');
+    };
+    // Locks 1 and 2: a sign-in after the lock lets the next try through.
+    for (const _ of [1, 2]) {
+      await lockIt();
+      clock += 1000;
+      expect(await checkParentPin(deps(), signedInAfter(), { pin: OTHER })).toEqual({ ok: false });
+    }
+    // Lock 3 (20 min): a sign-in does nothing, the timer does.
+    await lockIt();
+    clock += 1000;
+    expect((await fail(checkParentPin(deps(), signedInAfter(), { pin: PIN }))).code).toBe('resource-exhausted');
+    clock += 20 * MIN;
+    expect(await checkParentPin(deps(), authOf(A), { pin: OTHER })).toEqual({ ok: false });
+    // Lock 4 (40 min): same.
+    await lockIt();
+    clock += 1000;
+    expect((await fail(checkParentPin(deps(), signedInAfter(), { pin: PIN }))).code).toBe('resource-exhausted');
+    expect((await fail(checkParentPin(deps(), signedInAfter(), { pin: PIN }))).code).toBe('resource-exhausted');
+    clock += 40 * MIN;
+    expect(await checkParentPin(deps(), authOf(A), { pin: PIN })).toEqual({ ok: true });
+  });
+});
+
 describe('migration from families/{uid}.pinHash', () => {
   it('a right PIN writes the v2 row, deletes pinHash and sets hasPin, once', async () => {
     await withLegacy(A);
@@ -224,7 +262,10 @@ describe('migration from families/{uid}.pinHash', () => {
   it('two right checks at once leave one consistent v2 row that verifies', async () => {
     await withLegacy(A);
     const out = await Promise.allSettled([checkParentPin(deps(), authOf(A), { pin: PIN }), checkParentPin(deps(), authOf(A), { pin: PIN })]);
-    expect(out.some((o) => o.status === 'fulfilled' && o.value.ok)).toBe(true);
+    // The property, not the counts: a right PIN never shows as wrong. The loser of the race checks the PIN against the winner's
+    // row. A call the emulator ends on contention is not an answer at all, so it may reject, and at least one call is ok.
+    for (const o of out) if (o.status === 'fulfilled') expect(o.value.ok).toBe(true);
+    expect(out.some((o) => o.status === 'fulfilled')).toBe(true);
     expect(await row(A)).toMatchObject({ v: 2 });
     expect(await family(A)).not.toHaveProperty('pinHash');
     expect(await checkParentPin(deps(), authOf(A), { pin: PIN })).toEqual({ ok: true });

@@ -752,6 +752,8 @@ export async function unlockKidSignIn(d: Deps, auth: AuthContext | undefined): P
 // ---------- the grown-up PIN ----------
 
 const PARENT_VERIFY_WINDOW_MS = 30 * 60_000;
+/** A Google sign-in opens the 1st and 2nd lock only. */
+const PARENT_REOPEN_MAX_STRIKES = 3;
 const parentPinRef = (d: Deps, uid: string) => d.db.doc(`parentPins/${uid}`);
 const familyRef = (d: Deps, uid: string) => d.db.doc(`families/${uid}`);
 /** One strike bucket per parent uid, in its own key space (par_): no kid, family or portal Unlock reset derives this key. */
@@ -781,8 +783,10 @@ async function isParentPin(d: Deps, uid: string, pin: string): Promise<boolean> 
 }
 
 /**
- * A Google sign-in after the lock opens it: the token's auth_time is later than the moment the lock was set. It clears the lock
- * and the wrong-try count and keeps the strikes, so the next lock is still longer. One sign-in opens one lock.
+ * A Google sign-in after the lock opens it while the bucket has fewer than PARENT_REOPEN_MAX_STRIKES strikes: the token's
+ * auth_time is later than the moment the lock was set. It clears the lock and the wrong-try count and keeps the strikes. One sign-in
+ * opens one lock. From the 3rd lock on only the timed lock ends it, because on a family iPad a Google sign-in is one tap and would
+ * hand a kid 5 more guesses per tap.
  */
 async function reopenAfterSignIn(d: Deps, ref: FirebaseFirestore.DocumentReference, authTimeSec: number | undefined): Promise<void> {
   if (typeof authTimeSec !== 'number') return;
@@ -791,7 +795,7 @@ async function reopenAfterSignIn(d: Deps, ref: FirebaseFirestore.DocumentReferen
     const raw = snap.data();
     if (!raw) return;
     const c = readCounter(raw);
-    if (c.lockedUntil > nowOf(d) && authTimeSec * 1000 > c.strikeAt) tx.set(ref, { ...raw, lockedUntil: 0, lockedBy: null, fails: 0 });
+    if (c.lockedUntil > nowOf(d) && c.strikes < PARENT_REOPEN_MAX_STRIKES && authTimeSec * 1000 > c.strikeAt) tx.set(ref, { ...raw, lockedUntil: 0, lockedBy: null, fails: 0 });
   }, TX_OPTS);
 }
 
@@ -843,7 +847,10 @@ export async function checkParentPin(d: Deps, auth: AuthContext | undefined, dat
     tx.set(famRef, { pinHash: FieldValue.delete(), hasPin: true }, { merge: true });
     return true;
   }, TX_OPTS);
-  return { ok: migrated };
+  if (migrated) return { ok: true };
+  // Lost a race: another call wrote the v2 row first. Check this PIN against it, so a right PIN never shows as wrong.
+  const winner = parentSecret((await rowRef.get()).data());
+  return { ok: winner !== null && sameBytes(await hashV2(d, pin, winner.salt), winner.hash) };
 }
 
 /**
