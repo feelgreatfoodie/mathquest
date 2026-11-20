@@ -15,6 +15,7 @@ export interface WhatsNewEntry {
 }
 
 export const WHATS_NEW: readonly WhatsNewEntry[] = [
+  { pr: 71, text: 'The Adventure walk arrows are small again, like the first time we built them, for readers and picture players. They covered most of the bottom left of the map on an iPad. Tapping a tile to walk there still works. The little message at the top, like You can\'t walk there, now has its close button at the end of the line instead of on top of the words. The monster icons and the +10 count in the top bar stay together on one line.' },
   { pr: 70, text: 'A player with no PIN can no longer start playing from the Who is playing? screen on a grown-up\'s device. It asks for the Grown-up PIN ("Ask a grown-up to set your passcode."), opens that player\'s PIN box in the Grown-ups area, and then shows that player\'s PIN pad. Every player now signs in with a PIN, as digits or pictures.' },
   { pr: 69, text: 'The Dungeon scene stays still on a wrong answer on a landscape iPad. A miss on a question like 10 × 6 used to push the card down and the screen shifted by a few pixels. The crossed-out guess now sits above the right answer, so the card keeps its size.' },
   { pr: 66, text: 'On the pre-reader Home with the iPad upright, the Home button and the sound button now sit in their own row above the picture, 120 pixels each, so nothing covers them and a tap always reaches them. Sideways, nothing changes.' },

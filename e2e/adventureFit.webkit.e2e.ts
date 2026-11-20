@@ -78,7 +78,9 @@ function check(m: M, learner: string, label: string) {
   expect(m.canvas!.height / m.tile, `${label} tiles down`).toBeGreaterThanOrEqual(7);
   expect(m.canvasPx.w, `${label} canvas px`).toBe(Math.round(m.canvas!.width * Math.max(1, Math.round(m.dpr))));
   if (learner === 'prereader') {
-    for (const [n, b] of [['Home', m.home], ['mute', m.mute], ...Object.entries(m.arrows)] as Array<[string, Box | null]>) {
+    // The walk arrows are exempt from the 120 px floor: Flynn wants the original small pad back (TENSOR task anbU4hhJ). Home and mute keep it.
+    // The pad's size cap lives in adventurePadToast.e2e.ts.
+    for (const [n, b] of [['Home', m.home], ['mute', m.mute]] as Array<[string, Box | null]>) {
       expect(b!.width, `${label} ${n} width`).toBeGreaterThanOrEqual(120);
       expect(b!.height, `${label} ${n} height`).toBeGreaterThanOrEqual(120);
     }
