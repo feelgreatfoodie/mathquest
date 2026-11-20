@@ -46,6 +46,7 @@ The order follows the lead reader's demand, what each phase reuses, and the risk
 - **Accessibility:** touch targets at least 48 px (pre-reader at least 120 px); no meaning by colour alone; sound can be muted; voice on for pre-readers.
 - **Privacy:** no analytics or third-party SDKs; kid data stays under the parent's uid.
 - **Rollout:** each new mode or module is a per-kid parent setting, and the default experience never changes without the parent's say.
+- **Deploy window:** no gameplay deploy (hosting or functions) after 20:00Z, because the kids are playing then. A deploy that misses the window waits until the next morning. Every ship plan states its deploy time and checks it against this window. Merging is not held. Source: Flynn's rule, cited by TENSOR to VECTOR on 2026-11-20 (VECTOR directive iW69Thv0); no earlier written copy was found. TENSOR confirms the exact window.
 - **Definition of done:** deployed to math.rezzed.ai, screenshots at iPad size, and a RESULT to TENSOR with the PR link, test counts, and the checks Flynn must do on the iPad.
 
 ## 5. Measures (parent area, added in Phase 2)
