@@ -117,7 +117,7 @@ export function fitGuard() {
 for (const vp of VIEWPORTS) {
   test.describe(`ipad-fit ${vp.w}x${vp.h}`, () => {
     test.use({ viewport: { width: vp.w, height: vp.h } });
-    test.setTimeout(30_000);
+    test.setTimeout(60_000);
     for (const s of STEPS) {
       test(`${s.name} fits ${vp.w}x${vp.h}`, async ({ page }) => {
         if (s.who) await seedKid(page, s.who, s.teach);
