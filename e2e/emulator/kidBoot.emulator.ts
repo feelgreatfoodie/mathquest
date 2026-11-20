@@ -6,7 +6,7 @@ import { expect, test, type Page } from '@playwright/test';
  * and a dev server in firestore mode wired to them: `npm run test:e2e:emulator`. Names, ids, the email and the PIN are made up.
  *
  * Flow: a fake parent registers, a kid doc gets a PIN (the real setKidPin), the kid signs in through the PIN pad (the real
- * kidSignIn and custom token), an outbox entry is queued, the page reloads, and the boot must (1) skip the sign-in screen,
+ * kidSignIn and custom token), an outbox entry is queued, the page reloads, and the boot must (1) show the PIN pad, never Home, until the PIN is typed again,
  * (2) draw the pause screen when settings.pause is written by another client, (3) drain the queued outbox entry.
  */
 const PROJECT = 'demo-e2e';
@@ -144,16 +144,24 @@ test('a device signed in as a kid starts Auth and Firestore at boot: pause arriv
   );
   expect(await queuedRuns(page)).toBe(1);
 
-  // 3. Reload. Auth must start at boot: no sign-in screen, and Auth talks to the emulator without any tap.
+  // 3. Reload. Auth must start at boot and finds the stored kid session. The PIN is required on every app open, so the app signs it
+  // out and shows the pad (never Home). The kid types the PIN again, which is what lets the queued run save.
   const authCalls: string[] = [];
   page.on('request', (r) => {
     if (r.url().startsWith(AUTH)) authCalls.push(r.url());
   });
   await page.reload();
-  await expect(page.getByTestId('title-play')).toHaveCount(0);
-  await expect(page.getByPlaceholder('First name')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Adventure' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('title-play').or(page.getByPlaceholder('First name')).or(page.locator('.keypad').first())).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'Adventure' })).toHaveCount(0);
   await expect.poll(() => authCalls.length, { timeout: 15_000 }).toBeGreaterThan(0);
+  if (await page.getByTestId('title-play').isVisible()) await page.getByTestId('title-play').click();
+  if (!(await page.getByPlaceholder('First name').isVisible())) {
+    const typed = page.getByRole('button', { name: 'Type a name instead' });
+    if (await typed.isVisible()) await typed.click();
+  }
+  await page.getByPlaceholder('First name').fill(KID.name);
+  for (const d of PIN) await page.locator('.keypad .key', { hasText: new RegExp(`^${d}$`) }).first().click();
+  await expect(page.getByRole('button', { name: 'Adventure' })).toBeVisible({ timeout: 20_000 });
 
   // 4. The queued outbox entry drains: the entry leaves IndexedDB and the server holds the XP and the session log.
   await expect.poll(() => queuedRuns(page), { timeout: 15_000 }).toBe(0);
