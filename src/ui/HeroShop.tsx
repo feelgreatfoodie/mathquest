@@ -363,25 +363,25 @@ function PrereaderShop({ kid, onGame, vault, gift, sell, openVault, onClose }: O
               {t.id === 'vault' ? <UiIcon name="chest" size={72} /> : <Sprite name={t.icon} size={72} />}
             </button>
           ))}
-          {canSell ? (
-            <button
-              type="button"
-              className={`pshop-btn pshop-sell-toggle ${sellMode ? 'is-on' : ''}`}
-              aria-label="Sell"
-              aria-pressed={sellMode}
-              data-testid="sell-mode"
-              onClick={() => {
-                setSellMode(!sellMode);
-                void speak(sellMode ? 'Done selling.' : 'Tap what you want to sell.');
-              }}
-            >
-              <UiIcon name="gem" size={48} /><UiIcon name="arrow-down" size={48} />
-            </button>
-          ) : null}
         </div>
       ) : null}
       {onVault ? <PrereaderVault kid={kid} vault={vault!} deposits={dep.deposits} refresh={dep.refresh} /> : null}
       <div className="pshop-grid" style={onVault ? { display: 'none' } : undefined}>
+        {canSell ? (
+          <button
+            type="button"
+            className={`pshop-card pshop-sell-toggle ${sellMode ? 'is-on' : ''}`}
+            aria-label="Sell"
+            aria-pressed={sellMode}
+            data-testid="sell-mode"
+            onClick={() => {
+              setSellMode(!sellMode);
+              void speak(sellMode ? 'Done selling.' : 'Tap what you want to sell.');
+            }}
+          >
+            <UiIcon name="gem" size={56} /><UiIcon name="arrow-down" size={56} />
+          </button>
+        ) : null}
         {entries.map((e) => {
           const state = stateOf(kid, e);
           const pinned = goal === e.id;
