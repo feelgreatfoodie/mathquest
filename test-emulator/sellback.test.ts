@@ -208,6 +208,10 @@ describe('a sale that is not backed fails', () => {
   it('a different item removed than the one sold (the cape leaves, the record says bow)', async () => {
     await assertFails(saleBatch(kidDb(), { inventory: { items: ['c-flag', 'w-bow'] } }));
   });
+  it('the sold item replaced by a duplicate of another entry (same list size as a legal sale plus one)', async () => {
+    await assertFails(saleBatch(kidDb(), { inventory: { items: ['c-flag', 'g-cape', 'g-cape'] } }));
+    await assertFails(saleBatch(kidDb(), { inventory: { items: ['c-flag', 'c-flag'] } }));
+  });
   it('an item removed and another one added in the same sale', async () => {
     await assertFails(saleBatch(kidDb(), { inventory: { items: ['c-flag', 'g-cape', 'w-sword'] } }));
   });
@@ -227,6 +231,13 @@ describe('a sale that is not backed fails', () => {
     await seed({ inventory: { items: ['c-flag', 'w-bow'], giftFrom: { 'w-bow': SIB }, giftAt: { 'w-bow': ts(9 * DAY) } } });
     await assertFails(saleBatch(kidDb(), { inventory: { items: ['c-flag'], giftFrom: { 'w-bow': SIB }, giftAt: { 'w-bow': ts(9 * DAY) } } }));
   });
+  it('a gifted item sold with only its giftFrom kept, or only its giftAt kept', async () => {
+    const at = ts(9 * DAY);
+    await seed({ inventory: { items: ['c-flag', 'w-bow'], giftFrom: { 'w-bow': SIB }, giftAt: { 'w-bow': at } } });
+    await assertFails(saleBatch(kidDb(), { inventory: { items: ['c-flag'], giftFrom: { 'w-bow': SIB }, giftAt: {} } }));
+    await assertFails(saleBatch(kidDb(), { inventory: { items: ['c-flag'], giftFrom: {}, giftAt: { 'w-bow': at } } }));
+    await assertSucceeds(saleBatch(kidDb(), { inventory: { items: ['c-flag'], giftFrom: {}, giftAt: {} } }));
+  });
   it('a sale that also removes the giftFrom note of another gifted item', async () => {
     const cape = ts(DAY);
     await seed({ inventory: { items: ['c-flag', 'w-bow', 'g-cape'], giftFrom: { 'g-cape': SIB }, giftAt: { 'g-cape': cape } } });
@@ -237,6 +248,11 @@ describe('a sale that is not backed fails', () => {
   it('the equipped slot still names the sold item', async () => {
     await seed({ inventory: { items: ['c-flag', 'w-bow'], equipped: { weapon: 'w-bow' } } });
     await assertFails(saleBatch(kidDb(), { inventory: { items: ['c-flag'], equipped: { weapon: 'w-bow' } } }));
+  });
+  it('the gear slot still names the sold item', async () => {
+    await seed({ inventory: { items: ['c-flag', 'g-cape'], equipped: { gear: 'g-cape' } } });
+    await assertFails(saleBatch(kidDb(), { itemId: 'g-cape', refund: 7, gems: 107, inventory: { items: ['c-flag'], equipped: { gear: 'g-cape' } } }));
+    await assertSucceeds(saleBatch(kidDb(), { itemId: 'g-cape', refund: 7, gems: 107, inventory: { items: ['c-flag'] } }));
   });
   it('an equipped item sold with the slot left out of the write is fine, but a pet slot naming it is not', async () => {
     await seed({ inventory: { items: ['c-flag', 'p-dog'], equipped: { pet: 'p-dog' } } });
