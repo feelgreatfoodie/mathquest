@@ -12,7 +12,7 @@ export function sellingOn(family: Pick<Family, 'selling'> | null | undefined): b
   return family?.selling !== false;
 }
 
-/** A gifted item waits this many days after the gift before it can be sold (server time; firestore.rules saleGiftNotesOk). */
+/** A gifted item waits this many days after the gift before it can be sold (server time; firestore.rules saleGiftNotesOk and saleLockOk). */
 export const GIFT_LOCK_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -21,11 +21,29 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * A gift with no recorded time is never sellable, so it reads as the full lock; use `sellProblem` for the sentence.
  */
 export function giftWaitDays(game: Pick<KidGame, 'giftFrom' | 'giftAt'>, itemId: string, now: number): number {
-  if (!game.giftFrom?.[itemId]) return 0;
   const at = game.giftAt?.[itemId];
+  // An item with a time but no giftFrom is one whose notes were stripped: the lock doc still holds it (see withLockTimes).
+  if (!game.giftFrom?.[itemId] && typeof at !== 'number') return 0;
   if (typeof at !== 'number') return GIFT_LOCK_DAYS;
   const left = at + GIFT_LOCK_DAYS * DAY_MS - now;
   return left > 0 ? Math.max(1, Math.ceil(left / DAY_MS)) : 0;
+}
+
+/**
+ * The kid with each gift lock's time read as giftAt, for an owned item whose own giftAt is missing. A lock is a gift lock doc
+ * { itemId, giftId, at } (at a number or a Firestore Timestamp). The wait then reads the lock when both notes were stripped.
+ */
+export function withLockTimes(kid: Kid, locks: unknown[]): Kid {
+  const owned = new Set(kid.game.items ?? []);
+  const add: Record<string, number> = {};
+  for (const l of locks) {
+    const d = l as { itemId?: unknown; at?: unknown } | null;
+    if (!d || typeof d.itemId !== 'string' || !owned.has(d.itemId) || kid.game.giftAt?.[d.itemId] !== undefined) continue;
+    const t = d.at as { toMillis?: () => number } | number | null;
+    const ms = typeof t === 'number' ? t : t && typeof t.toMillis === 'function' ? t.toMillis() : null;
+    if (typeof ms === 'number' && Number.isFinite(ms)) add[d.itemId] = ms;
+  }
+  return Object.keys(add).length ? { ...kid, game: { ...kid.game, giftAt: { ...(kid.game.giftAt ?? {}), ...add } } } : kid;
 }
 
 /** True for a gifted item whose gift time is unknown: it never sells. */

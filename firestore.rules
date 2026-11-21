@@ -441,12 +441,13 @@ service cloud.firestore {
     }
 
     // Gifting (docs/pdr/item-powers.md, section 3). A kid buys a catalog item for a sibling in the same family. One batch writes
-    // four docs, and each rule reads the others with getAfter, so none of them stands alone:
+    // five docs, and each rule reads the others with getAfter, so none of them stands alone:
     //   A. the giver's kid doc: gems drop by the price, lastPurchaseId names B, no hero or item changes (giftDropBacked).
     //   B. the giver's purchases/{id}: { id, kind: 'gift', to, itemId, cost, at }, cost = the catalog price = the drop (giftEntryOk).
     //   C. the receiver's kid doc: inventory.items grows by that one item, inventory.giftFrom[item] = the giver and
     //      inventory.giftAt[item] = request.time, the server's clock, which the 7-day sale lock reads (giftReceiveOk).
     //   D. the receiver's gifts/{id}: { id, from, itemId, at, seen } (giftDocOk).
+    //   E. the receiver's giftLocks/{item}: { itemId, giftId, at = request.time }, created or updated (giftLockOk); giftReceiveOk needs it.
     // The family doc's `gifting` switch (default on) turns C and D off, and the sibling read with them.
     function kidPathOf(uid, id) {
       return /databases/$(database)/documents/families/$(uid)/kids/$(id);
@@ -524,12 +525,41 @@ service cloud.firestore {
         && getAfter(entry).data.get('kind', '') == 'gift'
         && getAfter(entry).data.get('to', '') == kidId
         && getAfter(entry).data.get('itemId', '') == item
-        && !exists(giftPath(uid, kidId, pid)) && existsAfter(giftPath(uid, kidId, pid));
+        && !exists(giftPath(uid, kidId, pid)) && existsAfter(giftPath(uid, kidId, pid))
+        && giftLockWritten(uid, kidId, item);
+    }
+
+    // The lock of a gift (E in the batch): kids/{receiver}/giftLocks/{item} = { itemId, giftId, at }. It is a separate doc, so a kid
+    // save that strips giftFrom and giftAt from the inventory (giftFromKept passes it) cannot clear it, and a sale reads it
+    // (saleGiftNotesOk). giftReceiveOk needs it written in the same batch with at == request.time and the item named.
+    function giftLockPath(uid, kidId, item) {
+      return /databases/$(database)/documents/families/$(uid)/kids/$(kidId)/giftLocks/$(item);
+    }
+    function giftLockWritten(uid, kidId, item) {
+      // getAfter on a missing doc fails the rule, so a gift with no lock is denied without a separate existsAfter. The request is
+      // already close to the 1000-expression cap (see the budget test), so this reads the doc once.
+      let l = getAfter(giftLockPath(uid, kidId, item)).data;
+      return l.at == request.time && l.itemId == item;
+    }
+    // Create or update (an update is a re-gift after a sale). Only inside a gift batch: the gift doc it names does not exist yet, is
+    // created in this write and is for this item. Its caller is a grown-up or a kid of this family (the giver signs in as the sibling).
+    function giftLockOk(uid, kidId, item) {
+      let d = request.resource.data;
+      let gp = giftPath(uid, kidId, d.get('giftId', ''));
+      return d.keys().hasOnly(['itemId', 'giftId', 'at'])
+        && d.keys().hasAll(['itemId', 'giftId', 'at'])
+        && d.itemId == item
+        && d.at == request.time
+        && (isParent(uid) || (request.auth != null && request.auth.token.role == 'kid' && request.auth.token.familyUid == uid))
+        && !exists(gp) && existsAfter(gp)
+        && getAfter(gp).data.get('itemId', '') == item;
     }
 
     // The kid branch must not add or change giftFrom or giftAt itself (only giftReceiveOk does). A write that leaves one out passes, so a
-    // save from an older bundle, which strips both, is never blocked; it only loses the note, and a gifted item with no giftAt is never
-    // sellable (saleMoveOk fails closed). The one other change is a backed sale, which removes the sold item's keys and no others.
+    // save from an older bundle, which strips both, is never blocked; it only loses the notes. The notes are not the lock: a gifted
+    // item with giftFrom and no giftAt never sells (saleGiftNotesOk), and an item whose notes are both gone still waits for its
+    // giftLocks doc (giftAt + 7 days <= request.time), which no kid write can remove. The one other change is a backed sale, which
+    // removes the sold item's keys and no others.
     function giftFromKept() {
       let ia = request.resource.data.get('inventory', {});
       let ib = resource.data.get('inventory', {});
@@ -591,6 +621,7 @@ service cloud.firestore {
     //   - the write clears the sold item from every equipped slot. equippedOk alone misses a slot that still names the item,
     //     because an unchanged equipped passes, so the sold item is checked against each slot here.
     //   - a gifted item (giftFrom[item]) sells only once giftAt[item] + 7 days <= request.time. With no giftAt it never sells.
+    //     An item with a giftLocks doc also waits until its at + 7 days <= request.time, even with both notes stripped (saleLockOk).
     //     The sale removes giftFrom[item] and giftAt[item] and no other key of either map.
     //   - the family `selling` switch (default on) turns it off.
     // The rules run under a budget of 1000 expressions per request, and the kid-doc update already uses most of it, so the whole sale check
@@ -609,7 +640,7 @@ service cloud.firestore {
     }
     // b and a are the kid doc before and after the write, id the purchases doc id, e that doc's data. A function holds at most 10 `let`s, so
     // the transition is 3 parts: the gems and the rest of `game`, the items and equipped slots, the gift notes.
-    function saleMoveOk(b, a, id, e) {
+    function saleMoveOk(uid, kidId, b, a, id, e) {
       let gb = b.get('game', {});
       let ga = a.get('game', {});
       let sold = e.get('itemId', '');
@@ -621,7 +652,14 @@ service cloud.firestore {
         && ga.get('gems', 0) - gb.get('gems', 0) == e.refund
         && ga.diff(gb).affectedKeys().hasOnly(['gems', 'lastPurchaseId'])
         && saleItemsOk(b.get('inventory', {}), a.get('inventory', {}), sold)
-        && saleGiftNotesOk(b.get('inventory', {}), a.get('inventory', {}), sold);
+        && saleGiftNotesOk(b.get('inventory', {}), a.get('inventory', {}), sold)
+        && saleLockOk(uid, kidId, sold);
+    }
+    // A gift lock holds the item for 7 days from its server time, whatever the inventory notes say. No lock, no wait. A sale never
+    // deletes the lock, so a re-gift updates it (giftLockOk).
+    function saleLockOk(uid, kidId, sold) {
+      let lock = giftLockPath(uid, kidId, sold);
+      return !exists(lock) || get(lock).data.at + duration.value(7, 'd') <= request.time;
     }
     function saleItemsOk(ib, ia, sold) {
       let itemsB = ib.get('items', []);
@@ -672,7 +710,7 @@ service cloud.firestore {
         && e.id == purchaseId
         && e.at is number
         && sellingOn(uid)
-        && saleMoveOk(get(kidPathOf(uid, kidId)).data, getAfter(kidPathOf(uid, kidId)).data, purchaseId, e);
+        && saleMoveOk(uid, kidId, get(kidPathOf(uid, kidId)).data, getAfter(kidPathOf(uid, kidId)).data, purchaseId, e);
     }
 
     // The Overworld save (world/main). The 9 fields below, each the right type, plus an optional lastMode (10 fields); openedChests holds at most 500
@@ -816,6 +854,14 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen'])
             && resource.data.seen == false
             && request.resource.data.seen == true;
+          allow delete: if false;
+        }
+
+        // Gift locks: giftLocks/{itemId} = { itemId, giftId, at }. Written only in a gift batch (giftLockOk), read by the receiver or a
+        // grown-up, never deleted. A sale reads it (saleLockOk).
+        match /giftLocks/{itemId} {
+          allow read: if isParent(uid) || isKid(uid, kidId);
+          allow create, update: if idOk(itemId) && giftLockOk(uid, kidId, itemId);
           allow delete: if false;
         }
 

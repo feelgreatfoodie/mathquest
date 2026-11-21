@@ -348,13 +348,15 @@ describe('the family selling switch', () => {
 });
 
 describe('giftAt on a gift (the 7-day sale lock reads it)', () => {
-  // A gift to KID from SIB, as the sibling’s kid token writes it: four docs.
+  // A gift to KID from SIB, as the sibling’s kid token writes it: five docs.
   async function giftBatch(db: Db, giftAt: unknown, o: { inventory?: Record<string, unknown> } = {}) {
     const b = writeBatch(db);
     b.update(kidRef(db, SIB), { game: game(0, { lastPurchaseId: 'g1' }) });
     b.set(purchaseRef(db, SIB, 'g1'), { id: 'g1', kind: 'gift', to: KID, itemId: 'w-sword', cost: 20, at: 1000 });
     b.update(kidRef(db, KID), { inventory: o.inventory ?? { items: [...START_INV.items, 'w-sword'], giftFrom: { 'w-sword': SIB }, giftAt: { 'w-sword': giftAt } } });
     b.set(doc(db, `families/${FAM}/kids/${KID}/gifts/g1`), { id: 'g1', from: SIB, itemId: 'w-sword', at: 1000, seen: false });
+    // The fifth doc of a gift: the lock a sale reads (giftLocks PR).
+    b.set(doc(db, `families/${FAM}/kids/${KID}/giftLocks/w-sword`), { itemId: 'w-sword', giftId: 'g1', at: serverTimestamp() });
     return b.commit();
   }
   beforeEach(async () => {

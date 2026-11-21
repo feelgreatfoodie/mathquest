@@ -20,7 +20,7 @@ import {
 } from 'firebase/firestore';
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
 import { buildGift } from '../game/gifting';
-import { buildSale, sellingOn } from '../game/selling';
+import { buildSale, sellingOn, withLockTimes } from '../game/selling';
 import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type DeviceRecord, type Family, type GiftRecord, type Inventory, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
@@ -75,6 +75,10 @@ export class FirestoreRepo implements Repo {
 
   private gifts(kidId: string) {
     return collection(this.db, 'families', this.uid, 'kids', kidId, 'gifts');
+  }
+
+  private giftLocks(kidId: string) {
+    return collection(this.db, 'families', this.uid, 'kids', kidId, 'giftLocks');
   }
 
   private vault(kidId: string) {
@@ -330,10 +334,12 @@ export class FirestoreRepo implements Repo {
       if (!gSnap.exists() || !rSnap.exists()) throw new Error('That player was removed.');
       // Both docs are read in the transaction, so a gift to a kid who just got the item (or a giver who just spent the gems) fails here, not in the rules.
       const w = buildGift(normalizeKid(gSnap.data() as Kid), normalizeKid(rSnap.data() as Kid), itemId, newId(), Date.now());
-      // The four writes of one gift (firestore.rules: giftDropBacked, giftEntryOk, giftReceiveOk, giftDocOk). The giver's kid doc names the purchases doc (lastPurchaseId).
+      // The five writes of one gift (firestore.rules: giftDropBacked, giftEntryOk, giftReceiveOk, giftDocOk, giftLockOk). The giver's kid doc names the purchases doc (lastPurchaseId).
       tx.set(doc(this.purchases(giverId), w.entry.id), w.entry);
       tx.update(gRef, { game: splitGame(w.giver).game });
       tx.set(doc(this.gifts(receiverId), w.gift.id), w.gift);
+      // The fifth write: the lock doc a sale reads (firestore.rules giftLockOk). The server stamps `at`; a re-gift after a sale replaces it.
+      tx.set(doc(this.giftLocks(receiverId), itemId), { itemId, giftId: w.gift.id, at: serverTimestamp() });
       // The receiver's side is written field by field: items and giftFrom as the build made them, and giftAt of this item stamped by the server
       // (the rules hold it equal to request.time, and the 7-day sale lock reads it). Equipped, goal and the other giftAt entries stay as stored.
       tx.update(
@@ -352,8 +358,11 @@ export class FirestoreRepo implements Repo {
       const snap = await tx.get(ref);
       if (!snap.exists()) throw new Error('That player was removed.');
       const stored = snap.data() as Kid;
+      // The gift lock doc holds the item when its notes are gone (firestore.rules saleLockOk), so the wait is read from it too.
+      const lockSnap = await tx.get(doc(this.giftLocks(kidId), itemId));
+      const kid = withLockTimes(normalizeKid(stored), lockSnap.exists() ? [lockSnap.data()] : []);
       // The sale record is created in the same batch as the kid doc change (firestore.rules saleBacked and saleEntryOk).
-      const w = buildSale(normalizeKid(stored), itemId, newId(), Date.now());
+      const w = buildSale(kid, itemId, newId(), Date.now());
       tx.set(doc(this.purchases(kidId), w.entry.id), w.entry);
       // Only the fields a sale changes are written, by path: game.gems and game.lastPurchaseId (the rules hold `game` to those two, so a
       // stored field this build does not know is never touched), the owned list, the cleared slot and the sold item's gift notes.
@@ -390,11 +399,34 @@ export class FirestoreRepo implements Repo {
   }
 
   watchKid(kidId: string, onKid: (kid: Kid | null, meta?: { live: boolean }) => void, opts?: { onError?: (e: Error) => void }): () => void {
-    return onSnapshot(
+    // The kid doc, plus the gift locks beside it: the shop reads "You can sell this in N days" from giftAt, or from the lock when the notes are gone.
+    let kid: Kid | null = null;
+    let live = false;
+    let locks: unknown[] = [];
+    let have = false;
+    const emit = () => {
+      if (!have) return;
+      onKid(kid ? withLockTimes(kid, locks) : null, { live });
+    };
+    const offKid = onSnapshot(
       doc(this.kids(), kidId),
-      (snap) => onKid(snap.exists() ? normalizeKid(snap.data() as Kid) : null, { live: !snap.metadata.fromCache && !snap.metadata.hasPendingWrites }),
+      (snap) => {
+        kid = snap.exists() ? normalizeKid(snap.data() as Kid) : null;
+        live = !snap.metadata.fromCache && !snap.metadata.hasPendingWrites;
+        have = true;
+        emit();
+      },
       (e) => opts?.onError?.(e),
     );
+    // A failed lock read (rules from before the locks) leaves the notes as the only source; the kid doc still arrives.
+    const offLocks = onSnapshot(this.giftLocks(kidId), (snap) => {
+      locks = snap.docs.map((d) => d.data());
+      emit();
+    }, () => undefined);
+    return () => {
+      offKid();
+      offLocks();
+    };
   }
 
   async deleteKid(kidId: string): Promise<void> {

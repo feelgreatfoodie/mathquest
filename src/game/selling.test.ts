@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GameDeltaError } from '../engine/game';
 import { makeKid } from '../engine/newKid';
 import { normalizeGame, splitGame, type Kid } from '../engine/models';
-import { GIFT_LOCK_DAYS, buildSale, giftTimeMissing, giftWaitDays, sellProblem, sellQuestion, sellWaitText, sellingOn } from './selling';
+import { GIFT_LOCK_DAYS, buildSale, giftTimeMissing, giftWaitDays, sellProblem, sellQuestion, sellWaitText, sellingOn, withLockTimes } from './selling';
 
 // Selling back (item powers PDR, section 4), pure parts. Every name is made up.
 const DAY = 24 * 60 * 60 * 1000;
@@ -115,5 +115,38 @@ describe('giftAt through the stored shape', () => {
     const { game, inventory } = splitGame(k.game);
     expect(inventory).toEqual({ items: ['w-bow'], giftFrom: { 'w-bow': 'a' } });
     expect('giftAt' in game).toBe(false);
+  });
+});
+
+describe('gift lock times (a stripped gift still waits)', () => {
+  const kidOf = (game: Partial<Kid['game']>): Kid => kid(['w-bow', 'c-flag'], game);
+  it('an owned item with no notes and a lock 1 day old waits 6 days', () => {
+    const k = withLockTimes(kidOf({}), [{ itemId: 'w-bow', giftId: 'g1', at: NOW - DAY }]);
+    expect(giftWaitDays(k.game, 'w-bow', NOW)).toBe(6);
+    expect(sellProblem(k.game, 'w-bow', NOW)).toBe('You can sell this in 6 days');
+  });
+  it('a lock 8 days old no longer holds the item', () => {
+    const k = withLockTimes(kidOf({}), [{ itemId: 'w-bow', giftId: 'g1', at: NOW - 8 * DAY }]);
+    expect(sellProblem(k.game, 'w-bow', NOW)).toBeNull();
+  });
+  it('a Firestore Timestamp reads as its milliseconds', () => {
+    const k = withLockTimes(kidOf({}), [{ itemId: 'w-bow', giftId: 'g1', at: { toMillis: () => NOW - 2 * DAY } }]);
+    expect(giftWaitDays(k.game, 'w-bow', NOW)).toBe(5);
+  });
+  it('the item own giftAt wins over the lock', () => {
+    const k = withLockTimes(kidOf({ giftFrom: { 'w-bow': 'k2' }, giftAt: { 'w-bow': NOW - 6 * DAY } }), [{ itemId: 'w-bow', giftId: 'g1', at: NOW }]);
+    expect(giftWaitDays(k.game, 'w-bow', NOW)).toBe(1);
+  });
+  it('a lock for an item the kid no longer owns, and a bought item with no lock, add nothing', () => {
+    const k = kidOf({});
+    expect(withLockTimes(k, [{ itemId: 'g-cape', giftId: 'g1', at: NOW }])).toBe(k);
+    expect(giftWaitDays(k.game, 'c-flag', NOW)).toBe(0);
+  });
+  it('a gifted item with giftFrom and no giftAt and no lock still never sells', () => {
+    expect(sellProblem(kidOf({ giftFrom: { 'w-bow': 'k2' } }).game, 'w-bow', NOW)).toBe('A gift cannot be sold.');
+  });
+  it('a lock fills the missing giftAt of a gifted item, so a stripped giftAt heals', () => {
+    const k = withLockTimes(kidOf({ giftFrom: { 'w-bow': 'k2' } }), [{ itemId: 'w-bow', giftId: 'g1', at: NOW - 3 * DAY }]);
+    expect(giftWaitDays(k.game, 'w-bow', NOW)).toBe(4);
   });
 });

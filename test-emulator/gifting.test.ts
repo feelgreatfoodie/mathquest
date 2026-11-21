@@ -70,6 +70,8 @@ interface GiftOpts {
   giverInventory?: Record<string, unknown>;
   skipGiver?: boolean;
   skipReceiver?: boolean;
+  /** Leave the gift lock out of the batch. */
+  noLock?: boolean;
 }
 /** The bow, 55 gems, from GIVER to RCV (who owns a flag), as the app writes it. */
 function giftBatch(db: Db, o: GiftOpts = {}) {
@@ -92,6 +94,8 @@ function giftBatch(db: Db, o: GiftOpts = {}) {
     b.update(kidRef(db, to), { ...(inv ? { inventory: inv } : {}), ...(o.rcvExtra ?? {}) });
   }
   if (o.gift !== null) b.set(giftRef(db, to, pid), o.gift ?? { id: pid, from: GIVER, itemId, at: 1000, seen: false });
+  // The gift lock (giftLocks PR): every gift batch writes it, with the server time. `noLock` leaves it out.
+  if (!o.noLock) b.set(doc(db, `families/${FAM}/kids/${to}/giftLocks/${itemId}`), { itemId, giftId: pid, at: serverTimestamp() });
   return b.commit();
 }
 const seedRcv = () => seed({ rcvInventory: RCV_INV });
