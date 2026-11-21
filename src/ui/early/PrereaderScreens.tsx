@@ -15,6 +15,7 @@ import { useDeposits, type VaultApi } from '../vaultApi';
 import type { GiftApi } from '../giftApi';
 import type { SellApi } from '../sellApi';
 import { GiftPresent } from '../GiftUi';
+import { TrophyCup, TrophyRoom } from '../TrophyRoom';
 import { HoldButton } from './HoldButton';
 import { unlockSounds } from './sounds';
 import { speak, unlockSpeech } from './useSpeech';
@@ -27,10 +28,12 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
   const mute = useMute(kid);
   const [shop, setShop] = useState(false);
   const [shopVault, setShopVault] = useState(false);
+  const [trophy, setTrophy] = useState(false);
   const hasVault = !!vault && vaultOn(kid.settings);
   const dep = useDeposits(vault, hasVault, kid.game.gems);
   const ready = hasVault && dep.deposits.some((d) => (d.status !== 'active' && owedOf(d) > 0) || looksReady(d, Date.now()));
   if (shop) return <HeroShop kid={kid} learner="prereader" onGame={onGame} vault={vault} gift={gift} sell={sell} openVault={shopVault} onClose={() => { setShop(false); setShopVault(false); }} />;
+  if (trophy) return <TrophyRoom kid={kid} repo={repo} learner="prereader" onClose={() => setTrophy(false)} />;
   const adventure = modesOnOf(kid.settings).overworld;
   const flames = Math.min(MAX_FLAMES, kid.game.streakDays);
   return (
@@ -113,6 +116,20 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
             <span className="pv-glow" aria-hidden="true"><UiIcon name="sparkle" size={44} /><UiIcon name="sparkle" size={32} /></span>
           </button>
         ) : null}
+        <button
+          type="button"
+          className="shop-btn trophy-btn"
+          aria-label="Trophy room"
+          data-testid="home-trophy"
+          onClick={() => {
+            unlockSounds();
+            unlockSpeech();
+            void speak('Trophies!');
+            setTrophy(true);
+          }}
+        >
+          <TrophyCup region="meadow" earned size={96} />
+        </button>
         <button
           type="button"
           className="shop-btn"

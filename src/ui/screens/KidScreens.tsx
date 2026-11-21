@@ -20,6 +20,7 @@ import { PrereaderSummary } from '../early/PrereaderSummary';
 import type { RunInfo } from '../runShared';
 import { HeroShop, type OnGame } from '../HeroShop';
 import { GiftPresent } from '../GiftUi';
+import { TrophyRoom } from '../TrophyRoom';
 import type { GiftApi } from '../giftApi';
 import type { SellApi } from '../sellApi';
 import type { RunSummary } from '../../engine/session';
@@ -292,6 +293,7 @@ export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameMode
 function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault, gift, sell }: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; onBack: () => void; vault?: VaultApi; gift?: GiftApi; sell?: SellApi }) {
   const [shop, setShop] = useState(false);
   const [shopVault, setShopVault] = useState(false);
+  const [trophy, setTrophy] = useState(false);
   const hasVault = !!vault && vaultOn(kid.settings);
   const dep = useDeposits(vault, hasVault, kid.game.gems);
   const ready = hasVault && dep.deposits.some((d) => (d.status !== 'active' && owedOf(d) > 0) || looksReady(d, Date.now()));
@@ -327,6 +329,7 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault, gift
     }
     onStart(mode);
   };
+  if (trophy) return <TrophyRoom kid={kid} repo={repo} learner="reader" onClose={() => setTrophy(false)} />;
   return (
     <div className="screen center home-fit">
       <div className="panel home px-home">
@@ -377,6 +380,7 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault, gift
         ) : null}
         <div className="row">
           <PixelButton tone="gold" className="btn" onClick={() => { setShopVault(false); setShop(true); }}>{shop2On(kid.settings) ? 'Shop' : 'Hero shop'}</PixelButton>
+          <PixelButton className="btn" data-testid="home-trophy" onClick={() => setTrophy(true)}>Trophy room</PixelButton>
           <PixelButton className="btn" onClick={onBack}>Switch player</PixelButton>
         </div>
       </div>
