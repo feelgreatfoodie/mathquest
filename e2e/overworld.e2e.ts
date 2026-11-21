@@ -165,7 +165,12 @@ test('a chest holds a new card: opening it and answering right adds 1 or 2 gems 
   await openAdventure(page);
   const chest = (await ow(page, (o) => o.state())).entities.find((e) => e.kind === 'chest')!;
   expect(chest).toBeDefined();
-  await clear(page, chest.id);
+  // The trip id is random, so the chest can sit behind a monster. The walk stops on any monster it crosses and opens that
+  // one first, so the chest is tapped again until it is gone from the map.
+  for (let guard = 0; guard < 4; guard++) {
+    await clear(page, chest.id);
+    if (!(await ow(page, (o) => o.state())).entities.some((e) => e.id === chest.id)) break;
+  }
   // The gem grant is an async write that lands after the modal closes, so the stored count is polled, not read once.
   await expect
     .poll(() => page.evaluate((k) => JSON.parse(localStorage.getItem('mathquest:v1:kids')!)[0].game.gems as number, KID), { timeout: 8000 })
