@@ -1872,3 +1872,4 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .gift-done { min-width: 160px; height: 140px; color: #052e16; background: #4ade80; border-color: #15803d; }
 .gifts-panel h3 { margin-top: 12px; }
 @media (max-width: 700px) { .gift-wrapped { width: 160px; height: 160px; } .gift-face-btn { min-width: 120px; height: 120px; } }
+.gifts-panel .check { display: flex; width: 100%; }
