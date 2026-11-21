@@ -1856,3 +1856,20 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .pv-chest { min-height: 120px; width: 120px; }
 .pv-chest svg, .pv-new svg { width: auto; max-height: calc(8 * var(--fit)); }
 }
+
+/* Gifting: the gift sheet, the pre-reader picker and the wrapped present on Home. */
+.gift-sheet .panel, .gift-present .panel { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 460px; }
+.gift-list { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.gift-list .btn { width: 100%; }
+.gift-pair { display: flex; align-items: center; justify-content: center; gap: 20px; }
+.gift-faces { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; }
+.gift-face-btn { position: relative; min-width: 140px; height: 140px; background: color-mix(in srgb, var(--kid-color, #3b82f6) 30%, var(--panel-2)); }
+.gift-face-btn.is-has { opacity: 0.5; }
+.gift-face-btn .ui-icon, .gift-face-btn > svg:last-child { position: absolute; right: 8px; bottom: 8px; color: #4ade80; }
+.gift-face { display: inline-flex; padding: 8px; border: 3px solid var(--line); background: color-mix(in srgb, var(--kid-color, #3b82f6) 30%, var(--panel-2)); }
+.pshop-gift-btn { min-width: 140px; height: 140px; background: #fecaca; border-color: #b91c1c; }
+.gift-wrapped { width: 200px; height: 200px; background: var(--panel-2); }
+.gift-done { min-width: 160px; height: 140px; color: #052e16; background: #4ade80; border-color: #15803d; }
+.gifts-panel h3 { margin-top: 12px; }
+@media (max-width: 700px) { .gift-wrapped { width: 160px; height: 160px; } .gift-face-btn { min-width: 120px; height: 120px; } }
+.gifts-panel .check { display: flex; width: 100%; }

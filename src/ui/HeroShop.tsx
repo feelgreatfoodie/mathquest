@@ -11,6 +11,8 @@ import { Sprite, UiIcon } from './sprites';
 import { PrereaderVault, ReaderVault } from './VaultPanel';
 import { ShopStall, VaultDoor } from './pixel';
 import { useDeposits, type VaultApi } from './vaultApi';
+import { useSiblings, type GiftApi } from './giftApi';
+import { PrereaderGiftSheet, ReaderGiftSheet } from './GiftUi';
 
 export type OnGame = (delta: GameDelta) => Promise<boolean>;
 
@@ -20,6 +22,8 @@ interface Props {
   onGame: OnGame;
   /** The vault, when the app has one. The Vault tab shows only when a parent turned the vault on for this kid. */
   vault?: VaultApi;
+  /** Gifts to brothers and sisters, when the app has them. The Gift button shows only while the kid has at least one sibling to give to. */
+  gift?: GiftApi;
   /** Open on the Vault tab (the home chest does). */
   openVault?: boolean;
   onClose: () => void;
@@ -74,14 +78,16 @@ function stateOf(kid: Kid, e: Entry): CardState {
 const wearable = (e: Entry) => e.kind === 'hero' || Boolean(e.slot);
 
 /** One shop for both modes: a text modal for readers, a picture-and-voice screen for pre-readers. */
-export function HeroShop({ kid, learner, onGame, vault, openVault, onClose }: Props) {
-  return learner === 'prereader' ? <PrereaderShop kid={kid} onGame={onGame} vault={vault} openVault={openVault} onClose={onClose} /> : <ReaderShop kid={kid} onGame={onGame} vault={vault} openVault={openVault} onClose={onClose} />;
+export function HeroShop({ kid, learner, onGame, vault, gift, openVault, onClose }: Props) {
+  return learner === 'prereader' ? <PrereaderShop kid={kid} onGame={onGame} vault={vault} gift={gift} openVault={openVault} onClose={onClose} /> : <ReaderShop kid={kid} onGame={onGame} vault={vault} gift={gift} openVault={openVault} onClose={onClose} />;
 }
 
 const TIER_LABEL: Record<ItemTier, string> = { common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
 
-function ReaderShop({ kid, onGame, vault, openVault, onClose }: Omit<Props, 'learner'>) {
+function ReaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Props, 'learner'>) {
   const full = shop2On(kid.settings);
+  const sib = useSiblings(gift, kid.game.gems);
+  const [giving, setGiving] = useState<Entry | null>(null);
   const hasVault = !!vault && vaultOn(kid.settings);
   const [tab, setTab] = useState<ShopTab>(openVault && hasVault ? 'vault' : 'hero');
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -139,6 +145,11 @@ function ReaderShop({ kid, onGame, vault, openVault, onClose }: Omit<Props, 'lea
                     <button type="button" className="btn btn-small shop-btn-48" disabled={state === 'poor'} onClick={() => (full ? setConfirming(e.id) : void onGame({ purchase: e.id }))}>
                       {e.cost} gems
                     </button>
+                    {full && gift && sib.siblings.length && e.kind === 'item' && state === 'locked' ? (
+                      <button type="button" className="btn btn-small btn-ghost shop-btn-48" data-testid="gift-button" onClick={() => setGiving(e)}>
+                        <UiIcon name="gift" size={20} /> Gift
+                      </button>
+                    ) : null}
                     {full && state === 'poor' ? (
                       <button type="button" className="btn btn-small btn-ghost shop-btn-48" onClick={() => void onGame({ goal: isGoal ? null : e.id })}>
                         {isGoal ? 'Saving' : 'Save for this'}
@@ -152,6 +163,18 @@ function ReaderShop({ kid, onGame, vault, openVault, onClose }: Omit<Props, 'lea
         </div>
         <button type="button" className="btn shop-btn-48" onClick={onClose}>Done</button>
       </div>
+      {giving && gift ? (
+        <ReaderGiftSheet
+          item={giving}
+          siblings={sib.siblings}
+          onGive={async (to) => {
+            const ok = await gift.give(to, giving.id);
+            if (ok) void sib.refresh();
+            return ok;
+          }}
+          onClose={() => setGiving(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -163,8 +186,10 @@ const SPARKLE_MS = 1100;
  * Six picture tabs. Tap a thing to hear its name. Tap an owned one to wear it. Tap one you can afford, then one
  * big confirm. Tap one you cannot afford yet and it goes in the jar. Every target is at least 120 px.
  */
-function PrereaderShop({ kid, onGame, vault, openVault, onClose }: Omit<Props, 'learner'>) {
+function PrereaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Props, 'learner'>) {
   const full = shop2On(kid.settings);
+  const sib = useSiblings(gift, kid.game.gems);
+  const [giving, setGiving] = useState<Entry | null>(null);
   const hasVault = !!vault && vaultOn(kid.settings);
   const [tab, setTab] = useState<ShopTab>(openVault && hasVault ? 'vault' : 'hero');
   const dep = useDeposits(vault, hasVault, kid.game.gems);
@@ -232,6 +257,21 @@ function PrereaderShop({ kid, onGame, vault, openVault, onClose }: Omit<Props, '
     }
   };
 
+  if (giving && gift) {
+    return (
+      <PrereaderGiftSheet
+        item={giving}
+        siblings={sib.siblings}
+        onGive={async (to) => {
+          const ok = await gift.give(to, giving.id);
+          if (ok) void sib.refresh();
+          return ok;
+        }}
+        onClose={() => { setGiving(null); setConfirming(null); }}
+      />
+    );
+  }
+
   if (confirming) {
     return (
       <div className="screen center pshop pshop-confirm" aria-label={`Buy ${confirming.name}`}>
@@ -241,6 +281,11 @@ function PrereaderShop({ kid, onGame, vault, openVault, onClose }: Omit<Props, '
           <button type="button" className="pshop-btn pshop-buy" aria-label="Buy" onClick={() => void confirm()}>
             <UiIcon name="check" size={84} /><UiIcon name="gem" size={64} />
           </button>
+          {full && gift && sib.siblings.length && confirming.kind === 'item' ? (
+            <button type="button" className="pshop-btn pshop-gift-btn" aria-label="Give as a gift" data-testid="gift-button" onClick={() => setGiving(confirming)}>
+              <UiIcon name="gift" size={72} />
+            </button>
+          ) : null}
           <button type="button" className="pshop-btn pshop-cancel" aria-label="Cancel" onClick={() => setConfirming(null)}>
             <UiIcon name="close" size={64} />
           </button>

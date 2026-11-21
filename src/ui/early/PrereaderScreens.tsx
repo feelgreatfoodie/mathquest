@@ -12,6 +12,8 @@ import { HeroShop, type OnGame } from '../HeroShop';
 import { UiIcon } from '../sprites';
 import { looksReady, owedOf, vaultOn } from '../../game/vault';
 import { useDeposits, type VaultApi } from '../vaultApi';
+import type { GiftApi } from '../giftApi';
+import { GiftPresent } from '../GiftUi';
 import { HoldButton } from './HoldButton';
 import { unlockSounds } from './sounds';
 import { speak, unlockSpeech } from './useSpeech';
@@ -20,14 +22,14 @@ import { MuteButton, useMute } from '../MuteButton';
 const MAX_FLAMES = 7;
 
 /** Home for a pre-reader: the hero, a huge Play triangle, and streak flames. No reading needed. */
-export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, vault }: { kid: Kid; repo: Repo; onStart: (mode: GameModeId) => void; onBack: () => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; vault?: VaultApi }) {
+export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, vault, gift }: { kid: Kid; repo: Repo; onStart: (mode: GameModeId) => void; onBack: () => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; vault?: VaultApi; gift?: GiftApi }) {
   const mute = useMute(kid);
   const [shop, setShop] = useState(false);
   const [shopVault, setShopVault] = useState(false);
   const hasVault = !!vault && vaultOn(kid.settings);
   const dep = useDeposits(vault, hasVault, kid.game.gems);
   const ready = hasVault && dep.deposits.some((d) => (d.status !== 'active' && owedOf(d) > 0) || looksReady(d, Date.now()));
-  if (shop) return <HeroShop kid={kid} learner="prereader" onGame={onGame} vault={vault} openVault={shopVault} onClose={() => { setShop(false); setShopVault(false); }} />;
+  if (shop) return <HeroShop kid={kid} learner="prereader" onGame={onGame} vault={vault} gift={gift} openVault={shopVault} onClose={() => { setShop(false); setShopVault(false); }} />;
   const adventure = modesOnOf(kid.settings).overworld;
   const flames = Math.min(MAX_FLAMES, kid.game.streakDays);
   return (
@@ -36,6 +38,7 @@ export function PrereaderHome({ kid, repo, onStart, onBack, onGame, onTipGame, v
         <HoldButton onHold={onBack}><PixelIcon name="house" size={44} /></HoldButton>
       </div>
       <div className="early-home-mute"><MuteButton muted={mute.muted} locked={mute.locked} onToggle={mute.toggle} big chimesOnly={mute.chimesOnly} /></div>
+      <GiftPresent api={gift} learner="prereader" />
       <CampScene game={kid.game} size={200} className="px-camp-wide" />
       <TitleBadge game={kid.game} name={kid.name} picture />
       <div className="early-home-info">

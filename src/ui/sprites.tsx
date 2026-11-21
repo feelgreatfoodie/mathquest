@@ -147,7 +147,7 @@ export function Sprite({ name, size = 96, className }: { name: string; size?: nu
   );
 }
 
-export type UiIconName = 'house' | 'speaker' | 'eye' | 'play' | 'flame' | 'arrow-down' | 'gem' | 'check' | 'chest' | 'sparkle' | 'refresh' | 'close' | 'lock' | 'bolt' | 'map';
+export type UiIconName = 'house' | 'speaker' | 'eye' | 'play' | 'flame' | 'arrow-down' | 'gem' | 'check' | 'chest' | 'sparkle' | 'refresh' | 'close' | 'lock' | 'bolt' | 'map' | 'gift';
 
 /** Plain icons for the pre-reader screens. They carry no text: a shape and an aria-label. */
 export function UiIcon({ name, size = 40, label }: { name: UiIconName; size?: number; label?: string }) {
@@ -169,6 +169,8 @@ export function UiIcon({ name, size = 40, label }: { name: UiIconName; size?: nu
       return <svg {...common}><path d="M6 3h12l4 6-10 12L2 9z" fill="#38bdf8" stroke="#075985" strokeWidth="1.5" strokeLinejoin="round" /></svg>;
     case 'chest':
       return <svg {...common}><path d="M3 10a9 5 0 0 1 18 0v2H3z" fill="#b45309" stroke="#451a03" strokeWidth="1.4" strokeLinejoin="round" /><rect x="3" y="12" width="18" height="8" rx="1" fill="#d97706" stroke="#451a03" strokeWidth="1.4" /><rect x="10" y="11" width="4" height="5" rx="1" fill="#facc15" stroke="#451a03" strokeWidth="1.2" /></svg>;
+    case 'gift':
+      return <svg {...common}><rect x="3" y="10" width="18" height="11" rx="1" fill="#ef4444" stroke="#7f1d1d" strokeWidth="1.4" /><rect x="2" y="7" width="20" height="4" rx="1" fill="#f87171" stroke="#7f1d1d" strokeWidth="1.4" /><rect x="10.5" y="7" width="3" height="14" fill="#facc15" stroke="#a16207" strokeWidth="1" /><path d="M12 7C9 7 6.5 5.5 7 4s3.5-.5 5 3c1.5-3.500 4-4.500 5-3s-2 3-5 3z" fill="#facc15" stroke="#a16207" strokeWidth="1.2" strokeLinejoin="round" /></svg>;
     case 'sparkle':
       return <svg {...common}><path d="M12 1l2.6 7.4L22 11l-7.4 2.6L12 21l-2.6-7.4L2 11l7.4-2.6z" fill="#facc15" stroke="#a16207" strokeWidth="1.2" strokeLinejoin="round" /></svg>;
     case 'check':

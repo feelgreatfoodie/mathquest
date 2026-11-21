@@ -15,6 +15,8 @@ import { FailureToasts } from './ui/FailureToasts';
 import { UpdatePrompt, UpdateScreen } from './ui/UpdateScreen';
 import { reportFailure } from './ui/failures';
 import type { VaultApi } from './ui/vaultApi';
+import type { GiftApi } from './ui/giftApi';
+import { unseenGifts } from './game/gifting';
 import { forgetDeviceKids, rememberKids } from './data/deviceKids';
 import { forgetTiles, readTiles, rememberTile, type PasscodeKind } from './data/deviceTiles';
 import { applyPilotParam, signin2Active } from './data/signin2';
@@ -311,6 +313,30 @@ export function App() {
     [repo, showGame],
   );
 
+  /** Gifts for one kid: who they can give to, giving, and the presents waiting on Home. Every failure shows a toast. */
+  const giftFor = (kidId: string): GiftApi | undefined => {
+    if (!repo) return undefined;
+    return {
+      siblings: () => repo.listSiblings(kidId).catch(() => []),
+      give: async (receiverId, itemId) => {
+        try {
+          showGame(kidId, await repo.giftItem(kidId, receiverId, itemId));
+          return true;
+        } catch (e) {
+          if (e instanceof GameDeltaError) reportFailure(e.message, e);
+          else if ((e as { code?: string }).code === 'permission-denied') reportFailure('Gifts are off right now.', e);
+          else reportFailure('That gift was not saved.', e);
+          return false;
+        }
+      },
+      incoming: async () => {
+        const [gifts, sibs] = await Promise.all([repo.listGifts(kidId, 20), repo.listSiblings(kidId).catch(() => [])]);
+        return unseenGifts(gifts).map((gift) => ({ gift, fromName: sibs.find((k) => k.id === gift.from)?.name ?? 'home' }));
+      },
+      open: (giftId) => repo.markGiftSeen(kidId, giftId),
+    };
+  };
+
   /** The vault for one kid. Every chunk of a payout saves on its own, and the screen shows the stored gems after each. */
   const vaultFor = (kidId: string): VaultApi | undefined => {
     if (!repo) return undefined;
@@ -501,6 +527,7 @@ export function App() {
         <KidHome
           kid={kid}
           vault={vaultFor(kid.id)}
+          gift={giftFor(kid.id)}
           onGame={(d) => applyGame(kid.id, d)}
           onTipGame={(g) => showGame(kid.id, g)}
           repo={repo}

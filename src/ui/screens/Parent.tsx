@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, type FocusEvent } from 'react';
+import { GiftsPanel } from '../GiftUi';
 import { FACT_GROUPS, SKILL_CARDS, factId } from '../../engine/content';
 import { HEROES, levelFor } from '../../engine/game';
 import { itemById } from '../../game/shop/catalog';
@@ -339,6 +340,7 @@ function ParentAreaInner({ repo, kids, onKids, onFamily, onExit, onSignOut, afte
       {tour === 'on' ? <Tour onClose={closeTour} /> : null}
       {askSignOut && onSignOut ? <SignOutAsk onYes={onSignOut} onStay={() => setAskSignOut(false)} /> : null}
       <ParkedRounds kids={kids} />
+      {kids.length >= 2 ? <GiftsPanel repo={repo} kids={kids} /> : null}
       <nav className="tabs" aria-label="Players" data-tour="kids">
         {kids.map((k) => (
           <button key={k.id} type="button" className={`tab ${selected === k.id ? 'is-active' : ''}`} onClick={() => setSelected(k.id)}>

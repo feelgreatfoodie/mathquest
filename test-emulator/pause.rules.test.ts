@@ -94,9 +94,9 @@ describe('a kid token cannot clear or shorten a pause', () => {
   it('the pause is still stored after every refusal', async () => {
     expect((await stored()).settings.pause).toMatchObject({ on: true, until: PAUSE.until });
   });
-  it('a kid token can read its own pause, and not a sibling doc', async () => {
+  it('a kid token can read its own pause, and a sibling doc while gifting is on (the gift picker)', async () => {
     await assertSucceeds(getDoc(kidRef(kidDb())));
-    await assertFails(getDoc(kidRef(kidDb(), KID2)));
+    await assertSucceeds(getDoc(kidRef(kidDb(), KID2)));
   });
 });
 
