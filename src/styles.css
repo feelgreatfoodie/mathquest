@@ -1711,6 +1711,10 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
   .early-home-top .hold-btn { width: 120px; height: 120px; }
   .early-home-top .hold-btn svg { width: 72px; height: 72px; }
 }
+/* The Trophy room tile is one more button in that row. On an iPad-wide portrait screen the row takes 3 columns, so it stays one row tall with Play and Shop. */
+@media (orientation: portrait) and (min-width: 700px) {
+  .early-home .early-home-row { grid-template-columns: 1.4fr 1fr 1fr; }
+}
 
 /* Reader Home: portrait lets the banner take what is left, landscape puts the banner and week on the left and the actions on the right. */
 .screen.center.home-fit { height: 100%; min-height: 0; padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
@@ -1882,3 +1886,52 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .pshop-card.pshop-sell-toggle.is-on { background: #f59e0b; outline: 4px solid #fff7ed; }
 .pshop-card.is-sell { border-color: #f59e0b; box-shadow: 0 0 12px rgba(245, 158, 11, 0.55); }
 .selling-panel .check { display: flex; width: 100%; }
+
+/* ---- trophy room (item powers PR 6). One screen at every guarded viewport: tabs for the items, never a page scroll. ---- */
+.screen.center.trophy { height: 100%; min-height: 0; overflow: hidden; justify-content: flex-start; gap: clamp(6px, calc(1.4 * var(--fit)), 12px); padding-top: max(10px, env(safe-area-inset-top)); padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+@supports (height: 100dvh) { .screen.center.trophy { height: 100dvh; } }
+.trophy-bar { display: flex; align-items: center; gap: 12px; width: 100%; max-width: 760px; flex: none; }
+.trophy-bar h1 { margin: 0; font-size: 18px; flex: 1; text-align: center; }
+.trophy-back { min-height: 60px; min-width: 60px; }
+.trophy-body { display: flex; flex-direction: column; align-items: center; gap: clamp(6px, calc(1.4 * var(--fit)), 12px); width: 100%; max-width: 760px; flex: 1 1 0; min-height: 0; }
+.trophy-status { text-align: center; }
+.trophy-lairs, .trophy-counts, .trophy-titles { display: flex; gap: 8px; justify-content: center; width: 100%; flex: none; }
+.trophy-lair { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px; text-align: center; }
+.trophy-lair-line { font-size: 14px; line-height: 1.2; }
+.trophy-cup.is-empty { opacity: 0.55; }
+.trophy-count { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 0; padding: 4px; text-align: center; }
+.trophy-count .stat-value { font-size: 22px; }
+.trophy-count .stat-label { font-size: 13px; }
+.trophy-titles { flex-wrap: wrap; }
+.trophy-title { margin: 0; }
+.trophy-tabs { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; width: 100%; flex: none; }
+.trophy-tab { min-height: 60px; min-width: 60px; flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 4px 8px; color: var(--text); background: var(--panel-2); border: 3px solid var(--line); font: inherit; font-size: 15px; cursor: pointer; touch-action: manipulation; }
+.trophy-tab.is-on { border-color: var(--gold); background: var(--panel); }
+.trophy-tab-n { font-size: 13px; }
+.trophy-items { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-content: flex-start; width: 100%; flex: 0 1 auto; min-height: 0; }
+.trophy-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 84px; min-height: 84px; padding: 4px 8px; color: var(--text); background: var(--panel); border: 3px solid var(--line); font: inherit; }
+.trophy-item.is-owned { border-color: var(--good); }
+.trophy-item-name { font-size: 14px; line-height: 1.1; }
+.trophy-silhouette { filter: brightness(0) opacity(0.5); }
+.trophy-item.is-empty { background: var(--bg-2); border-style: dashed; }
+/* Pre-reader: every target 120 px or more, one section at a time. */
+.trophy-pre .trophy-rail { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; flex: none; }
+.trophy-pre .trophy-back, .trophy-pre .trophy-retry { width: 120px; height: 120px; display: inline-flex; align-items: center; justify-content: center; color: #1a1300; background: var(--gold); border: 0; border-bottom: 8px solid var(--gold-dark); cursor: pointer; touch-action: manipulation; }
+.trophy-pre .trophy-back:active, .trophy-pre .trophy-retry:active { transform: translateY(4px); border-bottom-width: 4px; }
+.trophy-pre .trophy-sections { display: flex; gap: 6px; justify-content: center; }
+.trophy-pre .trophy-lair, .trophy-pre .trophy-count, .trophy-pre .trophy-tab, .trophy-pre .trophy-item, .trophy-pre .trophy-section, .trophy-pre .trophy-title { min-width: 120px; min-height: 120px; flex: 0 0 120px; font: inherit; color: var(--text); background: var(--panel); border: 3px solid var(--line); cursor: pointer; touch-action: manipulation; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 4px; }
+.trophy-pre .trophy-section { flex: 0 0 120px; }
+.trophy-pre .trophy-section.is-on, .trophy-pre .trophy-tab.is-on { border-color: var(--gold); background: var(--panel-2); }
+.trophy-pre .trophy-lair.is-earned { border-color: var(--gold); }
+.trophy-pre .trophy-item.is-owned { border-color: var(--good); }
+.trophy-pre .trophy-lairs, .trophy-pre .trophy-counts, .trophy-pre .trophy-titles, .trophy-pre .trophy-tabs, .trophy-pre .trophy-items { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.trophy-pre .tally-num { font-size: 40px; font-weight: 700; line-height: 1; }
+.trophy-pre .trophy-body { justify-content: flex-start; }
+@media (orientation: landscape) and (max-height: 900px) {
+  .trophy-pre { flex-direction: row; align-items: flex-start; justify-content: center; gap: 12px; }
+  .trophy-pre .trophy-rail { width: auto; }
+  .trophy-pre .trophy-sections { flex-direction: column; }
+  .trophy-pre .trophy-body { width: auto; flex: 1 1 0; min-width: 0; }
+}
+.screen.center.trophy-pre { padding-left: max(8px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+.home-fit .row .btn[data-testid='home-trophy'] { min-height: 60px; }
