@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Repo } from '../data/repo';
 import { avatarOf, type Family, type Kid } from '../engine/models';
-import { giftHeadline, giftHistory, giftingOn, type GiftHistoryRow } from '../game/gifting';
+import { giftHeadline, giftHistory, giftingOn, hasItemRoom, type GiftHistoryRow } from '../game/gifting';
 import { itemById } from '../game/shop/catalog';
 import { ownedItems } from '../game/shop/shopState';
 import { reportFailure } from './failures';
@@ -20,7 +20,12 @@ export interface GiftItem {
 
 /** Siblings who can still get the item, then the ones who own it already. */
 function canGet(s: Kid, item: GiftItem): boolean {
-  return !ownedItems(s.game).includes(item.id);
+  return !ownedItems(s.game).includes(item.id) && hasItemRoom(s.game);
+}
+
+/** The plain line for a sibling who cannot get the item: the bag is full, or they own it. */
+function whyNot(s: Kid, item: GiftItem): string {
+  return ownedItems(s.game).includes(item.id) ? 'has it' : 'bag is full';
 }
 
 /** The reader's gift sheet: pick a brother or sister, then one confirm line with the price. */
@@ -55,7 +60,7 @@ export function ReaderGiftSheet({ item, siblings, onGive, onClose }: { item: Gif
             <div className="gift-list">
               {siblings.map((s) => (
                 <button key={s.id} type="button" className="btn shop-btn-48" data-sibling={s.id} disabled={!canGet(s, item)} onClick={() => setPicked(s)}>
-                  {s.name}{canGet(s, item) ? '' : ' (has it)'}
+                  {s.name}{canGet(s, item) ? '' : ` (${whyNot(s, item)})`}
                 </button>
               ))}
             </div>
@@ -126,15 +131,15 @@ export function PrereaderGiftSheet({ item, siblings, onGive, onClose }: { item: 
               type="button"
               className={`pshop-btn gift-face-btn ${ok ? '' : 'is-has'}`}
               data-sibling={s.id}
-              aria-label={ok ? s.name : `${s.name} has it`}
+              aria-label={ok ? s.name : `${s.name} ${whyNot(s, item)}`}
               style={{ ['--kid-color' as string]: AVATAR_SWATCH[a.color] }}
               onClick={() => {
-                void speak(ok ? `${s.name}!` : `${s.name} has it.`);
+                void speak(ok ? `${s.name}!` : `${s.name} ${whyNot(s, item)}.`);
                 if (ok) setPicked(s);
               }}
             >
               <Sprite name={a.hero} size={96} />
-              {ok ? null : <UiIcon name="check" size={48} />}
+              {ok ? null : <UiIcon name={ownedItems(s.game).includes(item.id) ? 'check' : 'close'} size={48} />}
             </button>
           );
         })}

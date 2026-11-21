@@ -23,6 +23,11 @@ describe('giftProblem', () => {
   it('refuses when the receiver already owns the item', () => {
     expect(giftProblem(kid('Ada', 100), kid('Bo', 0, ['w-bow']), 'w-bow')).toMatch(/already have/);
   });
+  it('refuses when the receiver holds 60 items, and passes at 59', () => {
+    const fill = (n: number) => Array.from({ length: n }, (_, i) => `x-fill${i}`);
+    expect(giftProblem(kid('Ada', 100), kid('Bo', 0, fill(60)), 'w-bow')).toMatch(/bag is full/);
+    expect(giftProblem(kid('Ada', 100), kid('Bo', 0, fill(59)), 'w-bow')).toBeNull();
+  });
   it('refuses when the giver cannot pay the price', () => {
     expect(giftProblem(kid('Ada', BOW.cost - 1), kid('Bo', 0), 'w-bow')).toMatch(/Not enough gems/);
     expect(giftProblem(kid('Ada', BOW.cost), kid('Bo', 0), 'w-bow')).toBeNull();

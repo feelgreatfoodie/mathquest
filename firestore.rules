@@ -358,6 +358,9 @@ service cloud.firestore {
           && (!('pet' in eq) || (eq.pet is string && eq.pet.matches('^p-.*') && eq.pet in prices && eq.pet in owned)));
     }
 
+    // The item cap, shared by inventoryOk and giftReceiveOk so the 2 write paths cannot drift.
+    function inventoryCap() { return 60; }
+
     // The inventory map is valid when it is unchanged, or when it holds only items, equipped and goal, the items
     // list is a list that keeps every earlier entry and grows by at most one (a buy), and a goal is a short string.
     // giftFrom ({itemId: giver kidId}) is the only other key; the kid branch holds it with giftFromKept. A removed inventory reads as {} and loses its items, so it fails. The kid branch also needs one more rule
@@ -372,7 +375,7 @@ service cloud.firestore {
           && after.keys().hasOnly(['items', 'equipped', 'goal', 'giftFrom'])
           && afterItems is list
           && afterItems.size() <= beforeItems.size() + 1
-          && afterItems.size() <= 60
+          && afterItems.size() <= inventoryCap()
           && afterItems.hasAll(beforeItems)
           && (!('goal' in after) || (after.goal is string && after.goal.size() <= 40)));
     }
@@ -499,7 +502,7 @@ service cloud.firestore {
         && smallDoc() && a.id == kidId
         && a.diff(b).affectedKeys().hasOnly(['inventory'])
         && ia is map && ia.keys().hasOnly(['items', 'equipped', 'goal', 'giftFrom'])
-        && itemsA is list && itemsA.size() == itemsB.size() + 1 && itemsA.hasAll(itemsB)
+        && itemsA is list && itemsA.size() == itemsB.size() + 1 && itemsA.size() <= inventoryCap() && itemsA.hasAll(itemsB)
         && item in itemPrices() && !itemsB.hasAny([item])
         && ia.get('equipped', {}) == ib.get('equipped', {})
         && ia.get('goal', '') == ib.get('goal', '')

@@ -131,6 +131,18 @@ describe('a correct gift passes', () => {
 
 describe('a gift that is not backed fails', () => {
   beforeEach(seedRcv);
+  // The 60-item cap (inventoryOk's inventoryCap, shared with giftReceiveOk). Filler ids stand in for owned items.
+  const fill = (n: number) => Array.from({ length: n }, (_, i) => `f-${i}`);
+  it('a receiver holding 60 items cannot get a 61st by gift', async () => {
+    await seed({ rcvInventory: { items: fill(60) } });
+    await assertFails(giftBatch(kidDb(), { rcvInventory: { items: [...fill(60), 'w-bow'], giftFrom: { 'w-bow': GIVER } } }));
+    expect((await getDoc(kidRef(parentDb(), RCV))).data()?.inventory?.items).toHaveLength(60);
+  });
+  it('control: a receiver holding 59 items gets the 60th by gift', async () => {
+    await seed({ rcvInventory: { items: fill(59) } });
+    await assertSucceeds(giftBatch(kidDb(), { rcvInventory: { items: [...fill(59), 'w-bow'], giftFrom: { 'w-bow': GIVER } } }));
+    expect((await getDoc(kidRef(parentDb(), RCV))).data()?.inventory?.items).toHaveLength(60);
+  });
   it('the receiver already owns the item', async () => {
     await assertFails(giftBatch(kidDb(), { itemId: 'c-flag', price: 15, rcvInventory: { items: ['c-flag', 'c-flag'], giftFrom: { 'c-flag': GIVER } } }));
   });

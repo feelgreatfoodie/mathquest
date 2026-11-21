@@ -13,12 +13,21 @@ export function giftingOn(family: Pick<Family, 'gifting'> | null | undefined): b
   return family?.gifting !== false;
 }
 
+/** The most items a kid can hold. firestore.rules inventoryCap() holds the same 60 for a buy and for a gift. */
+export const MAX_ITEMS = 60;
+
+/** True when one more item would pass the cap. Counts the stored list, as the rules do. */
+export function hasItemRoom(game: Pick<KidGame, 'items'>): boolean {
+  return (game.items?.length ?? 0) < MAX_ITEMS;
+}
+
 /** Why this gift cannot be made, in a sentence a kid can read, or null when it can. Items only: a hero is never a gift. */
 export function giftProblem(giver: Pick<Kid, 'id' | 'game'>, receiver: Pick<Kid, 'id' | 'game'>, itemId: string): string | null {
   const item = itemById(itemId);
   if (!item) return 'That is not in the shop.';
   if (giver.id === receiver.id) return 'Pick a brother or sister.';
   if (ownedItems(receiver.game).includes(itemId)) return 'They already have that.';
+  if (!hasItemRoom(receiver.game)) return 'Their bag is full.';
   if (giver.game.gems < item.cost) return 'Not enough gems.';
   return null;
 }
