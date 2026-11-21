@@ -169,7 +169,24 @@ service cloud.firestore {
           && getAfter(purchasePath(uid, kidId, id)).data.cost == drop
           && ((heroGrew && getAfter(purchasePath(uid, kidId, id)).data.get('heroId', '') == afterHeroes[afterHeroes.size() - 1])
             || (itemGrew && getAfter(purchasePath(uid, kidId, id)).data.get('itemId', '') == afterItems[afterItems.size() - 1])))
-        || vaultDepositBacked(uid, kidId, drop, beforeHeroes, afterHeroes, beforeItems, afterItems);
+        || vaultDepositBacked(uid, kidId, drop, beforeHeroes, afterHeroes, beforeItems, afterItems)
+        || (heroSizeSame(beforeHeroes, afterHeroes) && afterItems.size() == beforeItems.size() && giftDropBacked(uid, kidId, drop, id));
+    }
+
+    // The third legal drop: a gift. The giver pays and gets no hero or item, so the kid doc names a new purchases doc
+    // (lastPurchaseId), created in the same write, with kind 'gift' and a cost equal to the drop. giftEntryOk holds the
+    // rest of that doc (who gets what, the catalog price) and giftReceiveOk the receiver's side, so a drop never doubles
+    // as a purchase and a gift never costs less than the price.
+    function heroSizeSame(beforeHeroes, afterHeroes) {
+      return afterHeroes.size() == beforeHeroes.size();
+    }
+    function giftDropBacked(uid, kidId, drop, id) {
+      return id is string && id.matches('^[A-Za-z0-9_-]{1,40}$')
+        && id != resource.data.get('game', {}).get('lastPurchaseId', '')
+        && !exists(purchasePath(uid, kidId, id))
+        && existsAfter(purchasePath(uid, kidId, id))
+        && getAfter(purchasePath(uid, kidId, id)).data.get('kind', '') == 'gift'
+        && getAfter(purchasePath(uid, kidId, id)).data.cost == drop;
     }
 
     // The second legal drop: a vault deposit. The kid doc names the new deposit (vault.lastId, a new id), the deposit doc
@@ -343,7 +360,7 @@ service cloud.firestore {
 
     // The inventory map is valid when it is unchanged, or when it holds only items, equipped and goal, the items
     // list is a list that keeps every earlier entry and grows by at most one (a buy), and a goal is a short string.
-    // A removed inventory reads as {} and loses its items, so it fails. The kid branch also needs one more rule
+    // giftFrom ({itemId: giver kidId}) is the only other key; the kid branch holds it with giftFromKept. A removed inventory reads as {} and loses its items, so it fails. The kid branch also needs one more rule
     // (kidInventoryOk). Applies to the kid and the parent branch.
     function inventoryOk() {
       let before = resource.data.get('inventory', {});
@@ -352,7 +369,7 @@ service cloud.firestore {
       let afterItems = after.get('items', []);
       return after == before
         || (after is map
-          && after.keys().hasOnly(['items', 'equipped', 'goal'])
+          && after.keys().hasOnly(['items', 'equipped', 'goal', 'giftFrom'])
           && afterItems is list
           && afterItems.size() <= beforeItems.size() + 1
           && afterItems.size() <= 60
@@ -376,6 +393,9 @@ service cloud.firestore {
     // before, nothing else added) and exactly `cost` fewer gems, and `cost` is the catalog price. get() reads the doc
     // before the write, getAfter() reads it after, so a lone entry, a wrong cost or a wrong hero is refused.
     function purchaseEntryOk(uid, kidId, purchaseId) {
+      return request.resource.data.keys().hasAny(['kind']) ? giftEntryOk(uid, kidId, purchaseId) : buyEntryOk(uid, kidId, purchaseId);
+    }
+    function buyEntryOk(uid, kidId, purchaseId) {
       let kidPath = /databases/$(database)/documents/families/$(uid)/kids/$(kidId);
       let before = get(kidPath).data.get('game', {});
       let after = getAfter(kidPath).data.get('game', {});
@@ -408,6 +428,131 @@ service cloud.firestore {
             && !beforeItems.hasAny([e.itemId])
             && afterItems.size() == beforeItems.size() + 1
             && after.get('heroes', []).size() == before.get('heroes', []).size()));
+    }
+
+    // Gifting (docs/pdr/item-powers.md, section 3). A kid buys a catalog item for a sibling in the same family. One batch writes
+    // four docs, and each rule reads the others with getAfter, so none of them stands alone:
+    //   A. the giver's kid doc: gems drop by the price, lastPurchaseId names B, no hero or item changes (giftDropBacked).
+    //   B. the giver's purchases/{id}: { id, kind: 'gift', to, itemId, cost, at }, cost = the catalog price = the drop (giftEntryOk).
+    //   C. the receiver's kid doc: inventory.items grows by that one item, inventory.giftFrom[item] = the giver (giftReceiveOk).
+    //   D. the receiver's gifts/{id}: { id, from, itemId, at, seen } (giftDocOk).
+    // The family doc's `gifting` switch (default on) turns C and D off, and the sibling read with them.
+    function kidPathOf(uid, id) {
+      return /databases/$(database)/documents/families/$(uid)/kids/$(id);
+    }
+    function giftsOn(uid) {
+      return get(/databases/$(database)/documents/families/$(uid)).data.get('gifting', true) == true;
+    }
+    function idOk(v) {
+      return v is string && v.matches('^[A-Za-z0-9_-]{1,40}$');
+    }
+    function giftPath(uid, receiverId, id) {
+      return /databases/$(database)/documents/families/$(uid)/kids/$(receiverId)/gifts/$(id);
+    }
+
+    // B, the giver's side. The receiver is another kid of this family (get() fails, and so denies, when there is no such doc),
+    // owned the item not before and owns it after, and the giver ends with no new hero or item.
+    function giftEntryOk(uid, kidId, purchaseId) {
+      let e = request.resource.data;
+      let giverBefore = get(kidPathOf(uid, kidId)).data;
+      let giverAfter = getAfter(kidPathOf(uid, kidId)).data;
+      let gb = giverBefore.get('game', {});
+      let ga = giverAfter.get('game', {});
+      let rBefore = itemsOf(get(kidPathOf(uid, e.to)).data);
+      let rAfter = itemsOf(getAfter(kidPathOf(uid, e.to)).data);
+      return e.keys().hasOnly(['id', 'kind', 'to', 'itemId', 'cost', 'at'])
+        && e.keys().hasAll(['id', 'kind', 'to', 'itemId', 'cost', 'at'])
+        && e.kind == 'gift'
+        && e.id == purchaseId
+        && idOk(e.to) && e.to != kidId
+        && e.itemId is string && e.itemId in itemPrices()
+        && e.cost is int && e.cost == itemPrices()[e.itemId]
+        && e.at is number
+        && ga.get('lastPurchaseId', '') == purchaseId
+        && gb.get('gems', 0) - ga.get('gems', 0) == e.cost
+        && itemsOf(giverAfter).size() == itemsOf(giverBefore).size()
+        && ga.get('heroes', []).size() == gb.get('heroes', []).size()
+        && rAfter.size() == rBefore.size() + 1
+        && rAfter.hasAll([e.itemId])
+        && !rBefore.hasAny([e.itemId]);
+    }
+
+    // C, the receiver's side, written by a sibling's kid token. Only `inventory` changes. It keeps equipped and goal, grows items
+    // by one catalog item the receiver did not own, and records the giver for that item and no other. The giver's last purchases
+    // doc (named by the giver's own kid doc after the write) must be created in this batch as a gift to this kid for this item,
+    // and so must the gift doc. A kid cannot gift to self (the token's kid is not this doc), nor reach another family.
+    function giftReceiveOk(uid, kidId) {
+      let g = request.auth.token.kidId;
+      let b = resource.data;
+      let a = request.resource.data;
+      let ib = b.get('inventory', {});
+      let ia = a.get('inventory', {});
+      let itemsB = ib.get('items', []);
+      let itemsA = ia.get('items', []);
+      let item = itemsA[itemsA.size() - 1];
+      let pid = getAfter(kidPathOf(uid, g)).data.get('game', {}).get('lastPurchaseId', '');
+      let entry = /databases/$(database)/documents/families/$(uid)/kids/$(g)/purchases/$(pid);
+      return request.auth != null
+        && request.auth.token.role == 'kid'
+        && request.auth.token.familyUid == uid
+        && idOk(g) && g != kidId
+        && smallDoc() && a.id == kidId
+        && a.diff(b).affectedKeys().hasOnly(['inventory'])
+        && ia is map && ia.keys().hasOnly(['items', 'equipped', 'goal', 'giftFrom'])
+        && itemsA is list && itemsA.size() == itemsB.size() + 1 && itemsA.hasAll(itemsB)
+        && item in itemPrices() && !itemsB.hasAny([item])
+        && ia.get('equipped', {}) == ib.get('equipped', {})
+        && ia.get('goal', '') == ib.get('goal', '')
+        && ia.get('giftFrom', {}).diff(ib.get('giftFrom', {})).affectedKeys().hasOnly([item])
+        && ia.get('giftFrom', {}).get(item, '') == g
+        && giftsOn(uid)
+        && idOk(pid)
+        && !exists(entry) && existsAfter(entry)
+        && getAfter(entry).data.get('kind', '') == 'gift'
+        && getAfter(entry).data.get('to', '') == kidId
+        && getAfter(entry).data.get('itemId', '') == item
+        && !exists(giftPath(uid, kidId, pid)) && existsAfter(giftPath(uid, kidId, pid));
+    }
+
+    // The kid branch must not add or change giftFrom itself (only giftReceiveOk does). A write that leaves it out passes, so a save
+    // from an older bundle, which strips the field, is never blocked; it only loses the note.
+    function giftFromKept() {
+      return !('giftFrom' in request.resource.data.get('inventory', {}))
+        || request.resource.data.get('inventory', {}).giftFrom == resource.data.get('inventory', {}).get('giftFrom', {});
+    }
+
+    // D, the gift doc on the receiver. Created in the batch with B (named by its own id, the purchase id) and C. The giver is the
+    // signed-in sibling, or the parent device playing as one. A grown-up or the receiver may later set `seen` (false to true); no one
+    // else changes it.
+    function giftDocOk(uid, receiverId, giftId) {
+      let d = request.resource.data;
+      let entry = /databases/$(database)/documents/families/$(uid)/kids/$(d.from)/purchases/$(giftId);
+      return d.keys().hasOnly(['id', 'from', 'itemId', 'at', 'seen'])
+        && d.keys().hasAll(['id', 'from', 'itemId', 'at', 'seen'])
+        && d.id == giftId
+        && idOk(d.from) && d.from != receiverId
+        && d.at is number
+        && d.seen == false
+        && (isParent(uid) || isKid(uid, d.from))
+        && giftsOn(uid)
+        && existsAfter(entry)
+        && getAfter(entry).data.get('kind', '') == 'gift'
+        && getAfter(entry).data.get('to', '') == receiverId
+        && getAfter(entry).data.get('itemId', '') == d.itemId;
+    }
+
+    // The kid doc is readable by a sibling kid token of the same family while gifting is on: the picker needs the names and what each
+    // already owns. The family switch closes it.
+    function siblingMayRead(uid) {
+      return request.auth != null
+        && request.auth.token.role == 'kid'
+        && request.auth.token.familyUid == uid
+        && giftsOn(uid);
+    }
+
+    // The family `gifting` switch, when present, is a boolean. A write without it passes.
+    function giftingSettingOk() {
+      return !('gifting' in request.resource.data) || request.resource.data.gifting is bool;
     }
 
     // The Overworld save (world/main). The 9 fields below, each the right type, plus an optional lastMode (10 fields); openedChests holds at most 500
@@ -509,8 +654,8 @@ service cloud.firestore {
     // cannot write pinHash or hasPin, or delete the doc, so no browser can plant a PIN or make the app ask for a first one.
     match /families/{uid} {
       allow read: if isParent(uid) && (resource == null || !('pinHash' in resource.data));
-      allow create: if isParent(uid) && smallDoc() && !request.resource.data.keys().hasAny(['pinHash', 'hasPin']);
-      allow update: if isParent(uid) && smallDoc() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinHash', 'hasPin']);
+      allow create: if isParent(uid) && smallDoc() && giftingSettingOk() && !request.resource.data.keys().hasAny(['pinHash', 'hasPin']);
+      allow update: if isParent(uid) && smallDoc() && giftingSettingOk() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinHash', 'hasPin']);
 
       // Devices that signed a player in: families/{uid}/devices/{deviceId} = { firstSeen, lastSeen, kids[], label }. The Admin SDK
       // (kidSignIn) creates and updates them. The family's grown-ups read them and may change `label` and `revoked`, as a
@@ -528,17 +673,30 @@ service cloud.firestore {
       }
 
       match /kids/{kidId} {
-        allow read: if isParent(uid) || isKid(uid, kidId);
+        allow read: if isParent(uid) || isKid(uid, kidId) || siblingMayRead(uid);
         allow delete: if isParent(uid);
         allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId && vaultSettingsOk() && lightningFloorOk();
         allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && vaultSettingsOk() && lightningFloorOk())
-          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk() || kidVaultKeysOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && kidHeroGrowthOk() && kidRaiseOk());
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk() || kidVaultKeysOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && kidHeroGrowthOk() && kidRaiseOk() && giftFromKept())
+          || giftReceiveOk(uid, kidId);
 
         match /cards/{cardId} {
           allow read: if isParent(uid) || isKid(uid, kidId);
           allow delete: if isParent(uid);
           allow create, update: if (isParent(uid) || isKid(uid, kidId)) && smallDoc()
             && request.resource.data.id == cardId && lightningDelayOk();
+        }
+
+        // Gifts received: gifts/{purchaseId} = { id, from, itemId, at, seen }. The giver's token (or the parent device) creates one in the
+        // gift batch (giftDocOk). The receiver or a grown-up reads it and may set `seen` once, false to true. Nobody deletes one.
+        match /gifts/{giftId} {
+          allow read: if isParent(uid) || isKid(uid, kidId);
+          allow create: if idOk(giftId) && giftDocOk(uid, kidId, giftId);
+          allow update: if (isParent(uid) || isKid(uid, kidId))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen'])
+            && resource.data.seen == false
+            && request.resource.data.seen == true;
+          allow delete: if false;
         }
 
         // Purchases log: the parent reads it, nobody edits or deletes it. A kid token (or the parent device

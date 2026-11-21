@@ -4,7 +4,7 @@ import type { RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
 import type { GameModeId } from '../game/modes/types';
 import type { VaultDeposit, VaultTerm } from '../game/vault';
-import type { CardMap, CardState, DeviceRecord, Family, Kid, KidAvatar, KidGame, KidSettings, PurchaseLog, SessionLog } from '../engine/models';
+import type { CardMap, CardState, DeviceRecord, Family, GiftRecord, Kid, KidAvatar, KidGame, KidSettings, PurchaseLog, SessionLog } from '../engine/models';
 
 /** Storage boundary. Firestore in production; localStorage for offline demos and dev. */
 export interface Repo {
@@ -25,6 +25,8 @@ export interface Repo {
   markTourSeen(): Promise<void>;
   /** Writes the single field `schoolMode` on the parent's own family doc and nothing else. */
   setSchoolMode(on: boolean): Promise<void>;
+  /** Writes the single field `gifting` on the parent's own family doc and nothing else. A family with no value reads as on. */
+  setGifting(on: boolean): Promise<void>;
   /** The devices that signed a player in, most recent first. Offline mode has none. */
   listDevices(): Promise<DeviceRecord[]>;
   /** Forget a device (`true`) or allow it again (`false`): writes the single field `revoked` on its record. */
@@ -69,6 +71,19 @@ export interface Repo {
   vaultPay(kidId: string, depositId: string, mode: 'collect' | 'break'): Promise<{ paid: number; done: boolean }>;
   /** The kid's deposits, newest first. */
   listVault(kidId: string, max: number): Promise<VaultDeposit[]>;
+  /**
+   * Gives `itemId` from one kid to a sibling in one transaction: the giver's gems drop by the price, a purchases record
+   * (kind 'gift') goes on the giver, the item joins the receiver's owned list with giftFrom, and a gift record goes on the
+   * receiver. Throws GameDeltaError when the receiver already owns the item, the giver cannot pay or the item is not in the shop.
+   * Never adds gems to anyone. Returns the giver's game as stored.
+   */
+  giftItem(giverId: string, receiverId: string, itemId: string): Promise<KidGame>;
+  /** The other kids of the family, for the gift picker. A kid session reads them only while the family has gifting on; the read fails otherwise. */
+  listSiblings(kidId: string): Promise<Kid[]>;
+  /** The gifts a kid received, newest first. */
+  listGifts(kidId: string, max: number): Promise<GiftRecord[]>;
+  /** Marks one received gift opened (seen: true). */
+  markGiftSeen(kidId: string, giftId: string): Promise<void>;
   /** The purchases log, newest first. Reads the kid's own purchases path only. */
   listPurchases(kidId: string, max: number): Promise<PurchaseLog[]>;
   /**

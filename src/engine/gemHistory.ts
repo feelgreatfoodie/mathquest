@@ -1,7 +1,7 @@
 import type { PurchaseLog, SessionLog } from './models';
 
 export interface GemChange {
-  kind: 'run' | 'purchase';
+  kind: 'run' | 'purchase' | 'gift';
   /** Epoch ms: when the run ended or the hero was bought. */
   at: number;
   /** Positive for a run, negative for a purchase. */
@@ -12,6 +12,7 @@ export interface GemChange {
 /** One line for a row of the gem history: what happened and what it did to the gem count. A free purchase says free. */
 export function gemChangeLabel(c: GemChange, name?: string): string {
   if (c.kind === 'run') return 'Quest finished';
+  if (c.kind === 'gift') return `Gift: ${name ?? c.heroId ?? 'an item'} (-${Math.abs(c.gems)} gems)`;
   const what = `Bought ${name ?? c.heroId ?? 'an item'}`;
   return c.gems === 0 ? `${what} (free)` : `${what} (-${Math.abs(c.gems)} gems)`;
 }
@@ -25,6 +26,6 @@ export function gemDeltaText(c: GemChange): string {
 /** Runs that earned gems (+) and purchases (-), merged, newest first, at most `max` of them. */
 export function gemHistory(sessions: SessionLog[], purchases: PurchaseLog[], max = 20): GemChange[] {
   const runs: GemChange[] = sessions.filter((s) => s.gems > 0).map((s) => ({ kind: 'run', at: s.endedAt, gems: s.gems }));
-  const buys: GemChange[] = purchases.map((p) => ({ kind: 'purchase', at: p.at, gems: -p.cost, heroId: p.heroId ?? p.itemId }));
+  const buys: GemChange[] = purchases.map((p) => ({ kind: p.kind === 'gift' ? 'gift' : 'purchase', at: p.at, gems: -p.cost, heroId: p.heroId ?? p.itemId }));
   return [...runs, ...buys].sort((a, b) => b.at - a.at).slice(0, max);
 }

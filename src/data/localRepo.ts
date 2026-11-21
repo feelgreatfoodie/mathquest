@@ -1,7 +1,8 @@
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
+import { buildGift } from '../game/gifting';
 import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, maturesAtOf, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
-import { normalizeKid, type CardMap, type CardState, type DeviceRecord, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { normalizeKid, type CardMap, type CardState, type DeviceRecord, type Family, type GiftRecord, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { CampDoc } from '../game/overworld/camp';
 import type { RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
@@ -60,6 +61,11 @@ export class LocalRepo implements Repo {
   async setSchoolMode(on: boolean): Promise<void> {
     const f = read<Family | null>('family', null);
     if (f) write('family', { ...f, schoolMode: on });
+  }
+
+  async setGifting(on: boolean): Promise<void> {
+    const f = read<Family | null>('family', null);
+    if (f) write('family', { ...f, gifting: on });
   }
 
   async listDevices(): Promise<DeviceRecord[]> {
@@ -208,6 +214,33 @@ export class LocalRepo implements Repo {
     return read<VaultDeposit[]>(`vault:${kidId}`, []).sort((a, b) => b.createdAt - a.createdAt).slice(0, max);
   }
 
+  async giftItem(giverId: string, receiverId: string, itemId: string): Promise<KidGame> {
+    const kids = read<Kid[]>('kids', []);
+    const giver = kids.find((k) => k.id === giverId);
+    const receiver = kids.find((k) => k.id === receiverId);
+    if (!giver || !receiver) throw new Error('That player was removed.');
+    if (read<Family | null>('family', null)?.gifting === false) throw new GameDeltaError('Gifts are off.');
+    const w = buildGift(normalizeKid(giver), normalizeKid(receiver), itemId, newId(), Date.now());
+    write(`purchases:${giverId}`, [...read<PurchaseLog[]>(`purchases:${giverId}`, []), w.entry]);
+    write(`gifts:${receiverId}`, [...read<GiftRecord[]>(`gifts:${receiverId}`, []), w.gift]);
+    this.patchKid(giverId, (k) => ({ ...k, game: w.giver }));
+    this.patchKid(receiverId, (k) => ({ ...k, game: w.receiver }));
+    return w.giver;
+  }
+
+  async listSiblings(kidId: string): Promise<Kid[]> {
+    if (read<Family | null>('family', null)?.gifting === false) return [];
+    return (await this.listKids()).filter((k) => k.id !== kidId);
+  }
+
+  async listGifts(kidId: string, max: number): Promise<GiftRecord[]> {
+    return read<GiftRecord[]>(`gifts:${kidId}`, []).sort((a, b) => b.at - a.at).slice(0, max);
+  }
+
+  async markGiftSeen(kidId: string, giftId: string): Promise<void> {
+    write(`gifts:${kidId}`, read<GiftRecord[]>(`gifts:${kidId}`, []).map((g) => (g.id === giftId ? { ...g, seen: true } : g)));
+  }
+
   async listPurchases(kidId: string, max: number): Promise<PurchaseLog[]> {
     return read<PurchaseLog[]>(`purchases:${kidId}`, []).sort((a, b) => b.at - a.at).slice(0, max);
   }
@@ -242,6 +275,7 @@ export class LocalRepo implements Repo {
     localStorage.removeItem(`${PREFIX}:sessions:${kidId}`);
     localStorage.removeItem(`${PREFIX}:purchases:${kidId}`);
     localStorage.removeItem(`${PREFIX}:vault:${kidId}`);
+    localStorage.removeItem(`${PREFIX}:gifts:${kidId}`);
   }
 
   async loadCards(kidId: string): Promise<CardMap> {

@@ -18,9 +18,10 @@ import {
   type Firestore,
 } from 'firebase/firestore';
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
+import { buildGift } from '../game/gifting';
 import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
-import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type DeviceRecord, type Family, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type DeviceRecord, type Family, type GiftRecord, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { CampDoc } from '../game/overworld/camp';
 import { REGION_IDS, type RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
@@ -38,6 +39,7 @@ const BATCH_MAX = 450;
  *   families/{uid}/kids/{kidId}/sessions/{sessionId}
  *   families/{uid}/kids/{kidId}/purchases/{purchaseId}   (parent reads; written only with a game change)
  *   families/{uid}/kids/{kidId}/world/main              (the Overworld save; the kid and the parent read and write it)
+ *   families/{uid}/kids/{kidId}/gifts/{purchaseId}        (a gift received; created in the gift transaction, `seen` set once by the receiver)
  *   families/{uid}/kids/{kidId}/vault/{depositId}        (a deposit; created only with the gems it takes, paid only with the gems it gives)
  * Firestore's persistent cache makes every write work offline and sync later.
  */
@@ -67,6 +69,10 @@ export class FirestoreRepo implements Repo {
 
   private sessions(kidId: string) {
     return collection(this.db, 'families', this.uid, 'kids', kidId, 'sessions');
+  }
+
+  private gifts(kidId: string) {
+    return collection(this.db, 'families', this.uid, 'kids', kidId, 'gifts');
   }
 
   private vault(kidId: string) {
@@ -109,6 +115,10 @@ export class FirestoreRepo implements Repo {
 
   async setSchoolMode(on: boolean): Promise<void> {
     await setDoc(this.family(), { schoolMode: on }, { merge: true });
+  }
+
+  async setGifting(on: boolean): Promise<void> {
+    await setDoc(this.family(), { gifting: on }, { merge: true });
   }
 
   async listDevices(): Promise<DeviceRecord[]> {
@@ -290,6 +300,37 @@ export class FirestoreRepo implements Repo {
   async listVault(kidId: string, max: number): Promise<VaultDeposit[]> {
     const snap = await getDocs(query(this.vault(kidId), orderBy('createdAt', 'desc'), limit(max)));
     return snap.docs.map((d) => fromStored(d.data()));
+  }
+
+  async giftItem(giverId: string, receiverId: string, itemId: string): Promise<KidGame> {
+    const gRef = doc(this.kids(), giverId);
+    const rRef = doc(this.kids(), receiverId);
+    return runTransaction(this.db, async (tx) => {
+      const [gSnap, rSnap] = await Promise.all([tx.get(gRef), tx.get(rRef)]);
+      if (!gSnap.exists() || !rSnap.exists()) throw new Error('That player was removed.');
+      // Both docs are read in the transaction, so a gift to a kid who just got the item (or a giver who just spent the gems) fails here, not in the rules.
+      const w = buildGift(normalizeKid(gSnap.data() as Kid), normalizeKid(rSnap.data() as Kid), itemId, newId(), Date.now());
+      // The four writes of one gift (firestore.rules: giftDropBacked, giftEntryOk, giftReceiveOk, giftDocOk). The giver's kid doc names the purchases doc (lastPurchaseId).
+      tx.set(doc(this.purchases(giverId), w.entry.id), w.entry);
+      tx.update(gRef, { game: splitGame(w.giver).game });
+      tx.set(doc(this.gifts(receiverId), w.gift.id), w.gift);
+      tx.update(rRef, { inventory: splitGame(w.receiver).inventory });
+      return w.giver;
+    });
+  }
+
+  async listSiblings(kidId: string): Promise<Kid[]> {
+    const snap = await getDocs(this.kids());
+    return snap.docs.map((d) => normalizeKid(d.data() as Kid)).filter((k) => k.id !== kidId).sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  async listGifts(kidId: string, max: number): Promise<GiftRecord[]> {
+    const snap = await getDocs(query(this.gifts(kidId), orderBy('at', 'desc'), limit(max)));
+    return snap.docs.map((d) => d.data() as GiftRecord);
+  }
+
+  async markGiftSeen(kidId: string, giftId: string): Promise<void> {
+    await updateDoc(doc(this.gifts(kidId), giftId), { seen: true });
   }
 
   async listPurchases(kidId: string, max: number): Promise<PurchaseLog[]> {
