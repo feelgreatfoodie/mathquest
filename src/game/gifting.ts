@@ -35,7 +35,7 @@ export function giftProblem(giver: Pick<Kid, 'id' | 'game'>, receiver: Pick<Kid,
 export interface GiftWrite {
   /** The giver after paying: gems down by the price, lastPurchaseId set. Nothing else changes. */
   giver: KidGame;
-  /** The receiver after the gift: the item at the end of `items` and its giftFrom entry. Equipped and goal stay. */
+  /** The receiver after the gift: the item at the end of `items`, its giftFrom entry and its giftAt (the local repo keeps `at`; the Firestore repo stamps the server time instead). Equipped and goal stay. */
   receiver: KidGame;
   /** The giver's purchases record. */
   entry: PurchaseLog;
@@ -55,7 +55,7 @@ export function buildGift(giver: Kid, receiver: Kid, itemId: string, id: string,
   const items = receiver.game.items ?? [];
   return {
     giver: { ...giver.game, gems: giver.game.gems - cost, lastPurchaseId: id },
-    receiver: { ...receiver.game, items: [...items, itemId], giftFrom: { ...(receiver.game.giftFrom ?? {}), [itemId]: giver.id } },
+    receiver: { ...receiver.game, items: [...items, itemId], giftFrom: { ...(receiver.game.giftFrom ?? {}), [itemId]: giver.id }, giftAt: { ...(receiver.game.giftAt ?? {}), [itemId]: at } },
     entry: { id, kind: 'gift', to: receiver.id, itemId, cost, at },
     gift: { id, from: giver.id, itemId, at, seen: false },
   };
@@ -90,7 +90,7 @@ export function giftHistory(kids: readonly Pick<Kid, 'id' | 'name'>[], purchases
   for (const [from, logs] of Object.entries(purchases)) {
     for (const p of logs) {
       if (p.kind !== 'gift' || !p.to || !p.itemId) continue;
-      rows.push({ id: p.id, at: p.at, from, fromName: nameOf(from), to: p.to, toName: nameOf(p.to), itemId: p.itemId, itemName: itemById(p.itemId)?.name ?? p.itemId, cost: p.cost });
+      rows.push({ id: p.id, at: p.at, from, fromName: nameOf(from), to: p.to, toName: nameOf(p.to), itemId: p.itemId, itemName: itemById(p.itemId)?.name ?? p.itemId, cost: p.cost ?? 0 });
     }
   }
   return rows.sort((a, b) => b.at - a.at);

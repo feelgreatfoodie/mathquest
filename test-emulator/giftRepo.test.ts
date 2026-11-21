@@ -45,7 +45,7 @@ describe('FirestoreRepo gifting under the rules', () => {
     expect(a.game.gems).toBe(145);
     expect(a.inventory).toEqual({ items: ['w-sword'], equipped: { weapon: 'w-sword' } });
     const b = (await getDoc(doc(p, `families/${FAM}/kids/${B}`))).data()!;
-    expect(b.inventory).toEqual({ items: ['c-flag', 'w-bow'], goal: 'p-owl', giftFrom: { 'w-bow': A } });
+    expect(b.inventory).toEqual({ items: ['c-flag', 'w-bow'], goal: 'p-owl', giftFrom: { 'w-bow': A }, giftAt: { 'w-bow': expect.anything() } });
     expect(b.game.gems).toBe(10);
     const repo = new FirestoreRepo(parentDb(), FAM);
     expect(await repo.listPurchases(A, 5)).toMatchObject([{ kind: 'gift', to: B, itemId: 'w-bow', cost: 55 }]);
@@ -59,7 +59,7 @@ describe('FirestoreRepo gifting under the rules', () => {
     expect((await rb.listGifts(B, 5))[0]!.seen).toBe(true);
     await rb.applyGameDelta(B, { equip: 'w-bow' });
     const b = (await getDoc(doc(parentDb(), `families/${FAM}/kids/${B}`))).data()!;
-    expect(b.inventory).toMatchObject({ items: ['c-flag', 'w-bow'], equipped: { weapon: 'w-bow' }, giftFrom: { 'w-bow': A } });
+    expect(b.inventory).toMatchObject({ items: ['c-flag', 'w-bow'], equipped: { weapon: 'w-bow' }, giftFrom: { 'w-bow': A }, giftAt: { 'w-bow': expect.anything() } });
   });
   it('a second gift of the same item is refused by the repo before any write', async () => {
     const ra = new FirestoreRepo(kidDb(A), FAM);

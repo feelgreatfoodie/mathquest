@@ -1,5 +1,6 @@
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
 import { buildGift } from '../game/gifting';
+import { buildSale, sellingOn } from '../game/selling';
 import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, maturesAtOf, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
 import { normalizeKid, type CardMap, type CardState, type DeviceRecord, type Family, type GiftRecord, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
@@ -66,6 +67,15 @@ export class LocalRepo implements Repo {
   async setGifting(on: boolean): Promise<void> {
     const f = read<Family | null>('family', null);
     if (f) write('family', { ...f, gifting: on });
+  }
+
+  async setSelling(on: boolean): Promise<void> {
+    const f = read<Family | null>('family', null);
+    if (f) write('family', { ...f, selling: on });
+  }
+
+  async getSelling(): Promise<boolean> {
+    return sellingOn(read<Family | null>('family', null));
   }
 
   async listDevices(): Promise<DeviceRecord[]> {
@@ -226,6 +236,16 @@ export class LocalRepo implements Repo {
     this.patchKid(giverId, (k) => ({ ...k, game: w.giver }));
     this.patchKid(receiverId, (k) => ({ ...k, game: w.receiver }));
     return w.giver;
+  }
+
+  async sellItem(kidId: string, itemId: string): Promise<KidGame> {
+    const kid = read<Kid[]>('kids', []).find((k) => k.id === kidId);
+    if (!kid) throw new Error('That player was removed.');
+    if (!sellingOn(read<Family | null>('family', null))) throw new GameDeltaError('Selling is off.');
+    const w = buildSale(normalizeKid(kid), itemId, newId(), Date.now());
+    write(`purchases:${kidId}`, [...read<PurchaseLog[]>(`purchases:${kidId}`, []), w.entry]);
+    this.patchKid(kidId, (k) => ({ ...k, game: w.game }));
+    return w.game;
   }
 
   async listSiblings(kidId: string): Promise<Kid[]> {

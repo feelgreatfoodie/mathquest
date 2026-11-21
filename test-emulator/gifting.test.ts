@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 // Gifting (item-powers PDR, section 3). A kid buys a catalog item for a sibling. One batch writes four docs: the giver's kid doc
@@ -86,7 +86,9 @@ function giftBatch(db: Db, o: GiftOpts = {}) {
   }
   if (o.entry !== null) b.set(purchaseRef(db, GIVER, pid), o.entry ?? { id: pid, kind: 'gift', to, itemId, cost: price, at: 1000 });
   if (!o.skipReceiver) {
-    const inv = o.rcvInventory === undefined ? { items: [...RCV_INV.items, itemId], giftFrom: { [itemId]: GIVER } } : o.rcvInventory;
+    const base = o.rcvInventory === undefined ? { items: [...RCV_INV.items, itemId], giftFrom: { [itemId]: GIVER } } : o.rcvInventory;
+    // The sell-back PR stamps every gift with the server time (giftAt[item] = request.time). The helper adds it for the gifted item unless the test sets giftAt itself.
+    const inv = base && base.giftFrom && !('giftAt' in base) ? { ...base, giftAt: { [itemId]: serverTimestamp() } } : base;
     b.update(kidRef(db, to), { ...(inv ? { inventory: inv } : {}), ...(o.rcvExtra ?? {}) });
   }
   if (o.gift !== null) b.set(giftRef(db, to, pid), o.gift ?? { id: pid, from: GIVER, itemId, at: 1000, seen: false });
@@ -100,7 +102,7 @@ describe('a correct gift passes', () => {
     await assertSucceeds(giftBatch(kidDb()));
     const p = parentDb();
     expect((await getDoc(kidRef(p, GIVER))).data()?.game).toMatchObject({ gems: 145, lastPurchaseId: 'g1' });
-    expect((await getDoc(kidRef(p, RCV))).data()?.inventory).toEqual({ items: ['c-flag', 'w-bow'], giftFrom: { 'w-bow': GIVER } });
+    expect((await getDoc(kidRef(p, RCV))).data()?.inventory).toEqual({ items: ['c-flag', 'w-bow'], giftFrom: { 'w-bow': GIVER }, giftAt: { 'w-bow': expect.anything() } });
     expect((await getDoc(purchaseRef(p, GIVER, 'g1'))).data()).toMatchObject({ kind: 'gift', to: RCV, itemId: 'w-bow', cost: 55 });
     expect((await getDoc(giftRef(p, RCV, 'g1'))).data()).toMatchObject({ from: GIVER, itemId: 'w-bow', seen: false });
   });
@@ -240,7 +242,7 @@ describe('who may write across kids', () => {
     const b = writeBatch(db);
     b.update(kidRef(db, FOREIGN, OTHER_FAM), { game: game(445, { lastPurchaseId: 'g1' }) });
     b.set(doc(db, `families/${OTHER_FAM}/kids/${FOREIGN}/purchases/g1`), { id: 'g1', kind: 'gift', to: RCV, itemId: 'w-bow', cost: 55, at: 1 });
-    b.update(kidRef(db, RCV), { inventory: { items: ['c-flag', 'w-bow'], giftFrom: { 'w-bow': FOREIGN } } });
+    b.update(kidRef(db, RCV), { inventory: { items: ['c-flag', 'w-bow'], giftFrom: { 'w-bow': FOREIGN }, giftAt: { 'w-bow': serverTimestamp() } } });
     await assertFails(b.commit());
   });
   it('a kid token that names another family in the path is refused', async () => {

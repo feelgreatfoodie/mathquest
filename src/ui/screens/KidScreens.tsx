@@ -21,6 +21,7 @@ import type { RunInfo } from '../runShared';
 import { HeroShop, type OnGame } from '../HeroShop';
 import { GiftPresent } from '../GiftUi';
 import type { GiftApi } from '../giftApi';
+import type { SellApi } from '../sellApi';
 import type { RunSummary } from '../../engine/session';
 import { TABS, readTab, tabForKey, writeTab, type LandingTab } from '../landingTab';
 import { PinPad } from '../PinPad';
@@ -282,13 +283,13 @@ function WeekStars({ days, streak }: { days: ReturnType<typeof weekDays>; streak
   );
 }
 
-export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; onBack: () => void; vault?: VaultApi; gift?: GiftApi }) {
+export function KidHome(props: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; onBack: () => void; vault?: VaultApi; gift?: GiftApi; sell?: SellApi }) {
   return learnerOf(props.kid.settings) === 'prereader'
-    ? <PrereaderHome kid={props.kid} repo={props.repo} onStart={(mode) => { if (mode !== 'lightning') { writeLastMode(props.kid.id, mode); void props.repo.setWorldLastMode(props.kid.id, mode).catch(() => undefined); } props.onStart(mode); }} onBack={props.onBack} onGame={props.onGame} onTipGame={props.onTipGame} vault={props.vault} gift={props.gift} />
+    ? <PrereaderHome kid={props.kid} repo={props.repo} onStart={(mode) => { if (mode !== 'lightning') { writeLastMode(props.kid.id, mode); void props.repo.setWorldLastMode(props.kid.id, mode).catch(() => undefined); } props.onStart(mode); }} onBack={props.onBack} onGame={props.onGame} onTipGame={props.onTipGame} vault={props.vault} gift={props.gift} sell={props.sell} />
     : <ReaderHome {...props} />;
 }
 
-function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault, gift }: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; onBack: () => void; vault?: VaultApi; gift?: GiftApi }) {
+function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault, gift, sell }: { kid: Kid; repo: Repo; onStart: (mode?: GameModeId) => void; onGame: OnGame; onTipGame?: (game: KidGame) => void; onBack: () => void; vault?: VaultApi; gift?: GiftApi; sell?: SellApi }) {
   const [shop, setShop] = useState(false);
   const [shopVault, setShopVault] = useState(false);
   const hasVault = !!vault && vaultOn(kid.settings);
@@ -380,7 +381,7 @@ function ReaderHome({ kid, repo, onStart, onGame, onTipGame, onBack, vault, gift
         </div>
       </div>
       <GiftPresent api={gift} learner="reader" />
-      {shop ? <HeroShop kid={kid} learner="reader" onGame={onGame} vault={vault} gift={gift} openVault={shopVault} onClose={() => { setShop(false); setShopVault(false); }} /> : null}
+      {shop ? <HeroShop kid={kid} learner="reader" onGame={onGame} vault={vault} gift={gift} sell={sell} openVault={shopVault} onClose={() => { setShop(false); setShopVault(false); }} /> : null}
     </div>
   );
 }

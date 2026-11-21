@@ -155,6 +155,8 @@ export interface KidGame {
   goal?: string;
   /** Gifted items: item id to the kid id who gave it. Written only by the gift transaction (src/game/gifting.ts). Absent for a kid who was never given anything. */
   giftFrom?: Record<string, string>;
+  /** Gifted items: item id to the epoch ms of the gift, the server's clock. Read from the stored inventory (a server Timestamp) and never written back by the app: only the gift transaction stamps it (serverTimestamp). A gifted item with no entry here cannot be sold. */
+  giftAt?: Record<string, number>;
   /** Set by the write that buys a hero or an item: the id of its purchases doc, so the rules can find that doc. */
   lastPurchaseId?: string;
   /** Gems earned from runs on `gemsDay` (local YYYY-MM-DD). Absent on a game from before the throttle. Read it through `earnedTodayOf`. */
@@ -172,6 +174,8 @@ export interface Inventory {
   goal?: string;
   /** Item id to the giver's kid id, for each owned item that came as a gift. */
   giftFrom?: Record<string, string>;
+  /** Item id to the server Timestamp of the gift. The app never writes this key except through the gift transaction; the rules hold it equal to request.time there. */
+  giftAt?: Record<string, unknown>;
 }
 
 /**
@@ -182,10 +186,13 @@ export interface PurchaseLog {
   id: string;
   heroId?: string;
   itemId?: string;
-  /** 'gift': the giver paid `cost` for `itemId` and the sibling `to` got it. */
-  kind?: 'gift';
+  /** 'gift': the giver paid `cost` for `itemId` and the sibling `to` got it. 'sale': the kid sold `itemId` back for `refund` and the record has no `cost`. */
+  kind?: 'gift' | 'sale';
   to?: string;
-  cost: number;
+  /** Gems paid. Absent on a sale (read `refund`). */
+  cost?: number;
+  /** Gems paid out by a sale: half the catalog price, rounded down. */
+  refund?: number;
   /** Epoch ms. */
   at: number;
 }
@@ -256,6 +263,8 @@ export interface Family {
   schoolMode?: boolean;
   /** Gifting between siblings: on when missing. Written alone by Repo.setGifting. */
   gifting?: boolean;
+  /** Selling items back to the shop: on when missing. Written alone by Repo.setSelling. */
+  selling?: boolean;
 }
 
 /** One gift a kid received (families/{uid}/kids/{receiver}/gifts/{id}; the id is the giver's purchases doc id). */
@@ -465,6 +474,12 @@ export function normalizeGame(raw: unknown): KidGame {
   const gf = g.giftFrom && typeof g.giftFrom === 'object' && !Array.isArray(g.giftFrom) ? (g.giftFrom as Record<string, unknown>) : {};
   const giftFromEntries = Object.entries(gf).filter(([item, from]) => typeof from === 'string' && from && items.includes(item)) as [string, string][];
   const giftFrom = giftFromEntries.length ? Object.fromEntries(giftFromEntries) : undefined;
+  // giftAt reads a server Timestamp (or a number, from the local repo) as epoch ms, for owned gifted items only.
+  const ga = g.giftAt && typeof g.giftAt === 'object' && !Array.isArray(g.giftAt) ? (g.giftAt as Record<string, unknown>) : {};
+  const giftAtEntries = Object.entries(ga)
+    .map(([item, v]) => [item, giftMsOf(v)] as const)
+    .filter(([item, ms]) => ms !== null && items.includes(item)) as [string, number][];
+  const giftAt = giftAtEntries.length ? Object.fromEntries(giftAtEntries) : undefined;
   return {
     xp: num(g.xp, DEFAULT_GAME.xp),
     gems: num(g.gems, DEFAULT_GAME.gems),
@@ -477,6 +492,7 @@ export function normalizeGame(raw: unknown): KidGame {
     ...(Object.keys(equipped).length ? { equipped } : {}),
     ...(typeof g.goal === 'string' && g.goal ? { goal: g.goal } : {}),
     ...(giftFrom ? { giftFrom } : {}),
+    ...(giftAt ? { giftAt } : {}),
     ...(typeof g.gemsDay === 'string' && typeof g.gemsEarnedToday === 'number' && Number.isFinite(g.gemsEarnedToday)
       ? { gemsEarnedToday: g.gemsEarnedToday, gemsDay: g.gemsDay }
       : {}),
@@ -486,13 +502,20 @@ export function normalizeGame(raw: unknown): KidGame {
   };
 }
 
+/** A stored gift time as epoch ms: a number, or a Firestore Timestamp (anything with toMillis). Anything else reads as none. */
+function giftMsOf(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  const t = v as { toMillis?: unknown } | null;
+  return t && typeof t === 'object' && typeof t.toMillis === 'function' ? (t as { toMillis(): number }).toMillis() : null;
+}
+
 export function normalizeKid(raw: Kid): Kid {
   const { inventory, ...rest } = raw;
   const g = (raw as { game?: unknown }).game;
   const base = g && typeof g === 'object' ? (g as Record<string, unknown>) : {};
   // The stored inventory wins over any items, equipped or goal left in game.
   const inv = inventory && typeof inventory === 'object' ? (inventory as unknown as Record<string, unknown>) : {};
-  const merged = { ...base, ...(inventory ? { items: inv.items, equipped: inv.equipped, goal: inv.goal, giftFrom: inv.giftFrom } : {}) };
+  const merged = { ...base, ...(inventory ? { items: inv.items, equipped: inv.equipped, goal: inv.goal, giftFrom: inv.giftFrom, giftAt: inv.giftAt } : {}) };
   if (!rest.settings || typeof rest.settings !== 'object') return { ...rest, game: normalizeGame(merged) };
   // A stored pause carries a server Timestamp; the app reads it as milliseconds. A malformed pause reads as none.
   const { pause: stored, ...others } = rest.settings;
@@ -505,7 +528,8 @@ export function normalizeKid(raw: Kid): Kid {
  * for a game with no items, no equipped slot and no goal, so a kid who never shopped keeps a doc with no inventory.
  */
 export function splitGame(game: KidGame): { game: KidGame; inventory: Inventory | undefined } {
-  const { items, equipped, goal, giftFrom, ...rest } = game;
+  // giftAt stays out of both halves: it is read for display and written only by the gift transaction, as a server Timestamp.
+  const { items, equipped, goal, giftFrom, giftAt: _giftAt, ...rest } = game;
   const hasEquipped = !!equipped && Object.keys(equipped).length > 0;
   const hasGifts = !!giftFrom && Object.keys(giftFrom).length > 0;
   const hasAny = (items?.length ?? 0) > 0 || hasEquipped || !!goal;
