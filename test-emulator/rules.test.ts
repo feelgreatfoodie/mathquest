@@ -92,11 +92,11 @@ describe('kid token', () => {
     await assertFails(deleteDoc(doc(db, `families/${FAM}/kids/${SIBLING}/sessions/s1`)));
   });
 
-  it('cannot read or write a sibling', async () => {
+  it('cannot write a sibling or read a sibling cards; reads the sibling kid doc only while gifting is on (gifting.test.ts holds the off case)', async () => {
     const db = kidCtx().firestore();
-    await assertFails(getDoc(doc(db, `families/${FAM}/kids/${SIBLING}`)));
+    await assertSucceeds(getDoc(doc(db, `families/${FAM}/kids/${SIBLING}`)));
     await assertFails(getDocs(collection(db, `families/${FAM}/kids/${SIBLING}/cards`)));
-    await assertFails(getDocs(collection(db, `families/${FAM}/kids`)));
+    await assertSucceeds(getDocs(collection(db, `families/${FAM}/kids`)));
     await assertFails(setDoc(doc(db, `families/${FAM}/kids/${SIBLING}/cards/mul:9x9`), { id: 'mul:9x9' }));
     await assertFails(updateDoc(doc(db, `families/${FAM}/kids/${SIBLING}`), { game: { xp: 9 } }));
   });
@@ -125,7 +125,8 @@ describe('kid token', () => {
     const path = `families/${FAM}/kids/${KID}`;
     await assertFails(getDoc(doc(kidCtx({ role: 'parent' }).firestore(), path)));
     await assertFails(getDoc(doc(kidCtx({ familyUid: OTHER_FAM }).firestore(), path)));
-    await assertFails(getDoc(doc(kidCtx({ kidId: SIBLING }).firestore(), path)));
+    // A sibling token of the same family reads the kid doc while gifting is on (the gift picker); the write rules never let it in.
+    await assertSucceeds(getDoc(doc(kidCtx({ kidId: SIBLING }).firestore(), path)));
     await assertFails(getDoc(doc(env.authenticatedContext('kid_x', { familyUid: FAM, kidId: KID }).firestore(), path)));
   });
 });

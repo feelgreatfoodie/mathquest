@@ -185,6 +185,9 @@ describe('a gift that is not backed fails', () => {
   it('two items land on the receiver for one price', async () => {
     await assertFails(giftBatch(kidDb(), { rcvInventory: { items: ['c-flag', 'w-bow', 'w-sword'], giftFrom: { 'w-bow': GIVER } } }));
   });
+  it('two items land on the receiver with the gifted one last (a free extra sword)', async () => {
+    await assertFails(giftBatch(kidDb(), { rcvInventory: { items: ['c-flag', 'w-sword', 'w-bow'], giftFrom: { 'w-bow': GIVER } } }));
+  });
   it('the receiver loses an item', async () => {
     await assertFails(giftBatch(kidDb(), { rcvInventory: { items: ['w-bow'], giftFrom: { 'w-bow': GIVER } } }));
   });

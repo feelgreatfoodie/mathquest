@@ -58,13 +58,13 @@ describe('a signed-out device reads no kid, name or hero', () => {
     await assertFails(getDocs(collection(db, `families/${FAM}/kids`)));
     await assertFails(getDocs(collectionGroup(db, 'kids')));
   });
-  it('a kid token reads only its own kid doc, not a sibling', async () => {
+  it('a kid token reads its own kid doc, and a sibling kid doc only while gifting is on (the gift picker)', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await setDoc(doc(ctx.firestore(), `families/${FAM}/kids/kidbbbb`), { id: 'kidbbbb', name: 'Other', createdAt: 1, game: GAME });
     });
     await assertSucceeds(getDoc(doc(kidDb(), `families/${FAM}/kids/${KID}`)));
-    await assertFails(getDoc(doc(kidDb(), `families/${FAM}/kids/kidbbbb`)));
-    await assertFails(getDocs(collection(kidDb(), `families/${FAM}/kids`)));
+    await assertSucceeds(getDoc(doc(kidDb(), `families/${FAM}/kids/kidbbbb`)));
+    await assertSucceeds(getDocs(collection(kidDb(), `families/${FAM}/kids`)));
   });
 });
 
