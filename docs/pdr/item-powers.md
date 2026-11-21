@@ -37,7 +37,7 @@ Approved by Flynn on 2026-11-18. Builds on shop-2 (#24), the gem economy (#23), 
 - Any owned shop item can be sold back for half its price, rounded down. Heroes and legendary items can't be sold.
 - One confirm step: "Sell the Bow for 27 gems?" Pre-readers see a big gem-and-check confirm.
 - It writes a sale record (`kind: 'sale'`, `itemId`, `refund`) in the same transaction. The gem rise and the removal from `owned` are legal only with that record. (The heroes-never-shrink rule from #13 stays for heroes.)
-- The item is unequipped first. A gifted item can't be sold for 7 days.
+- The item is unequipped first. A gifted item can't be sold for 7 days. The wait is held by a lock doc (kids/{receiver}/giftLocks/{item}), written in the gift batch with the server time, so a save that strips the inventory's gift notes cannot lift it.
 - Selling never counts toward the daily gem throttle.
 - Parent setting: selling on or off (default on).
 

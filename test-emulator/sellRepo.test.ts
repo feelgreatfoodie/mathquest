@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { assertFails, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
+import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { Timestamp, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FirestoreRepo } from '../src/data/firestoreRepo';
@@ -103,12 +103,22 @@ describe('gifted items through the repo', () => {
     await expect(rb.sellItem(B, 'w-hammer')).rejects.toThrow(/You can sell this in 7 days/);
     // 8 days later (the stored stamp moves back, as the clock would move forward).
     await env.withSecurityRulesDisabled(async (ctx) => updateDoc(doc(ctx.firestore(), `families/${FAM}/kids/${B}`), { 'inventory.giftAt.w-hammer': Timestamp.fromMillis(Date.now() - 8 * DAY) }));
+    await env.withSecurityRulesDisabled(async (ctx) => updateDoc(doc(ctx.firestore(), `families/${FAM}/kids/${B}/giftLocks/w-hammer`), { at: Timestamp.fromMillis(Date.now() - 8 * DAY) }));
     const g = await rb.sellItem(B, 'w-hammer');
     expect(g.gems).toBe(45);
     const after = await stored(B);
     expect(after.inventory.items).toEqual(['c-flag']);
     expect(after.inventory.giftFrom ?? {}).toEqual({});
     expect(after.inventory.giftAt ?? {}).toEqual({});
+  });
+  it('a gift whose notes a kid save stripped still waits: the repo reads the lock, and the sale is refused', async () => {
+    await new FirestoreRepo(kidDb(A), FAM).giftItem(A, B, 'w-hammer');
+    const rb = new FirestoreRepo(kidDb(B), FAM);
+    // An older bundle's save: the inventory without giftFrom and giftAt (the rules let it through).
+    await assertSucceeds(updateDoc(doc(kidDb(B), `families/${FAM}/kids/${B}`), { inventory: { items: ['c-flag', 'w-hammer'] } }));
+    expect((await stored(B)).inventory.giftFrom).toBeUndefined();
+    await expect(rb.sellItem(B, 'w-hammer')).rejects.toThrow(/You can sell this in 7 days/);
+    expect((await stored(B)).inventory.items).toEqual(['c-flag', 'w-hammer']);
   });
   it('an ordinary save after the gift keeps giftFrom and giftAt (the inventory is written by path)', async () => {
     await new FirestoreRepo(kidDb(A), FAM).giftItem(A, B, 'w-hammer');
