@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { HEROES, type GameDelta } from '../engine/game';
 import { shop2On, type Kid, type Learner } from '../engine/models';
 import { vaultOn } from '../game/vault';
-import { ITEMS, type EquipSlot, type ItemTier } from '../game/shop/catalog';
+import { ITEMS, isSellable, saleRefund, type EquipSlot, type ItemTier } from '../game/shop/catalog';
+import { giftTimeMissing, giftWaitDays, sellProblem, sellWaitText } from '../game/selling';
 import { equippedOf, ownedItems } from '../game/shop/shopState';
 import { chime } from './early/sounds';
 import { speak } from './early/useSpeech';
@@ -13,6 +14,8 @@ import { ShopStall, VaultDoor } from './pixel';
 import { useDeposits, type VaultApi } from './vaultApi';
 import { useSiblings, type GiftApi } from './giftApi';
 import { PrereaderGiftSheet, ReaderGiftSheet } from './GiftUi';
+import { useSelling, type SellApi } from './sellApi';
+import { PrereaderSellSheet, ReaderSellSheet, type SellItem } from './SellUi';
 
 export type OnGame = (delta: GameDelta) => Promise<boolean>;
 
@@ -24,6 +27,8 @@ interface Props {
   vault?: VaultApi;
   /** Gifts to brothers and sisters, when the app has them. The Gift button shows only while the kid has at least one sibling to give to. */
   gift?: GiftApi;
+  /** Selling items back, when the app has it. The Sell button shows only while the family has selling on. */
+  sell?: SellApi;
   /** Open on the Vault tab (the home chest does). */
   openVault?: boolean;
   onClose: () => void;
@@ -78,16 +83,36 @@ function stateOf(kid: Kid, e: Entry): CardState {
 const wearable = (e: Entry) => e.kind === 'hero' || Boolean(e.slot);
 
 /** One shop for both modes: a text modal for readers, a picture-and-voice screen for pre-readers. */
-export function HeroShop({ kid, learner, onGame, vault, gift, openVault, onClose }: Props) {
-  return learner === 'prereader' ? <PrereaderShop kid={kid} onGame={onGame} vault={vault} gift={gift} openVault={openVault} onClose={onClose} /> : <ReaderShop kid={kid} onGame={onGame} vault={vault} gift={gift} openVault={openVault} onClose={onClose} />;
+export function HeroShop({ kid, learner, onGame, vault, gift, sell, openVault, onClose }: Props) {
+  return learner === 'prereader' ? <PrereaderShop kid={kid} onGame={onGame} vault={vault} gift={gift} sell={sell} openVault={openVault} onClose={onClose} /> : <ReaderShop kid={kid} onGame={onGame} vault={vault} gift={gift} sell={sell} openVault={openVault} onClose={onClose} />;
 }
 
 const TIER_LABEL: Record<ItemTier, string> = { common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' };
 
-function ReaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Props, 'learner'>) {
+/** What the shop shows beside an owned item: nothing for a hero or a legendary item, the Sell button, or the plain reason a gift cannot be sold yet. */
+function sellStateOf(kid: Kid, e: Entry, now: number): 'none' | 'ready' | { wait: string } {
+  if (e.kind !== 'item' || !isSellable(e.id)) return 'none';
+  const problem = sellProblem(kid.game, e.id, now);
+  if (!problem) return 'ready';
+  return { wait: giftTimeMissing(kid.game, e.id) ? problem : sellWaitText(giftWaitDays(kid.game, e.id, now)) };
+}
+
+function SellControl({ st, onSell }: { st: ReturnType<typeof sellStateOf>; onSell: () => void }) {
+  if (st === 'none') return null;
+  if (st === 'ready') {
+    return <button type="button" className="btn btn-small btn-ghost shop-btn-48" data-testid="sell-button" onClick={onSell}>Sell</button>;
+  }
+  return <span className="sell-wait muted" data-testid="sell-locked">{st.wait}</span>;
+}
+
+const toSellItem = (kid: Kid, e: Entry): SellItem => ({ id: e.id, name: e.name, refund: saleRefund(e.id), worn: !!e.slot && equippedOf(kid.game)[e.slot] === e.id });
+
+function ReaderShop({ kid, onGame, vault, gift, sell, openVault, onClose }: Omit<Props, 'learner'>) {
   const full = shop2On(kid.settings);
   const sib = useSiblings(gift, kid.game.gems);
   const [giving, setGiving] = useState<Entry | null>(null);
+  const selling = useSelling(sell);
+  const [selling1, setSelling1] = useState<Entry | null>(null);
   const hasVault = !!vault && vaultOn(kid.settings);
   const [tab, setTab] = useState<ShopTab>(openVault && hasVault ? 'vault' : 'hero');
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -123,18 +148,21 @@ function ReaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Props
                 <span>{e.name}</span>
                 {e.tier && full ? <span className={`tier tier-${e.tier}`}>{TIER_LABEL[e.tier]}</span> : null}
                 {state === 'active' || state === 'owned' ? (
-                  wearable(e) ? (
-                    <button
-                      type="button"
-                      className="btn btn-small shop-btn-48"
-                      disabled={e.kind === 'hero' && state === 'active'}
-                      onClick={() => void onGame(state === 'active' && e.slot ? { unequip: e.slot } : { equip: e.id })}
-                    >
-                      {state === 'active' ? (e.kind === 'hero' ? 'Equipped' : 'Take off') : 'Equip'}
-                    </button>
-                  ) : (
-                    <span className="owned-tag">Owned</span>
-                  )
+                  <>
+                    {wearable(e) ? (
+                      <button
+                        type="button"
+                        className="btn btn-small shop-btn-48"
+                        disabled={e.kind === 'hero' && state === 'active'}
+                        onClick={() => void onGame(state === 'active' && e.slot ? { unequip: e.slot } : { equip: e.id })}
+                      >
+                        {state === 'active' ? (e.kind === 'hero' ? 'Equipped' : 'Take off') : 'Equip'}
+                      </button>
+                    ) : (
+                      <span className="owned-tag">Owned</span>
+                    )}
+                    {full && selling.on ? <SellControl st={sellStateOf(kid, e, Date.now())} onSell={() => setSelling1(e)} /> : null}
+                  </>
                 ) : confirming === e.id ? (
                   <span className="confirm-row">
                     <button type="button" className="btn btn-small shop-btn-48" onClick={() => { setConfirming(null); void onGame({ purchase: e.id }); }}>Buy for {e.cost}</button>
@@ -175,6 +203,7 @@ function ReaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Props
           onClose={() => setGiving(null)}
         />
       ) : null}
+      {selling1 ? <ReaderSellSheet item={toSellItem(kid, selling1)} onSell={() => selling.sell(selling1.id)} onClose={() => setSelling1(null)} /> : null}
     </div>
   );
 }
@@ -186,10 +215,15 @@ const SPARKLE_MS = 1100;
  * Six picture tabs. Tap a thing to hear its name. Tap an owned one to wear it. Tap one you can afford, then one
  * big confirm. Tap one you cannot afford yet and it goes in the jar. Every target is at least 120 px.
  */
-function PrereaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Props, 'learner'>) {
+function PrereaderShop({ kid, onGame, vault, gift, sell, openVault, onClose }: Omit<Props, 'learner'>) {
   const full = shop2On(kid.settings);
   const sib = useSiblings(gift, kid.game.gems);
   const [giving, setGiving] = useState<Entry | null>(null);
+  const selling = useSelling(sell);
+  // Sell mode: one big button turns it on, then an owned item opens the one big confirm instead of being worn.
+  const [sellMode, setSellMode] = useState(false);
+  const [selling1, setSelling1] = useState<Entry | null>(null);
+  const canSell = full && selling.on && ownedItems(kid.game).some(isSellable);
   const hasVault = !!vault && vaultOn(kid.settings);
   const [tab, setTab] = useState<ShopTab>(openVault && hasVault ? 'vault' : 'hero');
   const dep = useDeposits(vault, hasVault, kid.game.gems);
@@ -211,6 +245,12 @@ function PrereaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Pr
     if (busy.current) return;
     const state = stateOf(kid, e);
     void speak(`${e.name}!`);
+    if (sellMode && canSell && (state === 'owned' || state === 'active')) {
+      const st = sellStateOf(kid, e, Date.now());
+      if (st === 'ready') setSelling1(e);
+      else if (st !== 'none') void speak(st.wait);
+      return;
+    }
     if (state === 'owned' || (state === 'active' && e.slot)) {
       if (!wearable(e)) return;
       busy.current = true;
@@ -272,6 +312,10 @@ function PrereaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Pr
     );
   }
 
+  if (selling1) {
+    return <PrereaderSellSheet item={toSellItem(kid, selling1)} onSell={() => selling.sell(selling1.id)} onClose={() => setSelling1(null)} />;
+  }
+
   if (confirming) {
     return (
       <div className="screen center pshop pshop-confirm" aria-label={`Buy ${confirming.name}`}>
@@ -323,6 +367,21 @@ function PrereaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Pr
       ) : null}
       {onVault ? <PrereaderVault kid={kid} vault={vault!} deposits={dep.deposits} refresh={dep.refresh} /> : null}
       <div className="pshop-grid" style={onVault ? { display: 'none' } : undefined}>
+        {canSell ? (
+          <button
+            type="button"
+            className={`pshop-card pshop-sell-toggle ${sellMode ? 'is-on' : ''}`}
+            aria-label="Sell"
+            aria-pressed={sellMode}
+            data-testid="sell-mode"
+            onClick={() => {
+              setSellMode(!sellMode);
+              void speak(sellMode ? 'Done selling.' : 'Tap what you want to sell.');
+            }}
+          >
+            <UiIcon name="gem" size={56} /><UiIcon name="arrow-down" size={56} />
+          </button>
+        ) : null}
         {entries.map((e) => {
           const state = stateOf(kid, e);
           const pinned = goal === e.id;
@@ -330,7 +389,7 @@ function PrereaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Pr
             <button
               key={e.id}
               type="button"
-              className={`pshop-card is-${state} ${pinned ? 'is-goal' : ''} ${e.tier === 'legendary' ? 'is-legendary' : ''}`}
+              className={`pshop-card is-${state} ${pinned ? 'is-goal' : ''} ${e.tier === 'legendary' ? 'is-legendary' : ''} ${sellMode && canSell && (state === 'owned' || state === 'active') && sellStateOf(kid, e, Date.now()) !== 'none' ? 'is-sell' : ''}`}
               data-item={e.id}
               data-hero={e.kind === 'hero' ? e.id : undefined}
               data-state={state}
@@ -340,7 +399,11 @@ function PrereaderShop({ kid, onGame, vault, gift, openVault, onClose }: Omit<Pr
               <Sprite name={e.id} size={104} className={state === 'active' ? 'bob' : undefined} />
               <span className="pshop-tag">
                 {state === 'active' || state === 'owned' ? (
-                  <UiIcon name="check" size={44} />
+                  sellMode && canSell && sellStateOf(kid, e, Date.now()) !== 'none' ? (
+                    sellStateOf(kid, e, Date.now()) === 'ready' ? <><UiIcon name="gem" size={40} /><span className="tally-num">{saleRefund(e.id)}</span></> : <UiIcon name="lock" size={44} />
+                  ) : (
+                    <UiIcon name="check" size={44} />
+                  )
                 ) : (
                   <>
                     <UiIcon name="gem" size={40} />

@@ -16,6 +16,7 @@ import { UpdatePrompt, UpdateScreen } from './ui/UpdateScreen';
 import { reportFailure } from './ui/failures';
 import type { VaultApi } from './ui/vaultApi';
 import type { GiftApi } from './ui/giftApi';
+import type { SellApi } from './ui/sellApi';
 import { unseenGifts } from './game/gifting';
 import { forgetDeviceKids, rememberKids } from './data/deviceKids';
 import { forgetTiles, readTiles, rememberTile, type PasscodeKind } from './data/deviceTiles';
@@ -337,6 +338,31 @@ export function App() {
     };
   };
 
+  /** Selling for one kid: whether it is on, and selling an owned item back. A refusal shows a toast. */
+  const sellFor = (kidId: string): SellApi | undefined => {
+    if (!repo) return undefined;
+    return {
+      on: () => repo.getSelling().catch(() => true),
+      sell: async (itemId) => {
+        try {
+          showGame(kidId, await repo.sellItem(kidId, itemId));
+          return 'ok';
+        } catch (e) {
+          if (e instanceof GameDeltaError) {
+            reportFailure(e.message, e);
+            return e.message === 'Selling is off.' ? 'off' : 'failed';
+          }
+          if ((e as { code?: string }).code === 'permission-denied') {
+            reportFailure('Selling is not available right now.', e);
+            return 'off';
+          }
+          reportFailure('That sale was not saved.', e);
+          return 'failed';
+        }
+      },
+    };
+  };
+
   /** The vault for one kid. Every chunk of a payout saves on its own, and the screen shows the stored gems after each. */
   const vaultFor = (kidId: string): VaultApi | undefined => {
     if (!repo) return undefined;
@@ -528,6 +554,7 @@ export function App() {
           kid={kid}
           vault={vaultFor(kid.id)}
           gift={giftFor(kid.id)}
+          sell={sellFor(kid.id)}
           onGame={(d) => applyGame(kid.id, d)}
           onTipGame={(g) => showGame(kid.id, g)}
           repo={repo}

@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   deleteField,
+  FieldPath,
   doc,
   getDoc,
   getDocs,
@@ -19,9 +20,10 @@ import {
 } from 'firebase/firestore';
 import { applyDelta, GameDeltaError, purchaseTarget, type GameDelta } from '../engine/game';
 import { buildGift } from '../game/gifting';
+import { buildSale, sellingOn } from '../game/selling';
 import { creditCheckpoint } from '../engine/tripCheckpoint';
 import { PAY_CHUNK, bonusFor, depositProblem, owedOf, rateOf, vaultOn, type VaultDeposit, type VaultPointer, type VaultStatus, type VaultTerm } from '../game/vault';
-import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type DeviceRecord, type Family, type GiftRecord, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
+import { normalizeKid, sameInventory, splitGame, type CardMap, type CardState, type DeviceRecord, type Family, type GiftRecord, type Inventory, type Kid, type KidAvatar, type KidGame, type KidSettings, type PurchaseLog, type SessionLog } from '../engine/models';
 import type { CampDoc } from '../game/overworld/camp';
 import { REGION_IDS, type RegionId } from '../game/overworld/maps';
 import type { WorldState } from '../game/overworld/worldState';
@@ -119,6 +121,19 @@ export class FirestoreRepo implements Repo {
 
   async setGifting(on: boolean): Promise<void> {
     await setDoc(this.family(), { gifting: on }, { merge: true });
+  }
+
+  async setSelling(on: boolean): Promise<void> {
+    await setDoc(this.family(), { selling: on }, { merge: true });
+  }
+
+  async getSelling(): Promise<boolean> {
+    try {
+      return sellingOn((await getDoc(this.family())).data() as Family | undefined);
+    } catch {
+      // A kid token cannot read the family doc. The rules still decide each sale.
+      return true;
+    }
   }
 
   async listDevices(): Promise<DeviceRecord[]> {
@@ -244,7 +259,12 @@ export class FirestoreRepo implements Repo {
       // buy writes game alone, the same shape an old bundle writes.
       const out = splitGame(next);
       const changed = !sameInventory(splitGame(current).inventory, out.inventory);
-      tx.update(ref, { game: out.game, ...(changed ? { inventory: out.inventory ?? { items: [] } } : {}) });
+      if (changed) {
+        // Field by field, so giftFrom and giftAt stay as stored: the rules hold both, and giftAt is a server Timestamp the app cannot write back.
+        tx.update(ref, ...inventoryUpdate(out.inventory, splitGame(current).inventory), new FieldPath('game'), out.game);
+      } else {
+        tx.update(ref, { game: out.game });
+      }
       return next;
     });
   }
@@ -314,8 +334,39 @@ export class FirestoreRepo implements Repo {
       tx.set(doc(this.purchases(giverId), w.entry.id), w.entry);
       tx.update(gRef, { game: splitGame(w.giver).game });
       tx.set(doc(this.gifts(receiverId), w.gift.id), w.gift);
-      tx.update(rRef, { inventory: splitGame(w.receiver).inventory });
+      // The receiver's side is written field by field: items and giftFrom as the build made them, and giftAt of this item stamped by the server
+      // (the rules hold it equal to request.time, and the 7-day sale lock reads it). Equipped, goal and the other giftAt entries stay as stored.
+      tx.update(
+        rRef,
+        new FieldPath('inventory', 'items'), w.receiver.items ?? [],
+        new FieldPath('inventory', 'giftFrom'), w.receiver.giftFrom ?? {},
+        new FieldPath('inventory', 'giftAt', itemId), serverTimestamp(),
+      );
       return w.giver;
+    });
+  }
+
+  async sellItem(kidId: string, itemId: string): Promise<KidGame> {
+    const ref = doc(this.kids(), kidId);
+    return runTransaction(this.db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error('That player was removed.');
+      const stored = snap.data() as Kid;
+      // The sale record is created in the same batch as the kid doc change (firestore.rules saleBacked and saleEntryOk).
+      const w = buildSale(normalizeKid(stored), itemId, newId(), Date.now());
+      tx.set(doc(this.purchases(kidId), w.entry.id), w.entry);
+      // Only the fields a sale changes are written, by path: game.gems and game.lastPurchaseId (the rules hold `game` to those two, so a
+      // stored field this build does not know is never touched), the owned list, the cleared slot and the sold item's gift notes.
+      const args: unknown[] = [
+        new FieldPath('game', 'gems'), w.game.gems,
+        new FieldPath('game', 'lastPurchaseId'), w.entry.id,
+        new FieldPath('inventory', 'items'), w.game.items ?? [],
+      ];
+      if (w.clearedSlot) args.push(new FieldPath('inventory', 'equipped', w.clearedSlot), deleteField());
+      if (stored.inventory?.giftFrom && itemId in stored.inventory.giftFrom) args.push(new FieldPath('inventory', 'giftFrom', itemId), deleteField());
+      if (stored.inventory?.giftAt && itemId in stored.inventory.giftAt) args.push(new FieldPath('inventory', 'giftAt', itemId), deleteField());
+      tx.update(ref, ...(args as [FieldPath, unknown, ...unknown[]]));
+      return w.game;
     });
   }
 
@@ -437,4 +488,17 @@ function fromStored(raw: Record<string, unknown>): VaultDeposit {
     createdAt: ms(raw.createdAt) || Date.now(),
     ...(raw.collectedAt ? { collectedAt: ms(raw.collectedAt) } : {}),
   };
+}
+
+/**
+ * The inventory fields that changed, as path and value pairs for a transaction update. Items are always written; equipped and goal are
+ * written when set and deleted when they were stored and are now empty. giftFrom and giftAt are never part of it.
+ */
+function inventoryUpdate(next: Inventory | undefined, prev: Inventory | undefined): [FieldPath, unknown, ...unknown[]] {
+  const out: unknown[] = [new FieldPath('inventory', 'items'), next?.items ?? []];
+  if (next?.equipped) out.push(new FieldPath('inventory', 'equipped'), next.equipped);
+  else if (prev?.equipped) out.push(new FieldPath('inventory', 'equipped'), deleteField());
+  if (next?.goal) out.push(new FieldPath('inventory', 'goal'), next.goal);
+  else if (prev?.goal) out.push(new FieldPath('inventory', 'goal'), deleteField());
+  return out as [FieldPath, unknown, ...unknown[]];
 }

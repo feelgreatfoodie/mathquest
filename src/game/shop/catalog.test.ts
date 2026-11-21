@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { HEROES } from '../../engine/game';
 import { ITEM_SPRITES } from '../../ui/itemSprites';
-import { EQUIP_SLOTS, ITEMS, TIER_BANDS, itemById, slotOf } from './catalog';
+import { EQUIP_SLOTS, ITEMS, LEGENDARY_ITEMS, TIER_BANDS, isSellable, itemById, saleRefund, slotOf } from './catalog';
 
 const rules = readFileSync(new URL('../../../firestore.rules', import.meta.url), 'utf8');
 function priceMap(fn: string): Record<string, number> {
@@ -74,5 +74,35 @@ describe('the price maps in firestore.rules', () => {
   });
   it('heroPrices still lists the 5 heroes at their prices', () => {
     expect(priceMap('heroPrices')).toEqual(Object.fromEntries(HEROES.map((h) => [h.id, h.cost])));
+  });
+});
+
+describe('selling back (item powers PDR, section 4)', () => {
+  it('saleRefund is half the catalog price rounded down, for every catalog item', () => {
+    for (const i of ITEMS) expect(saleRefund(i.id), i.id).toBe(Math.floor(i.cost / 2));
+    expect(saleRefund('w-bow')).toBe(27);
+    expect(saleRefund('g-cape')).toBe(7);
+    expect(saleRefund('p-owl')).toBe(60);
+  });
+  it('saleRefund is 0 for an id that is not in the shop, and for a hero', () => {
+    expect(saleRefund('w-excalibur')).toBe(0);
+    expect(saleRefund('wizard')).toBe(0);
+  });
+  it('the legendary list is the legendary tier, and equals legendaryItems() in firestore.rules', () => {
+    expect([...LEGENDARY_ITEMS].sort()).toEqual(ITEMS.filter((i) => i.tier === 'legendary').map((i) => i.id).sort());
+    const body = /function legendaryItems\(\) \{\s*return \[([^\]]*)\];/.exec(rules);
+    expect(body, 'legendaryItems in firestore.rules').not.toBeNull();
+    const ids = [...body![1]!.matchAll(/'([a-z-]+)'/g)].map((m) => m[1]!);
+    expect(ids.sort()).toEqual([...LEGENDARY_ITEMS].sort());
+  });
+  it('isSellable: every common, rare and epic item; no legendary item, no hero, no unknown id', () => {
+    for (const i of ITEMS) expect(isSellable(i.id), i.id).toBe(i.tier !== 'legendary');
+    expect(isSellable('knight')).toBe(false);
+    expect(isSellable('dragon')).toBe(false);
+    expect(isSellable('x-fake')).toBe(false);
+  });
+  it('the rules compute the refund as math.floor(price / 2) from itemPrices()', () => {
+    expect(rules).toMatch(/function saleRefundOf\(price\) \{\s*return math\.floor\(price \/ 2\);/);
+    expect(rules).toMatch(/e\.refund == saleRefundOf\(itemPrices\(\)\[sold\]\)/);
   });
 });

@@ -101,8 +101,8 @@ service cloud.firestore {
     // starter among items). A token that adds a hero adds exactly one (the last in the list, as a purchase appends it), the hero
     // is in the catalog, and gems drop by exactly its price. The free starter hero (price 0) may be added with
     // a gem rise, because a doc with game {} gets its knight and a run's gems in one write; any drop is refused
-    // by gemsDropBacked. Without a hero or item change it passes, so runs and equips are unaffected. Only the kid branch
-    // uses this.
+    // by gemsDropBacked. Without a hero or item change it passes, so runs and equips are unaffected. A sale (items
+    // shrink by one, see itemsShrankByOne) is the last way through. Only the kid branch uses this.
     function kidHeroGrowthOk() {
       let before = resource.data.get('game', {});
       let after = request.resource.data.get('game', {});
@@ -121,7 +121,8 @@ service cloud.firestore {
         || (itemGrew && afterHeroes.size() == beforeHeroes.size()
           && afterItems[afterItems.size() - 1] in itemPrices()
           && !beforeItems.hasAny([afterItems[afterItems.size() - 1]])
-          && before.get('gems', 0) - after.get('gems', 0) == itemPrices()[afterItems[afterItems.size() - 1]]);
+          && before.get('gems', 0) - after.get('gems', 0) == itemPrices()[afterItems[afterItems.size() - 1]])
+        || itemsShrankByOne();
     }
 
     // The game economy is client-trusted by design: grading runs on the device, so a kid token can write any
@@ -130,11 +131,12 @@ service cloud.firestore {
     // for longer sessions). Gems: a run earns at most 10 (GEM_RUN_MAX in src/engine/gems.ts, after the Gem speed
     // and the throttle), so a kid write may raise gems by at most 10. There is no check against gems earned today:
     // the throttle slows the rate in the app and never stops a save. A drop is not limited here (gemsDropBacked
-    // and kidHeroGrowthOk handle it). Only the kid branch uses this; parents and the Admin SDK are unchanged.
+    // and kidHeroGrowthOk handle it). The one rise above 10 is a backed sale: its refund is capped by the catalog price
+    // and saleBacked lets nothing else in `game` change. Only the kid branch uses this; parents and the Admin SDK are unchanged.
     function kidRaiseOk() {
       let before = resource.data.get('game', {});
       let after = request.resource.data.get('game', {});
-      return after.get('gems', 0) - before.get('gems', 0) <= 10
+      return (after.get('gems', 0) - before.get('gems', 0) <= 10 || itemsShrankByOne())
         && after.get('xp', 0) - before.get('xp', 0) <= 2000;
     }
 
@@ -363,20 +365,23 @@ service cloud.firestore {
 
     // The inventory map is valid when it is unchanged, or when it holds only items, equipped and goal, the items
     // list is a list that keeps every earlier entry and grows by at most one (a buy), and a goal is a short string.
-    // giftFrom ({itemId: giver kidId}) is the only other key; the kid branch holds it with giftFromKept. A removed inventory reads as {} and loses its items, so it fails. The kid branch also needs one more rule
+    // giftFrom ({itemId: giver kidId}) and giftAt ({itemId: the server time of the gift}) are the only other keys; the kid branch holds them with
+    // giftFromKept. The items list keeps every earlier entry, except in a backed sale (saleBacked), where it shrinks by exactly the sold item. A
+    // removed inventory reads as {} and loses its items, so it fails. The kid branch also needs one more rule
     // (kidInventoryOk). Applies to the kid and the parent branch.
-    function inventoryOk() {
+    function inventoryOk(uid, kidId) {
       let before = resource.data.get('inventory', {});
       let after = request.resource.data.get('inventory', {});
       let beforeItems = before.get('items', []);
       let afterItems = after.get('items', []);
       return after == before
         || (after is map
-          && after.keys().hasOnly(['items', 'equipped', 'goal', 'giftFrom'])
+          && after.keys().hasOnly(['items', 'equipped', 'goal', 'giftFrom', 'giftAt'])
           && afterItems is list
           && afterItems.size() <= beforeItems.size() + 1
           && afterItems.size() <= inventoryCap()
-          && afterItems.hasAll(beforeItems)
+          && (afterItems.hasAll(beforeItems)
+            || (afterItems.size() == beforeItems.size() - 1 && saleBacked(uid, kidId)))
           && (!('goal' in after) || (after.goal is string && after.goal.size() <= 40)));
     }
 
@@ -396,7 +401,9 @@ service cloud.firestore {
     // before, nothing else added) and exactly `cost` fewer gems, and `cost` is the catalog price. get() reads the doc
     // before the write, getAfter() reads it after, so a lone entry, a wrong cost or a wrong hero is refused.
     function purchaseEntryOk(uid, kidId, purchaseId) {
-      return request.resource.data.keys().hasAny(['kind']) ? giftEntryOk(uid, kidId, purchaseId) : buyEntryOk(uid, kidId, purchaseId);
+      return request.resource.data.get('kind', '') == 'sale'
+        ? saleEntryOk(uid, kidId, purchaseId)
+        : (request.resource.data.keys().hasAny(['kind']) ? giftEntryOk(uid, kidId, purchaseId) : buyEntryOk(uid, kidId, purchaseId));
     }
     function buyEntryOk(uid, kidId, purchaseId) {
       let kidPath = /databases/$(database)/documents/families/$(uid)/kids/$(kidId);
@@ -437,7 +444,8 @@ service cloud.firestore {
     // four docs, and each rule reads the others with getAfter, so none of them stands alone:
     //   A. the giver's kid doc: gems drop by the price, lastPurchaseId names B, no hero or item changes (giftDropBacked).
     //   B. the giver's purchases/{id}: { id, kind: 'gift', to, itemId, cost, at }, cost = the catalog price = the drop (giftEntryOk).
-    //   C. the receiver's kid doc: inventory.items grows by that one item, inventory.giftFrom[item] = the giver (giftReceiveOk).
+    //   C. the receiver's kid doc: inventory.items grows by that one item, inventory.giftFrom[item] = the giver and
+    //      inventory.giftAt[item] = request.time, the server's clock, which the 7-day sale lock reads (giftReceiveOk).
     //   D. the receiver's gifts/{id}: { id, from, itemId, at, seen } (giftDocOk).
     // The family doc's `gifting` switch (default on) turns C and D off, and the sibling read with them.
     function kidPathOf(uid, id) {
@@ -501,13 +509,15 @@ service cloud.firestore {
         && idOk(g) && g != kidId
         && smallDoc() && a.id == kidId
         && a.diff(b).affectedKeys().hasOnly(['inventory'])
-        && ia is map && ia.keys().hasOnly(['items', 'equipped', 'goal', 'giftFrom'])
+        && ia is map && ia.keys().hasOnly(['items', 'equipped', 'goal', 'giftFrom', 'giftAt'])
         && itemsA is list && itemsA.size() == itemsB.size() + 1 && itemsA.size() <= inventoryCap() && itemsA.hasAll(itemsB)
         && item in itemPrices() && !itemsB.hasAny([item])
         && ia.get('equipped', {}) == ib.get('equipped', {})
         && ia.get('goal', '') == ib.get('goal', '')
         && ia.get('giftFrom', {}).diff(ib.get('giftFrom', {})).affectedKeys().hasOnly([item])
         && ia.get('giftFrom', {}).get(item, '') == g
+        && ia.get('giftAt', {}).diff(ib.get('giftAt', {})).affectedKeys().hasOnly([item])
+        && ia.get('giftAt', {}).get(item, null) == request.time
         && giftsOn(uid)
         && idOk(pid)
         && !exists(entry) && existsAfter(entry)
@@ -517,11 +527,15 @@ service cloud.firestore {
         && !exists(giftPath(uid, kidId, pid)) && existsAfter(giftPath(uid, kidId, pid));
     }
 
-    // The kid branch must not add or change giftFrom itself (only giftReceiveOk does). A write that leaves it out passes, so a save
-    // from an older bundle, which strips the field, is never blocked; it only loses the note.
+    // The kid branch must not add or change giftFrom or giftAt itself (only giftReceiveOk does). A write that leaves one out passes, so a
+    // save from an older bundle, which strips both, is never blocked; it only loses the note, and a gifted item with no giftAt is never
+    // sellable (saleMoveOk fails closed). The one other change is a backed sale, which removes the sold item's keys and no others.
     function giftFromKept() {
-      return !('giftFrom' in request.resource.data.get('inventory', {}))
-        || request.resource.data.get('inventory', {}).giftFrom == resource.data.get('inventory', {}).get('giftFrom', {});
+      let ia = request.resource.data.get('inventory', {});
+      let ib = resource.data.get('inventory', {});
+      return ((!('giftFrom' in ia) || ia.giftFrom == ib.get('giftFrom', {}))
+          && (!('giftAt' in ia) || ia.giftAt == ib.get('giftAt', {})))
+        || itemsShrankByOne();
     }
 
     // D, the gift doc on the receiver. Created in the batch with B (named by its own id, the purchase id) and C. The giver is the
@@ -556,6 +570,109 @@ service cloud.firestore {
     // The family `gifting` switch, when present, is a boolean. A write without it passes.
     function giftingSettingOk() {
       return !('gifting' in request.resource.data) || request.resource.data.gifting is bool;
+    }
+
+    // The family `selling` switch, when present, is a boolean. A write without it passes. Missing reads as on.
+    function sellingSettingOk() {
+      return !('selling' in request.resource.data) || request.resource.data.selling is bool;
+    }
+    function sellingOn(uid) {
+      return get(/databases/$(database)/documents/families/$(uid)).data.get('selling', true) == true;
+    }
+
+    // Selling back (docs/pdr/item-powers.md, section 4). A kid sells an owned shop item for half its catalog price, rounded down. One batch
+    // writes two docs, and each rule reads the other with get/getAfter, so neither stands alone:
+    //   A. the kid doc: game.gems rises by the refund, game.lastPurchaseId names B, inventory.items loses exactly the sold item.
+    //   B. kids/{k}/purchases/{id}: { id, kind: 'sale', itemId, refund, at } and nothing else (saleEntryOk).
+    // saleMoveOk holds the whole transition and both rules call it, so they cannot drift. Rules that give a sale its limits:
+    //   - rise == refund == B.refund == floor(price / 2). Nothing else in `game` changes (gems and lastPurchaseId only), so a sale
+    //     carries no run gems, no xp, no hero change and never touches the daily throttle fields.
+    //   - heroes and the legendary items (legendaryItems) cannot be sold; an item outside itemPrices() is refused.
+    //   - the write clears the sold item from every equipped slot. equippedOk alone misses a slot that still names the item,
+    //     because an unchanged equipped passes, so the sold item is checked against each slot here.
+    //   - a gifted item (giftFrom[item]) sells only once giftAt[item] + 7 days <= request.time. With no giftAt it never sells.
+    //     The sale removes giftFrom[item] and giftAt[item] and no other key of either map.
+    //   - the family `selling` switch (default on) turns it off.
+    // The rules run under a budget of 1000 expressions per request, and the kid-doc update already uses most of it, so the whole sale check
+    // (saleBacked) runs once, in inventoryOk. kidHeroGrowthOk, kidRaiseOk and giftFromKept read only the cheap shape of a sale, items
+    // shrinking by one. That is sound because every kid write also passes inventoryOk, and a shrink passes it only as a backed sale, whose
+    // saleMoveOk holds `game` to gems and lastPurchaseId and both gift maps to the sold item's keys.
+    function itemsShrankByOne() {
+      return itemsOf(request.resource.data).size() == itemsOf(resource.data).size() - 1;
+    }
+    function legendaryItems() {
+      return ['g-goldarmor', 'w-crystalstaff'];
+    }
+    // Half the catalog price, rounded down. itemPrices() builds a 23-entry map on every call, which costs expressions, so a rule calls it once.
+    function saleRefundOf(price) {
+      return math.floor(price / 2);
+    }
+    // b and a are the kid doc before and after the write, id the purchases doc id, e that doc's data. A function holds at most 10 `let`s, so
+    // the transition is 3 parts: the gems and the rest of `game`, the items and equipped slots, the gift notes.
+    function saleMoveOk(b, a, id, e) {
+      let gb = b.get('game', {});
+      let ga = a.get('game', {});
+      let sold = e.get('itemId', '');
+      return e.get('kind', '') == 'sale'
+        && sold is string && itemPrices().get(sold, 0) > 0 && !(sold in legendaryItems())
+        && e.get('refund', 0) is int && e.refund == saleRefundOf(itemPrices()[sold])
+        && ga.get('lastPurchaseId', '') == id
+        && gb.get('lastPurchaseId', '') != id
+        && ga.get('gems', 0) - gb.get('gems', 0) == e.refund
+        && ga.diff(gb).affectedKeys().hasOnly(['gems', 'lastPurchaseId'])
+        && saleItemsOk(b.get('inventory', {}), a.get('inventory', {}), sold)
+        && saleGiftNotesOk(b.get('inventory', {}), a.get('inventory', {}), sold);
+    }
+    function saleItemsOk(ib, ia, sold) {
+      let itemsB = ib.get('items', []);
+      let itemsA = ia.get('items', []);
+      let eq = ia.get('equipped', {});
+      return itemsA is list
+        && itemsA.size() == itemsB.size() - 1
+        && itemsB.hasAny([sold]) && !itemsA.hasAny([sold])
+        && itemsB.hasAll(itemsA)
+        && itemsB.toSet().difference(itemsA.toSet()).size() == 1
+        && eq.get('weapon', '') != sold && eq.get('gear', '') != sold && eq.get('pet', '') != sold;
+    }
+    function saleGiftNotesOk(ib, ia, sold) {
+      let gfB = ib.get('giftFrom', {});
+      let gfA = ia.get('giftFrom', {});
+      let gtB = ib.get('giftAt', {});
+      let gtA = ia.get('giftAt', {});
+      return (!(sold in gfB) || (gtB.get(sold, null) is timestamp && gtB[sold] + duration.value(7, 'd') <= request.time))
+        && !(sold in gfA) && !(sold in gtA)
+        && gfA.diff(gfB).affectedKeys().hasOnly([sold])
+        && gtA.diff(gtB).affectedKeys().hasOnly([sold]);
+    }
+    // The kid doc's side: the write names a new purchases doc (lastPurchaseId), created in the same batch as a sale, selling is on, the
+    // rise equals that record's refund, and items shrink by exactly the item the record names. The kid-doc update spends most of the
+    // 1000-expression budget already, so the rest of the transition (catalog price, legendary, equipped slots, gift notes, `game` held to
+    // gems and lastPurchaseId) is checked once, by saleEntryOk on the new record in the same atomic batch: no sale record, no sale.
+    function saleBacked(uid, kidId) {
+      let gb = resource.data.get('game', {});
+      let ga = request.resource.data.get('game', {});
+      let id = ga.get('lastPurchaseId', '');
+      let path = purchasePath(uid, kidId, id);
+      let e = getAfter(path).data;
+      let itemsA = itemsOf(request.resource.data);
+      return idOk(id) && id != gb.get('lastPurchaseId', '')
+        && !exists(path) && existsAfter(path)
+        && e.get('kind', '') == 'sale'
+        && ga.get('gems', 0) - gb.get('gems', 0) == e.get('refund', 0)
+        && itemsA.size() == itemsOf(resource.data).size() - 1
+        && itemsOf(resource.data).hasAny([e.get('itemId', '')]) && !itemsA.hasAny([e.get('itemId', '')])
+        && itemsOf(resource.data).hasAll(itemsA)
+        && sellingOn(uid);
+    }
+    // B, the sale record: exactly 5 fields, created only in the write that moves the kid doc as saleMoveOk says.
+    function saleEntryOk(uid, kidId, purchaseId) {
+      let e = request.resource.data;
+      return e.keys().hasOnly(['id', 'kind', 'itemId', 'refund', 'at'])
+        && e.keys().hasAll(['id', 'kind', 'itemId', 'refund', 'at'])
+        && e.id == purchaseId
+        && e.at is number
+        && sellingOn(uid)
+        && saleMoveOk(get(kidPathOf(uid, kidId)).data, getAfter(kidPathOf(uid, kidId)).data, purchaseId, e);
     }
 
     // The Overworld save (world/main). The 9 fields below, each the right type, plus an optional lastMode (10 fields); openedChests holds at most 500
@@ -657,8 +774,8 @@ service cloud.firestore {
     // cannot write pinHash or hasPin, or delete the doc, so no browser can plant a PIN or make the app ask for a first one.
     match /families/{uid} {
       allow read: if isParent(uid) && (resource == null || !('pinHash' in resource.data));
-      allow create: if isParent(uid) && smallDoc() && giftingSettingOk() && !request.resource.data.keys().hasAny(['pinHash', 'hasPin']);
-      allow update: if isParent(uid) && smallDoc() && giftingSettingOk() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinHash', 'hasPin']);
+      allow create: if isParent(uid) && smallDoc() && giftingSettingOk() && sellingSettingOk() && !request.resource.data.keys().hasAny(['pinHash', 'hasPin']);
+      allow update: if isParent(uid) && smallDoc() && giftingSettingOk() && sellingSettingOk() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['pinHash', 'hasPin']);
 
       // Devices that signed a player in: families/{uid}/devices/{deviceId} = { firstSeen, lastSeen, kids[], label }. The Admin SDK
       // (kidSignIn) creates and updates them. The family's grown-ups read them and may change `label` and `revoked`, as a
@@ -679,8 +796,8 @@ service cloud.firestore {
         allow read: if isParent(uid) || isKid(uid, kidId) || siblingMayRead(uid);
         allow delete: if isParent(uid);
         allow create: if isParent(uid) && smallDoc() && request.resource.data.id == kidId && vaultSettingsOk() && lightningFloorOk();
-        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && vaultSettingsOk() && lightningFloorOk())
-          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk() || kidVaultKeysOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk() && equippedOk() && vaultPointerOk(uid, kidId) && kidHeroGrowthOk() && kidRaiseOk() && giftFromKept())
+        allow update: if (isParent(uid) && smallDoc() && request.resource.data.id == kidId && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk(uid, kidId) && equippedOk() && vaultPointerOk(uid, kidId) && vaultSettingsOk() && lightningFloorOk())
+          || (isKid(uid, kidId) && smallDoc() && request.resource.data.id == kidId && (kidOnlyChangedGame() || kidInventoryOk() || kidVaultKeysOk()) && gemsDropBacked(uid, kidId) && gameMonotonicOk() && heroChangeOk() && inventoryOk(uid, kidId) && equippedOk() && vaultPointerOk(uid, kidId) && kidHeroGrowthOk() && kidRaiseOk() && giftFromKept())
           || giftReceiveOk(uid, kidId);
 
         match /cards/{cardId} {

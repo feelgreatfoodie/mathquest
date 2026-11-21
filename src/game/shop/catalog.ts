@@ -65,3 +65,17 @@ export function itemById(id: string): ShopItem | undefined {
 export function slotOf(id: string): EquipSlot | null {
   return BY_ID.get(id)?.slot ?? null;
 }
+
+/** The legendary items. They are never sold back. firestore.rules legendaryItems() holds the same list; catalog.test.ts keeps the two and the legendary tier equal. */
+export const LEGENDARY_ITEMS: readonly string[] = ['g-goldarmor', 'w-crystalstaff'];
+
+/** What selling an item back pays: half its catalog price, rounded down (the Bow at 55 pays 27). 0 for an id that is not in the shop. firestore.rules saleRefundOf holds the same math. */
+export function saleRefund(itemId: string): number {
+  const item = BY_ID.get(itemId);
+  return item ? Math.floor(item.cost / 2) : 0;
+}
+
+/** True for a shop item that can be sold back: in the catalog and not legendary. Heroes are not items, so they never pass. */
+export function isSellable(itemId: string): boolean {
+  return BY_ID.has(itemId) && !LEGENDARY_ITEMS.includes(itemId);
+}

@@ -27,6 +27,13 @@ export interface Repo {
   setSchoolMode(on: boolean): Promise<void>;
   /** Writes the single field `gifting` on the parent's own family doc and nothing else. A family with no value reads as on. */
   setGifting(on: boolean): Promise<void>;
+  /** Writes the single field `selling` on the parent's own family doc and nothing else. A family with no value reads as on. */
+  setSelling(on: boolean): Promise<void>;
+  /**
+   * Whether selling is on for the family. A parent session reads the family doc. A kid session cannot read it (the rules close the family doc
+   * to kid tokens), so it answers true and the first refused sale turns the Sell button off (firestore.rules sellingOn).
+   */
+  getSelling(): Promise<boolean>;
   /** The devices that signed a player in, most recent first. Offline mode has none. */
   listDevices(): Promise<DeviceRecord[]>;
   /** Forget a device (`true`) or allow it again (`false`): writes the single field `revoked` on its record. */
@@ -78,6 +85,12 @@ export interface Repo {
    * Never adds gems to anyone. Returns the giver's game as stored.
    */
   giftItem(giverId: string, receiverId: string, itemId: string): Promise<KidGame>;
+  /**
+   * Sells one owned shop item back in one transaction: gems rise by half its catalog price (rounded down), the item leaves the owned
+   * list (and its equipped slot and gift notes), and a purchases record (kind 'sale') rides along. Throws GameDeltaError when the item
+   * cannot be sold (legendary, not owned, a gift inside its 7 days) or the family turned selling off. Returns the game as stored.
+   */
+  sellItem(kidId: string, itemId: string): Promise<KidGame>;
   /** The other kids of the family, for the gift picker. A kid session reads them only while the family has gifting on; the read fails otherwise. */
   listSiblings(kidId: string): Promise<Kid[]>;
   /** The gifts a kid received, newest first. */
