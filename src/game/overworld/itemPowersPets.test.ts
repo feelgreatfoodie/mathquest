@@ -168,7 +168,7 @@ describe('Beetle: 1 gem a trip', () => {
     expect(claimChest(KID, trip, d.id, true, DOG_CHEST_GEMS)).toEqual({ opened: false, gems: 0 });
     expect(openedSpots(trip)).toEqual([d.id]);
     const t2 = resolveTrip(null, NOW, () => 'dog7').trip;
-    expect(claimChest(KID, t2, d.id, false, DOG_CHEST_GEMS)).toEqual({ opened: true, gems: 0 });
+    expect(claimChest(KID, t2, d.id, false, DOG_CHEST_GEMS)).toEqual({ opened: false, gems: 0 }); // already open today: a new trip does not refill it
   });
   it('an older bundle reads a trip with pets claimed: its chests and totals are untouched', () => {
     const { trip } = resolveTrip(null, NOW, () => 'old-pets');

@@ -194,14 +194,15 @@ describe('map powers: gems of a powered chest', () => {
       expect([1, 2]).toContain(first.gems);
       const again = claimChest(KID, trip, s.id, true);
       expect(again).toEqual({ opened: false, gems: 0 });
-      expect(openedSpots(trip)).toEqual([s.id]);
+      expect(openedSpots(trip)).toContain(s.id); // today's list also holds the spots opened earlier in this loop
     }
   });
-  it('a wrong answer opens the chest and pays nothing, and the retry opens nothing', () => {
+  it('a wrong answer keeps the chest shut and pays nothing, and the retry opens nothing on this trip', () => {
     const s = powerSpots('meadow')[0]!;
     const { trip } = resolveTrip(null, NOW, () => 'miss-trip');
-    expect(claimChest(KID, trip, s.id, false)).toEqual({ opened: true, gems: 0 });
-    expect(claimChest(KID, trip, s.id, true)).toEqual({ opened: false, gems: 0 });
+    expect(claimChest(KID, trip, s.id, false)).toEqual({ opened: false, gems: 0, shut: true });
+    expect(claimChest(KID, trip, s.id, true)).toEqual({ opened: false, gems: 0, shut: true });
+    expect(openedSpots(trip)).toEqual([]);
   });
   it('a power chest pays through gemGrant and the soft throttle: full, half, then quarter rate, never above the cap of 10', () => {
     const base = claimChest(KID, resolveTrip(null, NOW, () => 'g1').trip, powerSpots('castle')[0]!.id, true).gems;

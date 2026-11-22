@@ -102,7 +102,7 @@ test('all-seen-forest and all-seen-castle: each land has its own 3 to 5 chests',
   }
 });
 
-test('key chest: a riddle pays 1 or 2 gems and a key, stays open, survives a reopen, and the key opens the Meadow door; a new trip refills', async ({ page }) => {
+test('key chest: a riddle pays 1 or 2 gems and a key, stays open, survives a reopen, and the key opens the Meadow door; a new trip the same day does not refill it', async ({ page }) => {
   // Fixed trip id: a chest on the walk to the door would open its own question and stop the hero.
   await seed(page, {}, 'trip-key-chest');
   await openAdventure(page);
@@ -135,7 +135,7 @@ test('key chest: a riddle pays 1 or 2 gems and a key, stays open, survives a reo
   expect(s2.trip!.opened).toEqual([keyChest.spotId]);
   expect(chestsOf(s2).map((e) => e.spotId)).not.toContain(keyChest.spotId);
   await expect(page.getByTestId('ow-chests')).toContainText(`1 of ${total}`);
-  // A new trip (the old one ended) refills every chest.
+  // A new trip the same local day keeps the opened chest open: chests refill once per local day, not once per trip.
   await page.evaluate((k) => localStorage.removeItem(`mathquest:v1:trip:${k}`), KID);
   await page.reload();
   await page.locator('.kid-card', { hasText: 'Ada' }).click();
@@ -143,7 +143,7 @@ test('key chest: a riddle pays 1 or 2 gems and a key, stays open, survives a reo
   await expect.poll(() => page.evaluate(() => !!(window as unknown as { __ow?: unknown }).__ow)).toBe(true);
   const s3 = await state(page);
   expect(s3.trip!.tripId).not.toBe(s1.trip!.tripId);
-  expect(s3.trip!.opened).toEqual([]);
+  expect(s3.trip!.opened).toEqual([keyChest.spotId]);
   expect(chestsOf(s3).length).toBeGreaterThanOrEqual(3);
   expect(s3.lifetime).toBe(1);
 });

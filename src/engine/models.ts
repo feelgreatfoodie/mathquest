@@ -165,6 +165,9 @@ export interface KidGame {
   /** Shop math tips paid on `shopTipsDay` (same day key as `gemsDay`). At most SHOP_TIPS_PER_DAY a day, enforced by applyGameDelta against the stored game. Absent on a game from before the tip. */
   shopTipsToday?: number;
   shopTipsDay?: string;
+  /** Adventure chest spots (`land:x,y`) opened and paid on `chestsDay` (same day key as `gemsDay`). A chest pays at most once a day: applyDelta pays 0 for a spot already in today's list, on any trip and any device. Absent on a game from before this. */
+  chestsOpened?: string[];
+  chestsDay?: string;
 }
 
 /** The shop fields as stored in the kid doc's top-level `inventory` map. */
@@ -498,6 +501,9 @@ export function normalizeGame(raw: unknown): KidGame {
       : {}),
     ...(typeof g.shopTipsDay === 'string' && typeof g.shopTipsToday === 'number' && Number.isFinite(g.shopTipsToday)
       ? { shopTipsToday: g.shopTipsToday, shopTipsDay: g.shopTipsDay }
+      : {}),
+    ...(typeof g.chestsDay === 'string' && Array.isArray(g.chestsOpened)
+      ? { chestsOpened: g.chestsOpened.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 40).slice(0, 200), chestsDay: g.chestsDay }
       : {}),
   };
 }
