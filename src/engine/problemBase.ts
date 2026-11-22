@@ -73,6 +73,16 @@ export function shuffled<T>(xs: readonly T[], rng: Rng): T[] {
   return a;
 }
 
+/**
+ * The tokens a flashcard draws. A gap problem ("4 + ? = 10") stores the addend and the total in `tokens`, and QuestionPanel draws
+ * the ten-frame form itself, so a card that draws `tokens` bare would read "4 + 10 = ?" with the answer 6. Here the form is
+ * spelled out: addend, plus, blank, equals, total. Every other problem draws its own tokens.
+ */
+export function promptTokens(p: Problem): Token[] {
+  if (!p.gap) return p.tokens;
+  return [{ t: 'num', v: p.gap.a }, { t: 'op', v: '+' }, { t: 'blank' }, { t: 'op', v: '=' }, { t: 'num', v: p.gap.total }];
+}
+
 /** Deterministic PRNG for tests and reproducible sessions. */
 export function mulberry32(seed: number): Rng {
   let a = seed >>> 0;

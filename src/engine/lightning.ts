@@ -5,7 +5,7 @@ import { cardLevel, previewPool } from './mastery';
 import { learnerOf, paceOf, type CardMap, type CardState, type Learner, type KidSettings, type SessionLog } from './models';
 import { getCardDef, moduleOfCard, cardLabel } from './modules';
 import { PREVIEW_FLOOR, PREVIEW_MAX } from './session';
-import { answerText, checkAnswer, generateProblem, shuffled, type AnswerInput, type Problem, type Rng } from './problems';
+import { answerText, checkAnswer, generateProblem, promptTokens, shuffled, type AnswerInput, type Problem, type Rng } from './problems';
 import { GEM_RUN_MAX } from './gems';
 
 // Lightning Round: taped problems (the fact is shown and read, the kid answers before the reveal, and the reveal delay
@@ -172,6 +172,11 @@ export function buildDeck({ cards, sessions, settings, now, rng }: DeckInput): D
 
 // ---- round ----
 
+/** The problem as Lightning draws it, in the form its module shows elsewhere: make 10 reads "4 + ? = 10", never "4 + 10 = ?". */
+export function lightningProblem(p: Problem): Problem {
+  return p.gap ? { ...p, tokens: promptTokens(p) } : p;
+}
+
 export interface LightningCard {
   /** Unique within the round. */
   id: string;
@@ -266,7 +271,7 @@ export class LightningRound {
       target: d.target,
       preview: !!d.preview,
       delayMs: delayOf(this.cards[d.cardId], this.learner, this.floorMs),
-      problem: generateProblem(d.cardId, this.rng),
+      problem: lightningProblem(generateProblem(d.cardId, this.rng)),
     };
   }
 
