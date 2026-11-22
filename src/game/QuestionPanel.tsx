@@ -149,7 +149,7 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
         {def.kind === 'skill' ? <p className="strategy">{def.strategy}</p> : null}
         <div className="example">
           <p className="muted">Example</p>
-          <MathView tokens={entry.problem.tokens} answer={<AnswerView problem={entry.problem} />} />
+          <MathView tokens={promptTokens(entry.problem)} answer={<AnswerView problem={entry.problem} />} />
           <p className="hint">{entry.problem.hint}</p>
         </div>
         <button

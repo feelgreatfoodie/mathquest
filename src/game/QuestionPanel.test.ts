@@ -5,7 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Repo } from '../data/repo';
 import { DEFAULT_GAME, DEFAULT_SETTINGS, type Kid } from '../engine/models';
-import { mulberry32 } from '../engine/problems';
+import { generateProblem, mulberry32 } from '../engine/problems';
 import { SessionRunner, type Entry } from '../engine/session';
 import { QuestionPanel } from './QuestionPanel';
 
@@ -111,5 +111,20 @@ describe('QuestionPanel miss (UX review item 3)', () => {
     typeAndGo(56);
     expect(host.querySelector('.answer-fixed')).toBeNull();
     expect(host.querySelector('.int-entry')?.textContent).toBe('56');
+  });
+});
+
+describe('QuestionPanel teach example for gap cards', () => {
+  // The worked example fills the blank: "a + 6 = 10". Drawing the stored tokens bare gives "4 + 10 = 6", the #86 defect.
+  it.each([
+    ['bond:4', '4+6=10'],
+    ['miss:4+_=7', '4+3=7'],
+  ])('%s teach example reads %s', (cardId, form) => {
+    const runner = new SessionRunner([{ cardId, isNew: true }], {}, mulberry32(1), () => 0, kid.settings);
+    const problem = generateProblem(cardId, mulberry32(1));
+    const entry: Entry = { id: 'teach-1', cardId, kind: 'teach', isNew: true, problem };
+    mount(runner, entry, 'inline');
+    const example = host.querySelector('.panel.teach .example')!;
+    expect(example.textContent!.replace(/\s+/g, '')).toContain(form);
   });
 });
