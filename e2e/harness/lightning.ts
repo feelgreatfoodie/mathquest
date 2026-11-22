@@ -11,11 +11,11 @@ export const VIEWPORTS = [
   { name: '820x1180', width: 820, height: 1180 },
 ] as const;
 
-export type Seed = { learner: 'reader' | 'prereader'; delay?: number };
+export type Seed = { learner: 'reader' | 'prereader'; delay?: number; make10?: boolean };
 
 export async function seed(page: Page, o: Seed) {
   await page.addInitScript(
-    ({ readerId, preId, learner, delay }) => {
+    ({ readerId, preId, learner, delay, make10 }) => {
       const w = window as unknown as Record<string, unknown>;
       w.__spoken = [] as string[];
       class Utter {
@@ -41,7 +41,7 @@ export async function seed(page: Page, o: Seed) {
       const pre = learner === 'prereader';
       const kidId = pre ? preId : readerId;
       const settings = pre
-        ? { learner: 'prereader', modules: { add10: true }, tracks: { facts: false, multidigit: false, fractions: false }, sessionSize: 10, maxNew: 4, factGroupsUnlocked: 1, paceMultiplier: 3 }
+        ? { learner: 'prereader', modules: make10 ? { add10: true, sub10: true, bonds10: true, missing10: true } : { add10: true }, tracks: { facts: false, multidigit: false, fractions: false }, sessionSize: 10, maxNew: 4, factGroupsUnlocked: 1, paceMultiplier: 3 }
         : { tracks: { facts: true, multidigit: false, fractions: false }, sessionSize: 30, maxNew: 8, factGroupsUnlocked: 5, paceMultiplier: 3 };
       localStorage.setItem('mathquest:v1:family', JSON.stringify({ pinHash: 'x', createdAt: 1 }));
       localStorage.setItem('mathquest:v1:kids', JSON.stringify([{ id: kidId, name: 'Pip', createdAt: 1, settings, game: { xp: 0, gems: 0, streakDays: 2, lastPlayedDay: null, bestCombo: 0, heroes: ['knight'], hero: 'knight' } }]));
@@ -52,7 +52,10 @@ export async function seed(page: Page, o: Seed) {
         ...(delay ? { lightningDelayMs: delay } : {}),
       });
       const cards: Record<string, unknown> = {};
-      if (pre) {
+      if (pre && make10) {
+        for (let a = 0; a <= 10; a++) cards[`bond:${a}`] = a % 2 ? weak(`bond:${a}`) : known(`bond:${a}`);
+        for (let s = 2; s <= 7; s++) for (let a = 1; a < s; a++) cards[`miss:${a}+_=${s}`] = (a + s) % 2 ? weak(`miss:${a}+_=${s}`) : known(`miss:${a}+_=${s}`);
+      } else if (pre) {
         for (let a = 1; a <= 4; a++) for (let b = 1; a + b <= 7; b++) cards[`add:${a}+${b}`] = a <= 2 ? weak(`add:${a}+${b}`) : known(`add:${a}+${b}`);
       } else {
         ['6x7', '7x8', '6x8', '7x9', '8x9', '6x9', '7x7', '8x8', '9x9', '6x6'].forEach((k) => (cards[`mul:${k}`] = weak(`mul:${k}`)));
@@ -61,7 +64,7 @@ export async function seed(page: Page, o: Seed) {
       localStorage.setItem(`mathquest:v1:cards:${kidId}`, JSON.stringify(cards));
       w.__seedCards = JSON.parse(JSON.stringify(cards));
     },
-    { readerId: READER_ID, preId: PRE_ID, learner: o.learner, delay: o.delay ?? 0 },
+    { readerId: READER_ID, preId: PRE_ID, learner: o.learner, delay: o.delay ?? 0, make10: !!o.make10 },
   );
 }
 

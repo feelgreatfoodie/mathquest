@@ -3,7 +3,7 @@ import type { Repo } from '../data/repo';
 import { type Kid } from '../engine/models';
 import { cardLabel, getCardDef, moduleOfCard } from '../engine/modules';
 import { word } from '../engine/modules/early';
-import type { AnswerInput, Problem, Visual } from '../engine/problems';
+import { promptTokens, type AnswerInput, type Problem, type Visual } from '../engine/problems';
 import type { Entry, Feedback, SessionRunner } from '../engine/session';
 import { Keypad, type Field } from '../ui/Keypad';
 import { FracView, MathView } from '../ui/MathView';
@@ -198,7 +198,7 @@ function ReaderPanel({ runner, entry, kid, repo, onAnswered, onResolved, handleR
         {entry.problem.story ? <p className="story" data-testid="riddle-story">{entry.problem.story}</p> : null}
         {entry.preview ? <p className="pixel tag">A new one to try</p> : null}
         {entry.preview && !feedback ? <p className="hint preview-hint" data-testid="preview-hint">{entry.problem.hint}</p> : null}
-        <MathView tokens={entry.problem.tokens} answer={answerDisplay} />
+        <MathView tokens={promptTokens(entry.problem)} answer={answerDisplay} />
         {feedback ? <FeedbackView fb={feedback} onContinue={() => resolve(feedback)} /> : null}
       </div>
       <Keypad
