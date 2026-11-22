@@ -33,7 +33,7 @@ test('pre-reader: make 10 and missing number cards read "a + ? = total" and carr
     const flagged = await page.locator('.lr-choice[data-answer="true"]').allTextContents();
     expect(flagged.map((t) => Number(t.trim()))).toEqual([answer]);
     if (gap) gapCards++;
-    if (gap && !shot) {
+    if (gap?.[2] === '10' && !shot) {
       await page.screenshot({ path: 'docs/screenshots/lightning-fix/make10-1024x768.png' });
       shot = true;
     }
@@ -41,6 +41,7 @@ test('pre-reader: make 10 and missing number cards read "a + ? = total" and carr
     await expect(page.getByTestId('lightning')).toHaveAttribute('data-phase', 'ask');
   }
   expect(gapCards).toBeGreaterThan(0);
+  expect(shot, 'a make 10 card (a + ? = 10) was shown').toBe(true);
   await holdHome(page);
   await expect(page.getByTestId('lr-end')).toBeVisible();
 });
