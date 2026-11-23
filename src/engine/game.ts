@@ -53,7 +53,7 @@ export interface GameDelta {
    * A map reward (a chest or a boss) before the throttle: `base` gems go through the same tier as a run's gems, worked
    * out from the stored count at write time, and count toward today. Replaces `gems`. Needs `playedAt`.
    */
-  gemGrant?: { base: number; learner: Learner; settings: GemSettings };
+  gemGrant?: { base: number; learner: Learner; settings: GemSettings; /** An Adventure chest spot (`land:x,y`). It pays at most once per local day: a spot already in the stored game's list for the day pays 0 and the paid spot is added to it. */ spot?: string };
   /**
    * Marks a shop math tip. It must carry `gemGrant` (base 1) and `playedAt` and nothing else that changes the game.
    * applyDelta counts it against SHOP_TIPS_PER_DAY on the stored game and throws GameDeltaError for the 4th of a day.
@@ -84,6 +84,12 @@ export function shopTipsToday(game: { shopTipsToday?: number; shopTipsDay?: stri
   return game.shopTipsDay >= dayKey(at) ? n : 0;
 }
 
+/** Chest spots already paid on the day of `at`. A stored day later than `at` (a clock set back) keeps its list. */
+export function chestsOpenedToday(game: { chestsOpened?: string[]; chestsDay?: string }, at: number): string[] {
+  if (typeof game.chestsDay !== 'string' || !Array.isArray(game.chestsOpened)) return [];
+  return game.chestsDay >= dayKey(at) ? game.chestsOpened : [];
+}
+
 export class GameDeltaError extends Error {
   constructor(message: string) {
     super(message);
@@ -100,7 +106,8 @@ export class GameDeltaError extends Error {
 export function awardedGems(game: KidGame, delta: GameDelta): number {
   if (delta.gemGrant && !delta.gemRun) {
     if (delta.playedAt === undefined) throw new GameDeltaError('A map reward needs the time it was earned.');
-    const { base, learner, settings } = delta.gemGrant;
+    const { base, learner, settings, spot } = delta.gemGrant;
+    if (spot !== undefined && chestsOpenedToday(game, delta.playedAt).includes(spot)) return 0;
     return throttledGems(Math.max(0, Math.floor(base)), learner, settings, earnedTodayOf(game, delta.playedAt));
   }
   if (!delta.gemRun) {
@@ -144,6 +151,12 @@ export function applyDelta(game: KidGame, delta: GameDelta): KidGame {
     if (earned > 0 && (game.gemsDay === undefined || game.gemsDay <= today)) {
       next = { ...next, gemsEarnedToday: earnedTodayOf(game, delta.playedAt) + earned, gemsDay: today };
     }
+  }
+  const spot = delta.gemGrant?.spot;
+  if (spot !== undefined && delta.playedAt !== undefined && !delta.gemRun) {
+    const today = dayKey(delta.playedAt);
+    const kept = chestsOpenedToday(game, delta.playedAt);
+    next = { ...next, chestsOpened: kept.includes(spot) ? kept : [...kept, spot].slice(-200), chestsDay: game.chestsDay !== undefined && game.chestsDay > today ? game.chestsDay : today };
   }
   if (delta.shopTip) {
     const today = dayKey(delta.playedAt!);

@@ -6,7 +6,7 @@ import { usePauseState, usePauseStop } from '../../ui/usePause';
 import { reportFailure } from '../../ui/failures';
 import { loadRunner, type SaveExtra } from '../../ui/runShared';
 import { newId } from '../../data/repo';
-import { CHECKPOINT_EVERY, addRun, claimChest, loadTrip, openedSpots, resolveTrip, saveTrip, type TripState, type TripTotals } from './trip';
+import { CHECKPOINT_EVERY, addRun, claimChest, loadTrip, offLimitsSpots, openedSpots, resolveTrip, saveTrip, syncChestDay, type TripState, type TripTotals } from './trip';
 import type { TripSpot } from './chests';
 import { planRegion, spotsFor } from './tripPlan';
 import { queueCheckpoint, queueLairLog } from './tripWrite';
@@ -294,7 +294,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
     const w = worldRef.current;
     const trip = tripRef.current;
     const r = runnerRef.current;
-    return w && trip && r ? spotsFor(r, trip.tripId, w.region, learner, bossIds.current, { key: gearRef.current.key, bridge: gearRef.current.bridge }, openedSpots(trip), petRef.current === 'dog') : [];
+    return w && trip && r ? spotsFor(r, trip.tripId, w.region, learner, bossIds.current, { key: gearRef.current.key, bridge: gearRef.current.bridge }, offLimitsSpots(trip), petRef.current === 'dog') : [];
   }, [learner]);
 
   /** The opened chests of this trip in this land, for the drawing. */
@@ -333,7 +333,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
       settings: kidRef.current.settings,
       learner,
       tripId: trip.tripId,
-      opened: openedSpots(trip),
+      opened: offLimitsSpots(trip),
       gear: { key: gearRef.current.key, bridge: gearRef.current.bridge },
       dog: petRef.current === 'dog',
       region: w.region,
@@ -392,6 +392,8 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         cpAnswered.current = trip.totals.answered;
         cpGraded.current = trip.totals.graded;
         if (close) sendCheckpoint(close, close.totals, w0.region, 'left');
+        // Chests refill once per local day: the opened list is today's, merged with what another device paid today.
+        syncChestDay(kidRef.current.id, trip, Date.now(), kidRef.current.game);
         saveTrip(kidRef.current.id, trip);
         cardsRef.current = cards;
         startedAt.current = at;
@@ -556,11 +558,11 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
   }, [pauseOn, modal, overlay, leaveForPause]);
 
   const grant = useCallback(
-    async (base: number) => {
+    async (base: number, spot?: string) => {
       // The reward goes through the same throttle as a run's gems, worked out from the stored count when it is written.
       const k = kidRef.current;
       const delta = {
-        gemGrant: { base, learner: learnerOf(k.settings), settings: { gemSpeed: k.settings.gemSpeed, gemFullRate: k.settings.gemFullRate } },
+        gemGrant: { base, learner: learnerOf(k.settings), settings: { gemSpeed: k.settings.gemSpeed, gemFullRate: k.settings.gemFullRate }, ...(spot ? { spot } : {}) },
         playedAt: Date.now(),
       };
       try {
@@ -683,7 +685,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
         known.current.add(q.id);
       }
       const cleared = roomsClearedOf(state.plan, done);
-      const opened = new Set(openedSpots(trip));
+      const opened = new Set(offLimitsSpots(trip));
       const ents = planLairEntities({ def, build, seq: state.seq, rng: Math.random, done, roomsCleared: cleared })
         .filter((e) => !(e.spotId && opened.has(e.spotId)))
         .map((e) => (e.kind === 'chest' && teachFor.has(e.cardId) ? { ...e, teachId: teachFor.get(e.cardId)! } : e));
@@ -931,7 +933,7 @@ export default function Overworld({ repo, kid, onDone, onExit, onSynced }: GameM
             touchWorld({ t: 'key' });
             setKeys(worldRef.current!.keys);
           }
-          if (claim.gems > 0) void grant(claim.gems);
+          if (claim.gems > 0) void grant(claim.gems, entity.spotId);
           if (entity.dog) say({ text: 'Your Dog found a bonus chest!' });
           refreshChestHud();
         }
