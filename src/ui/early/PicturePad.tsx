@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PICTURE_ICONS, PICTURE_LENGTH, pictureCode } from '../../data/deviceKids';
 import { UiIcon } from '../sprites';
+import { KeyGlyph } from '../KeyGlyph';
 import { speak } from './useSpeech';
 
 /** Names the voice says for the 9 icons, in order. The screens show no text. */
@@ -118,8 +119,8 @@ export function PicturePad({ onComplete, onCancel, compact }: Props) {
           <UiIcon name="refresh" size={cell - 56} />
         </button>
         {onCancel ? (
-          <button type="button" className="picture-key picture-cancel" aria-label="Not me" disabled={busy} style={{ width: cell, height: cell }} onClick={onCancel}>
-            <UiIcon name="close" size={cell - 56} />
+          <button type="button" className="picture-key picture-cancel" aria-label="Not me" disabled={busy} style={{ width: cell, height: cell, fontSize: cell * 0.53 }} onClick={onCancel}>
+            <KeyGlyph name="x" />
           </button>
         ) : null}
       </div>
