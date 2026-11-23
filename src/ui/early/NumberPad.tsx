@@ -1,4 +1,4 @@
-import { UiIcon } from '../sprites';
+import { KeyGlyph } from '../KeyGlyph';
 
 interface Props {
   /** Keys run from 0 to this number (10; 20 once add20 is on). */
@@ -30,10 +30,10 @@ export function NumberPad({ max, value, disabled, onKey, onClear, onOk }: Props)
         </button>
       ))}
       <button type="button" className="numpad-key numpad-clear" aria-label="Clear" disabled={disabled || value === null} onClick={onClear}>
-        <UiIcon name="close" size={56} />
+        <KeyGlyph name="x" />
       </button>
       <button type="button" className="numpad-key numpad-ok" aria-label="OK" disabled={disabled || value === null} onClick={onOk}>
-        <UiIcon name="check" size={64} />
+        <KeyGlyph name="check" />
       </button>
     </div>
   );

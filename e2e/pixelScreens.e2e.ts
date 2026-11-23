@@ -57,7 +57,7 @@ for (const vp of [
       await expect(page.locator('.arena.px-arena .px-dungeon-torch')).toHaveCount(2);
       await expect(page.locator('.panel.question.px-stone')).toBeVisible();
       await expect(page.locator('.key-go.px-go')).toBeVisible();
-      await expect(page.locator('.key-back')).toHaveText('DEL');
+      await expect(page.locator('.key-back .key-glyph')).toBeVisible();
       // The question and keypad fit on the screen without a scroll.
       const pageH = await page.evaluate(() => document.documentElement.scrollHeight);
       expect(pageH).toBeLessThanOrEqual(vp.h + 1);

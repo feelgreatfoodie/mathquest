@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { KeyGlyph } from './KeyGlyph';
 
 export type Field = 'w' | 'n' | 'd';
 
@@ -78,14 +79,14 @@ export function Keypad({ onDigit, onBack, onSubmit, canSubmit = false, showGo = 
           </button>
         ))}
         <button type="button" className="key key-back px-frame" onClick={onBack} disabled={disabled} aria-label="Delete">
-          DEL
+          <KeyGlyph name="x" />
         </button>
         <button type="button" className="key px-frame" onClick={() => tapDigit(0)} disabled={disabled}>
           0
         </button>
         {showGo ? (
-          <button type="button" className="key key-go px-frame px-go" onClick={onSubmit} disabled={disabled || !canSubmit}>
-            GO
+          <button type="button" className="key key-go px-frame px-go" onClick={onSubmit} aria-label="Go" disabled={disabled || !canSubmit}>
+            <KeyGlyph name="check" />
           </button>
         ) : (
           <span className="key-spacer" aria-hidden="true" />

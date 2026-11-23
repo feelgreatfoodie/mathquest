@@ -1543,8 +1543,10 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 .keypad { gap: 12px; }
 .key { --f: var(--px-neutral); --d: var(--px-neutral-dark); --t: var(--px-neutral-text); --e: var(--px-edge); font-family: var(--pixel); font-weight: 400; font-size: 28px; border: 0; border-radius: 0; margin: 4px; min-height: 72px; box-shadow: -4px 0 0 var(--e), 4px 0 0 var(--e), 0 -4px 0 var(--e), 0 4px 0 var(--e), inset 0 4px 0 rgba(255, 255, 255, 0.18), inset 0 -6px 0 var(--d); background: var(--f); color: var(--t); }
 .key:active { border-bottom-width: 0; background: var(--f); transform: translateY(2px); box-shadow: -4px 0 0 var(--e), 4px 0 0 var(--e), 0 -4px 0 var(--e), 0 4px 0 var(--e), inset 0 6px 0 var(--d), inset 0 -4px 0 rgba(255, 255, 255, 0.18); }
-.key-go { background: var(--px-go); color: var(--px-go-text); font-size: 24px; }
-.key-back { color: var(--px-neutral-text); font-size: 20px; }
+.key-go { background: var(--px-go); color: var(--px-go-text); }
+.key-back { color: var(--px-neutral-text); }
+/* The clear X and the go check: 7/8 em square, the height of a digit in the key's own font. */
+.key-glyph { width: 0.875em; height: 0.875em; display: block; flex: none; }
 @media (orientation: portrait) and (min-height: 1000px) { .key { min-height: 96px; } }
 .field-btn.px-frame { font-family: var(--body); margin: 4px; }
 .field-btn.is-active { background: var(--px-gold); color: var(--px-gold-text); }
