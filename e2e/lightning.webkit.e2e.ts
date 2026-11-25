@@ -19,7 +19,7 @@ test('reader: a hit, a reveal, a copy and the end screen', async ({ page }) => {
   await expect(page.getByTestId('lightning')).toHaveAttribute('data-phase', 'ask');
   let revealed = false;
   for (let i = 0; i < 40 && !revealed; i++) {
-    if ((await page.getByTestId('lightning').getAttribute('data-delay')) === '1000') {
+    if ((await page.getByTestId('lightning').getAttribute('data-delay')) === '1500') {
       await expect(page.getByTestId('lightning')).toHaveAttribute('data-phase', 'miss', { timeout: 4000 });
       revealed = true;
       break;

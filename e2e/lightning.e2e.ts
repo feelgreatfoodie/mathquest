@@ -27,12 +27,12 @@ for (const vp of VIEWPORTS) {
       await typeAnswer(page, await answerOnScreen(page));
       await expect(page.getByTestId('lightning')).toHaveAttribute('data-phase', 'hit');
       await expect(page.getByTestId('lightning')).toHaveAttribute('data-phase', 'ask');
-      expect(Number(first)).toBeGreaterThanOrEqual(1000);
+      expect(Number(first)).toBeGreaterThanOrEqual(1500);
 
-      // Let the ring close on a card: the answer shows, and one copy moves on. Weak cards carry a 1 s delay.
+      // Let the ring close on a card: the answer shows, and one copy moves on. Weak cards store 1000, which reads as the 1.5 s floor.
       let revealed = false;
       for (let i = 0; i < 40 && !revealed; i++) {
-        if ((await page.getByTestId('lightning').getAttribute('data-delay')) === '1000') {
+        if ((await page.getByTestId('lightning').getAttribute('data-delay')) === '1500') {
           await expect(page.getByTestId('lightning')).toHaveAttribute('data-phase', 'miss', { timeout: 4000 });
           revealed = true;
           break;

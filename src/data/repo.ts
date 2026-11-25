@@ -52,7 +52,7 @@ export interface Repo {
   setKidPause(kidIds: string[], pause: { until?: number } | null): Promise<void>;
   /** Writes `settings.voice` and `settings.sounds` (only the ones given) and nothing else in settings. */
   setKidAudio(kidId: string, audio: { voice?: 'on' | 'off' | 'kid'; sounds?: 'on' | 'off' }): Promise<void>;
-  /** Writes the one field `settings.lightningFloorMs` (the Lightning Round delay floor, 1000 to 4000) and nothing else in settings. `null` clears it. */
+  /** Writes the one field `settings.lightningFloorMs` (the Lightning Round delay floor, 1000 to 4000; a value under the learner's own floor reads as that floor) and nothing else in settings. `null` clears it. */
   setKidLightningFloor(kidId: string, ms: number | null): Promise<void>;
   /** Writes the named flags and nothing else. `avatar` is the picker hero and color; only the parent sets it. */
   setKidFlags(kidId: string, flags: { hasPin?: boolean; avatar?: KidAvatar }): Promise<void>;

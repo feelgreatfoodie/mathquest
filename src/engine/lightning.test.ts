@@ -3,7 +3,7 @@ import fixture from './__fixtures__/insights.json';
 import { dayKey } from './game';
 import { applyDelta } from './game';
 import { GEM_RUN_MAX } from './gems';
-import { LIGHTNING, LightningRound, buildDeck, delayOf, floorOf, isKnown, ladderFor, lightningGemBase, lightningGrantBase, lightningLog, stepDown, stepUp, type Deck } from './lightning';
+import { LEARNER_FLOOR, LIGHTNING, LightningRound, buildDeck, delayOf, floorOf, isKnown, ladderFor, lightningGemBase, lightningGrantBase, lightningLog, stepDown, stepUp, type Deck } from './lightning';
 import { needsWork, type InsightInput } from './insights';
 import { DEFAULT_GAME, DEFAULT_SETTINGS, PRESETS, type CardMap, type CardState, type KidSettings, type SessionLog } from './models';
 import { previewPool } from './mastery';
@@ -112,18 +112,18 @@ describe('deck', () => {
 });
 
 describe('delay ladder', () => {
-  it('readers step 3 to 2 to 1.5 to 1 s and stop at 1 s', () => {
-    expect(ladderFor('reader')).toEqual([3000, 2000, 1500, 1000]);
+  it('readers step 3 to 2 to 1.5 s and stop at 1.5 s', () => {
+    expect(ladderFor('reader')).toEqual([3000, 2000, 1500]);
     expect(delayOf(undefined, 'reader')).toBe(3000);
     let ms = 3000;
     const seen = [ms];
     for (let i = 0; i < 5; i++) seen.push((ms = stepDown(ms, 'reader')));
-    expect(seen).toEqual([3000, 2000, 1500, 1000, 1000, 1000]);
+    expect(seen).toEqual([3000, 2000, 1500, 1500, 1500, 1500]);
   });
 
   it('a miss steps back up one level and stops at the start', () => {
-    expect(stepUp(1000, 'reader')).toBe(1500);
     expect(stepUp(1500, 'reader')).toBe(2000);
+    expect(stepUp(2000, 'reader')).toBe(3000);
     expect(stepUp(3000, 'reader')).toBe(3000);
   });
 
@@ -138,7 +138,7 @@ describe('delay ladder', () => {
     expect(floorOf({ learner: 'reader', lightningFloorMs: 2000 })).toBe(2000);
     expect(stepDown(2000, 'reader', 2000)).toBe(2000);
     expect(floorOf({ learner: 'reader', lightningFloorMs: 99999 })).toBe(4000);
-    expect(floorOf({ learner: 'reader', lightningFloorMs: Number.NaN })).toBe(1000);
+    expect(floorOf({ learner: 'reader', lightningFloorMs: Number.NaN })).toBe(1500);
   });
 
   it('stored delays snap to the ladder and stay inside the rules range', () => {
@@ -186,12 +186,12 @@ describe('round', () => {
     // two hits on one card walk down the ladder
     const c2: CardMap = { ...cards };
     const target = ids[0]!;
-    c2[target] = { ...c2[target]!, lightningDelayMs: 1500 };
+    c2[target] = { ...c2[target]!, lightningDelayMs: 2000 };
     const r3 = new LightningRound({ cards: [{ cardId: target, target: true }], targets: [target] }, c2, reader, mulberry32(2), () => NOW);
     const card = r3.current()!;
-    expect(card.delayMs).toBe(1500);
+    expect(card.delayMs).toBe(2000);
     r3.answer({ kind: 'int', value: (card.problem.answer as { value: number }).value }, 500);
-    expect(r3.getCard(target)!.lightningDelayMs).toBe(1000);
+    expect(r3.getCard(target)!.lightningDelayMs).toBe(1500);
   });
 
   it('a miss shows the answer, asks for one copy, and the card comes back 3 to 5 cards later', () => {
@@ -383,5 +383,48 @@ describe('pre-readers', () => {
       round.advance();
     }
     expect(checked).toBeGreaterThan(3);
+  });
+});
+
+describe('reader floor 1.5 s', () => {
+  it('(e) a stored 1000 reads as 1500 for a reader, and the pre-reader ladder is unchanged', () => {
+    expect(LEARNER_FLOOR).toEqual({ reader: 1500, prereader: 2000 });
+    expect(ladderFor('reader')).toEqual([3000, 2000, 1500]);
+    expect(delayOf({ lightningDelayMs: 1000 }, 'reader')).toBe(1500);
+    expect(stepDown(1000, 'reader')).toBe(1500);
+    expect(stepDown(1500, 'reader')).toBe(1500);
+    expect(stepUp(1000, 'reader')).toBe(2000);
+    expect(floorOf({ learner: 'reader' })).toBe(1500);
+    expect(floorOf({ learner: 'reader', lightningFloorMs: 1000 })).toBe(1500);
+    expect(floorOf({ learner: 'reader', lightningFloorMs: 2000 })).toBe(2000);
+    expect(ladderFor('prereader')).toEqual([4000, 3000, 2000]);
+    expect(delayOf({ lightningDelayMs: 1000 }, 'prereader')).toBe(2000);
+    expect(delayOf(undefined, 'prereader')).toBe(4000);
+  });
+
+  it('a round shows a card that stored 1000 at 1500, and never writes the old value back unchanged', () => {
+    const cards = richCards();
+    const target = ids[0]!;
+    cards[target] = { ...cards[target]!, lightningDelayMs: 1000 };
+    const round = new LightningRound({ cards: [{ cardId: target, target: true }], targets: [target] }, cards, reader, mulberry32(3), () => NOW);
+    expect(round.current()!.delayMs).toBe(1500);
+    expect(round.getCard(target)!.lightningDelayMs).toBe(1000);
+    expect(round.changedCards()).toHaveLength(0);
+  });
+
+  it('a make 10 and a missing number card accept the copy after a miss', () => {
+    const pre: KidSettings = { ...DEFAULT_SETTINGS, learner: 'prereader', modules: { bonds10: true, missing10: true }, tracks: { facts: false, multidigit: false, fractions: false } };
+    for (const cardId of ['bond:4', 'miss:3+_=7']) {
+      const cards: CardMap = { [cardId]: weak(cardId, 0.5) };
+      const round = new LightningRound({ cards: [{ cardId, target: true }], targets: [cardId] }, cards, pre, mulberry32(9), () => NOW);
+      const card = round.current()!;
+      round.show();
+      round.timeout();
+      const right = (card.problem.answer as { value: number }).value;
+      expect(round.copy({ kind: 'int', value: right + 1 })).toBe(false);
+      expect(round.copy({ kind: 'int', value: right })).toBe(true);
+      round.advance();
+      expect(round.phase).toBe('ask');
+    }
   });
 });
