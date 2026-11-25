@@ -38,9 +38,19 @@ export const LIGHTNING = {
 
 // ---- delay ladder ----
 
-const LADDER: Record<Learner, readonly number[]> = { reader: [3000, 2000, 1500, 1000], prereader: [4000, 3000, 2000] };
-/** The shortest delay a learner ever sees: readers 1 s, pre-readers 2 s. */
-export const LEARNER_FLOOR: Record<Learner, number> = { reader: 1000, prereader: 2000 };
+const LADDER: Record<Learner, readonly number[]> = { reader: [3000, 2000, 1500], prereader: [4000, 3000, 2000] };
+/**
+ * The shortest delay a learner ever sees: readers 1.5 s (typing 2 digits takes about 1.5 s), pre-readers 2 s. A card that stored 1000
+ * before this floor existed snaps to 1500 when it is read (levelIndex in delayOf and stepDown); no card doc is rewritten.
+ */
+export const LEARNER_FLOOR: Record<Learner, number> = { reader: 1500, prereader: 2000 };
+
+/**
+ * After a miss the answer shows and the kid types it to keep going. Null: the round waits for that copy (the default).
+ * A number of ms (for example 2000): the round also moves on by itself that long after the miss. A right copy, leaving the
+ * round and the round ending all cancel the timer. The miss still counts and requeues either way.
+ */
+export const LIGHTNING_MISS_AUTO_ADVANCE_MS: number | null = null;
 
 /** The delay floor in ms: the parent's advanced setting when valid, never below the learner's own floor. */
 export function floorOf(settings: Pick<KidSettings, 'learner' | 'lightningFloorMs'> | undefined | null): number {

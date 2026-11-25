@@ -1617,7 +1617,7 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 @media (prefers-reduced-motion: reduce) {
   .px-flicker, .px-treasure-screen .stat { animation: none; }
   .lr-ring.is-running .lr-ring-fg { animation-timing-function: linear; }
-  .lr-bolt.is-flash, .lr-choice.is-guide { animation: none; }
+  .lr-bolt.is-flash, .lr-choice.is-guide, .lr-typed-box.is-prompt { animation: none; }
   .px-arena .monster.hit svg, .px-arena .monster.shake, .px-arena .hero-sprite.lunge, .px-arena .combo-badge { animation: none; }
   .key:active, .choice:active, .numpad-key:active, .mode-card.px-frame:active { transform: none; }
 }
@@ -1647,8 +1647,11 @@ html:has(.screen.parent[data-theme='light']) body { background: #f4f5fb; }
 @keyframes lr-flash { 0% { transform: scale(1); } 40% { transform: scale(1.5); } 100% { transform: scale(1); } }
 .lr-card .math { font-size: clamp(40px, 11vw, 64px); }
 .lr-copy { margin: 0; font-size: 18px; min-height: 1.2em; }
+.lr-copy.is-prompt { font-family: var(--pixel); font-size: clamp(22px, 5.5vw, 32px); line-height: 1.2; color: #fde68a; text-align: center; }
 .lr-typed { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .lr-typed-box { min-width: 140px; text-align: center; font-family: var(--pixel); font-size: 32px; padding: 6px 14px; background: var(--px-neutral-dark); color: #fde68a; box-shadow: -4px 0 0 var(--px-edge), 4px 0 0 var(--px-edge), 0 -4px 0 var(--px-edge), 0 4px 0 var(--px-edge); }
+.lr-typed-box.is-prompt { color: #fff; box-shadow: -4px 0 0 var(--px-gold), 4px 0 0 var(--px-gold), 0 -4px 0 var(--px-gold), 0 4px 0 var(--px-gold); animation: lr-box-pulse 0.8s steps(2) infinite; }
+@keyframes lr-box-pulse { 50% { transform: scale(1.06); } }
 .lr-choices { display: grid; grid-template-columns: repeat(3, minmax(120px, 1fr)); gap: 8px; width: calc(100% + 32px); max-width: 520px; margin: 0 -16px; padding: 0 8px; box-sizing: border-box; }
 .lr-choice { min-width: 120px; min-height: 120px; margin: 0; }
 .lr-choice-num { font-family: var(--pixel); font-size: 36px; }

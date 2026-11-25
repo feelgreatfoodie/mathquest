@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { LIGHTNING, LightningRound, buildDeck, type LightningCard, type RoundResult } from '../../engine/lightning';
+import { LIGHTNING, LIGHTNING_MISS_AUTO_ADVANCE_MS, LightningRound, buildDeck, type LightningCard, type RoundResult } from '../../engine/lightning';
 import { learnerOf, type Kid, type Learner } from '../../engine/models';
 import { answerText, type Problem } from '../../engine/problems';
 import { HoldButton } from '../../ui/early/HoldButton';
@@ -33,6 +33,12 @@ export function threeChoices(p: Problem): number[] {
   return [answer, ...picked].sort((a, b) => a - b);
 }
 
+/** What the voice says when the answer shows: the fact and its answer, and for a pre-reader the number to tap. */
+export function missSpeech(p: Problem, pre: boolean): string {
+  const answer = answerText(p);
+  return `${speechOf(p)} is ${answer}${pre ? `. Tap ${answer} to keep going` : ''}`;
+}
+
 const sec = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
 
 type View = { kind: 'loading' } | { kind: 'empty' } | { kind: 'play' } | { kind: 'end'; result: RoundResult; gems: number };
@@ -45,11 +51,13 @@ export function LightningMode(props: GameModeProps) {
 
 function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameModeProps & { onAgain: () => void }) {
   const learner = learnerOf(kid.settings);
+  const pre = learner === 'prereader';
   const roundRef = useRef<LightningRound | null>(null);
   const kidRef = useRef<Kid>(kid);
   kidRef.current = kid;
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const ringTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const missTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startedCard = useRef<string | null>(null);
   const cardStart = useRef(0);
   const finishing = useRef(false);
@@ -84,6 +92,7 @@ function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameMode
       window.removeEventListener('pagehide', checkpoint);
       timers.current.forEach(clearTimeout);
       if (ringTimer.current) clearTimeout(ringTimer.current);
+      if (missTimer.current) clearTimeout(missTimer.current);
       stopSpeaking();
       checkpoint(); // unmount
     };
@@ -117,6 +126,7 @@ function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameMode
     finishing.current = true;
     timers.current.forEach(clearTimeout);
     if (ringTimer.current) clearTimeout(ringTimer.current);
+    if (missTimer.current) clearTimeout(missTimer.current);
     stopSpeaking();
     const result = r.result();
     const saved = await saveLightning(repo, kidRef.current, r, { close: true });
@@ -133,11 +143,22 @@ function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameMode
   const next = useCallback(() => {
     const r = roundRef.current;
     if (!r) return;
+    if (missTimer.current) clearTimeout(missTimer.current);
     r.advance();
     setFlash(false);
     if (r.over() || pausedRef.current) void finish();
     else rerender();
   }, [finish, pausedRef]);
+
+  // The optional timer after a miss (LIGHTNING_MISS_AUTO_ADVANCE_MS, off by default). Only the card that missed can end it.
+  const armAutoAdvance = (card: LightningCard) => {
+    if (LIGHTNING_MISS_AUTO_ADVANCE_MS === null) return;
+    if (missTimer.current) clearTimeout(missTimer.current);
+    missTimer.current = setTimeout(() => {
+      const r = roundRef.current;
+      if (r && r.phase === 'miss' && r.current()?.id === card.id) next();
+    }, LIGHTNING_MISS_AUTO_ADVANCE_MS);
+  };
 
   // Each new card: count it shown, say it, start the ring. The ring closing is a hint, never a fail: it reveals the answer.
   useEffect(() => {
@@ -150,7 +171,8 @@ function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameMode
     ringTimer.current = setTimeout(() => {
       if (r.phase !== 'ask') return;
       r.timeout();
-      void speak(`${speechOf(card.problem)} is ${answerText(card.problem)}`);
+      void speak(missSpeech(card.problem, pre));
+      armAutoAdvance(card);
       rerender();
     }, card.delayMs);
   });
@@ -169,7 +191,8 @@ function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameMode
       softTone();
       setShake(true);
       later(() => setShake(false), 400);
-      void speak(`${speechOf(card.problem)} is ${answerText(card.problem)}`);
+      void speak(missSpeech(card.problem, pre));
+      armAutoAdvance(card);
     }
     rerender();
   };
@@ -178,6 +201,7 @@ function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameMode
     const r = roundRef.current;
     if (!r || r.phase !== 'miss' || r.current()?.id !== card.id) return;
     if (r.copy({ kind: 'int', value })) {
+      if (missTimer.current) clearTimeout(missTimer.current);
       chime();
       if (r.answered % 10 === 0) checkpoint();
       later(next, 450);
@@ -227,7 +251,6 @@ function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameMode
   const elapsed = Date.now() - round.startedAt;
   const progress = Math.min(1, Math.max(round.result().shown / LIGHTNING.maxCards, elapsed / LIGHTNING.maxMs));
   const answer = answerText(card.problem);
-  const pre = learner === 'prereader';
   return (
     <div className={`screen run lr-screen ${pre ? 'lr-pre' : ''}`} data-testid="lightning" data-phase={phase} data-delay={card.delayMs}>
       <div className="run-top">
@@ -245,7 +268,7 @@ function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameMode
         </div>
         <MathView tokens={card.problem.tokens} answer={phase === 'miss' ? <span data-testid="lr-answer">{answer}</span> : '?'} />
         {phase === 'miss' ? (
-          <p className="lr-copy" data-testid="lr-copy">{pre ? '' : 'Type the answer again'}</p>
+          <p className={`lr-copy ${pre ? '' : 'is-prompt'}`} data-testid="lr-copy">{pre ? '' : `Type ${answer} to keep going`}</p>
         ) : null}
         <SpeakButton text={speechOf(card.problem)} size={pre ? 64 : 36} />
       </PixelFrame>
@@ -277,14 +300,14 @@ function LightningRoundScreen({ repo, kid, onExit, onSynced, onAgain }: GameMode
           })}
         </div>
       ) : (
-        <TypedAnswer key={`${card.id}:${phase}`} answer={answer} disabled={phase === 'hit'} onSubmit={(v) => (phase === 'ask' ? submit(card, v) : copy(card, v))} />
+        <TypedAnswer key={`${card.id}:${phase}`} answer={answer} disabled={phase === 'hit'} prompt={phase === 'miss'} onSubmit={(v) => (phase === 'ask' ? submit(card, v) : copy(card, v))} />
       )}
     </div>
   );
 }
 
 /** The keypad and the typed digits. It submits when the typed digits match the length of the answer, so no tap is spent on GO. */
-function TypedAnswer({ answer, disabled, onSubmit }: { answer: string; disabled: boolean; onSubmit: (value: number) => void }) {
+function TypedAnswer({ answer, disabled, prompt, onSubmit }: { answer: string; disabled: boolean; prompt: boolean; onSubmit: (value: number) => void }) {
   const [typed, setTyped] = useState('');
   const send = (text: string) => {
     if (text === '') return;
@@ -293,7 +316,7 @@ function TypedAnswer({ answer, disabled, onSubmit }: { answer: string; disabled:
   };
   return (
     <div className="lr-typed">
-      <div className="lr-typed-box" data-testid="lr-typed" aria-live="polite">{typed || ' '}</div>
+      <div className={`lr-typed-box ${prompt ? 'is-prompt' : ''}`} data-testid="lr-typed" aria-live="polite">{typed || ' '}</div>
       <Keypad
         disabled={disabled}
         canSubmit={typed.length > 0}

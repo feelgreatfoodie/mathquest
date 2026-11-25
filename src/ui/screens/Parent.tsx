@@ -1078,10 +1078,10 @@ function KidDetail({ usernamePanel, repo, kid: kidProp, onResumed, onSettings, o
                 void onLightningFloor(ms);
               }}
             >
-              <option value="">Default ({learnerOf(settings) === 'prereader' ? '2' : '1'} s)</option>
-              {[1000, 1500, 2000, 3000, 4000].map((n) => <option key={n} value={n}>{n / 1000} s</option>)}
+              <option value="">Default ({learnerOf(settings) === 'prereader' ? '2' : '1.5'} s)</option>
+              {[1500, 2000, 3000, 4000].map((n) => <option key={n} value={n}>{n / 1000} s</option>)}
             </select>
-            <span className="hint">The shortest time a fact shows before its answer. Saves as soon as you pick. Pre-readers never go below 2 s.</span>
+            <span className="hint">The shortest time a fact shows before its answer. Saves as soon as you pick. Readers never go below 1.5 s and pre-readers never go below 2 s, so this can only raise the floor.</span>
           </label>
         </details>
         <label>
