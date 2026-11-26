@@ -198,13 +198,13 @@ export class LocalRepo implements Repo {
     return next;
   }
 
-  async vaultPay(kidId: string, depositId: string, mode: 'collect' | 'break'): Promise<{ paid: number; done: boolean }> {
+  async vaultPay(kidId: string, depositId: string, mode: 'collect' | 'break'): Promise<{ paid: number; done: boolean; game: KidGame }> {
     const stored = read<Kid[]>('kids', []).find((k) => k.id === kidId);
     if (!stored) throw new Error('That player was removed.');
     const deps = read<VaultDeposit[]>(`vault:${kidId}`, []);
     const dep = deps.find((d) => d.id === depositId);
     if (!dep) throw new GameDeltaError('That deposit is not in the vault.');
-    if (dep.status === 'collected' || dep.status === 'broken') return { paid: 0, done: true };
+    if (dep.status === 'collected' || dep.status === 'broken') return { paid: 0, done: true, game: normalizeKid(stored).game };
     const closing = dep.status === 'active';
     const running: VaultStatus = closing ? (mode === 'break' ? 'breaking' : 'collecting') : dep.status;
     if (closing && running === 'collecting' && Date.now() < maturesAtOf(dep)) throw new GameDeltaError('The vault is not ready yet.');
@@ -217,7 +217,7 @@ export class LocalRepo implements Repo {
     write(`vault:${kidId}`, deps.map((d) => (d.id === depositId ? { ...d, status, paidOut: d.paidOut + chunk, ...(closing ? { collectedAt: Date.now() } : {}) } : d)));
     const game: KidGame = { ...kid.game, gems: kid.game.gems + chunk };
     this.patchKid(kidId, (k) => ({ ...k, game, ...(closing ? { vault: { ...pointer, active: pointer.active - 1, closedId: depositId } } : {}) }));
-    return { paid: chunk, done: last };
+    return { paid: chunk, done: last, game };
   }
 
   async listVault(kidId: string, max: number): Promise<VaultDeposit[]> {
