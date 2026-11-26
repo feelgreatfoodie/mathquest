@@ -10,6 +10,7 @@ import type { RunSummary } from './engine/session';
 import type { RunInfo } from './ui/runShared';
 import { dataMode, fetchPasscodeKind, fetchSigninMode, getFirebase, kidClaims, kidOpenedByPad, registerParent, signInKid, signInParent, signOutParent } from './firebase';
 import { replayOutbox } from './data/outbox';
+import { buildVaultApi } from './ui/vaultActions';
 import { settleUpdate } from './update';
 import { FailureToasts } from './ui/FailureToasts';
 import { UpdatePrompt, UpdateScreen } from './ui/UpdateScreen';
@@ -363,43 +364,8 @@ export function App() {
     };
   };
 
-  /** The vault for one kid. Every chunk of a payout saves on its own, and the screen shows the stored gems after each. */
-  const vaultFor = (kidId: string): VaultApi | undefined => {
-    if (!repo) return undefined;
-    const refreshGame = async () => {
-      const k = await repo.getKid(kidId);
-      if (k) showGame(kidId, k.game);
-    };
-    return {
-      list: () => repo.listVault(kidId, 50),
-      deposit: async (amount, term) => {
-        try {
-          await repo.vaultDeposit(kidId, amount, term);
-          await refreshGame();
-          return true;
-        } catch (e) {
-          if (e instanceof GameDeltaError) reportFailure(e.message, e);
-          else reportFailure('That was not saved.', e);
-          return false;
-        }
-      },
-      pay: async (id, mode) => {
-        try {
-          for (;;) {
-            const r = await repo.vaultPay(kidId, id, mode);
-            await refreshGame();
-            if (r.done) return 'done';
-          }
-        } catch (e) {
-          // The server refuses a collect before the term ends on its own clock. That is "not ready", not a failure.
-          const code = (e as { code?: string }).code;
-          if (code === 'permission-denied' || (e instanceof GameDeltaError && /not ready/i.test(e.message))) return 'early';
-          reportFailure('That was not saved.', e);
-          return 'failed';
-        }
-      },
-    };
-  };
+  /** The vault for one kid (see buildVaultApi). */
+  const vaultFor = (kidId: string): VaultApi | undefined => (repo ? buildVaultApi(repo, kidId, showGame, reportFailure) : undefined);
 
   // A release never interrupts a round or replaces the save: the update screen waits for home, and the summary
   // (after the save) carries the prompt.
