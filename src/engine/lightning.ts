@@ -46,11 +46,12 @@ const LADDER: Record<Learner, readonly number[]> = { reader: [3000, 2000, 1500],
 export const LEARNER_FLOOR: Record<Learner, number> = { reader: 1500, prereader: 2000 };
 
 /**
- * After a miss the answer shows and the kid types it to keep going. Null: the round waits for that copy (the default).
- * A number of ms (for example 2000): the round also moves on by itself that long after the miss. A right copy, leaving the
+ * After a miss or a timeout the answer shows and the kid types it to keep going. Null: the round waits for that copy.
+ * A number of ms: the round also moves on by itself that long after the miss. On at 2000 for both learners (Flynn 11-26:
+ * "enable it after I miss"). The time to answer is unchanged. A right copy, leaving the
  * round and the round ending all cancel the timer. The miss still counts and requeues either way.
  */
-export const LIGHTNING_MISS_AUTO_ADVANCE_MS: number | null = null;
+export const LIGHTNING_MISS_AUTO_ADVANCE_MS: number | null = 2000;
 
 /** The delay floor in ms: the parent's advanced setting when valid, never below the learner's own floor. */
 export function floorOf(settings: Pick<KidSettings, 'learner' | 'lightningFloorMs'> | undefined | null): number {

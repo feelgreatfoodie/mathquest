@@ -12,6 +12,10 @@ let rig: Rig;
 afterEach(() => rig?.teardown());
 
 describe('Lightning miss with LIGHTNING_MISS_AUTO_ADVANCE_MS on', () => {
+  it('ships on at 2000 ms (Flynn 11-26: "enable it after I miss")', async () => {
+    const real = await vi.importActual<typeof import('../../engine/lightning')>('../../engine/lightning');
+    expect(real.LIGHTNING_MISS_AUTO_ADVANCE_MS).toBe(2000);
+  });
   it('(d) a miss with no input reaches the next card in about 2 s', async () => {
     rig = await mount();
     const before = rig.host.querySelector('.math')!.textContent;
