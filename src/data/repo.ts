@@ -73,9 +73,10 @@ export interface Repo {
   /**
    * Pays one chunk (at most 10 gems) of a deposit back and reports it. `collect` takes amount + bonus and the server refuses it
    * before the term ends (server time only). `break` takes the amount back at any time and drops the bonus. A deposit that is
-   * already closed ignores `mode` and pays what it still owes. Call it until `done`. A device clock never decides.
+   * already closed ignores `mode` and pays what it still owes. Call it until `done`. A device clock never decides. `game` is the game
+   * this call stored (or read, when the deposit was already closed): the screen shows it, never a second read.
    */
-  vaultPay(kidId: string, depositId: string, mode: 'collect' | 'break'): Promise<{ paid: number; done: boolean }>;
+  vaultPay(kidId: string, depositId: string, mode: 'collect' | 'break'): Promise<{ paid: number; done: boolean; game: KidGame }>;
   /** The kid's deposits, newest first. */
   listVault(kidId: string, max: number): Promise<VaultDeposit[]>;
   /**

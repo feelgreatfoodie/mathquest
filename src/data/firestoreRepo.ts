@@ -5,6 +5,7 @@ import {
   FieldPath,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   limit,
   onSnapshot,
@@ -167,7 +168,11 @@ export class FirestoreRepo implements Repo {
   }
 
   async getKid(kidId: string): Promise<Kid | null> {
-    const snap = await getDoc(doc(this.kids(), kidId));
+    // The server first. The app keeps a live listener on the kid doc (the pause), and getDoc on a doc with a live listener answers
+    // from that listener's copy, which can be one write behind a transaction that just committed (11-26: 63 gems shown, 53 stored).
+    // Offline, the cached copy is the best there is.
+    const ref = doc(this.kids(), kidId);
+    const snap = await getDocFromServer(ref).catch(() => getDoc(ref));
     return snap.exists() ? normalizeKid(snap.data() as Kid) : null;
   }
 
@@ -293,7 +298,7 @@ export class FirestoreRepo implements Repo {
     });
   }
 
-  async vaultPay(kidId: string, depositId: string, mode: 'collect' | 'break'): Promise<{ paid: number; done: boolean }> {
+  async vaultPay(kidId: string, depositId: string, mode: 'collect' | 'break'): Promise<{ paid: number; done: boolean; game: KidGame }> {
     const ref = doc(this.kids(), kidId);
     const depRef = doc(this.vault(kidId), depositId);
     // One chunk per transaction. The transaction reads the deposit and the kid, then writes game.gems and paidOut together,
@@ -303,7 +308,7 @@ export class FirestoreRepo implements Repo {
       if (!snap.exists()) throw new Error('That player was removed.');
       if (!depSnap.exists()) throw new GameDeltaError('That deposit is not in the vault.');
       const dep = fromStored(depSnap.data());
-      if (dep.status === 'collected' || dep.status === 'broken') return { paid: 0, done: true };
+      if (dep.status === 'collected' || dep.status === 'broken') return { paid: 0, done: true, game: normalizeKid(snap.data() as Kid).game };
       // An active deposit starts the payout the caller asked for. A payout in progress finishes as it started, whatever `mode` says.
       const closing = dep.status === 'active';
       const running: VaultStatus = closing ? (mode === 'break' ? 'breaking' : 'collecting') : dep.status;
@@ -315,9 +320,10 @@ export class FirestoreRepo implements Repo {
       const pointer: VaultPointer = (snap.data() as Kid).vault ?? { active: 0 };
       // The first chunk leaves `active`: the rules check the term against their own clock and createdAt (this code never does) and the pointer drops.
       tx.update(depRef, { paidOut: dep.paidOut + chunk, ...(status !== dep.status ? { status } : {}), ...(closing ? { collectedAt: serverTimestamp() } : {}) });
-      const game = splitGame({ ...kid.game, gems: kid.game.gems + chunk }).game;
+      const after: KidGame = { ...kid.game, gems: kid.game.gems + chunk };
+      const game = splitGame(after).game;
       tx.update(ref, closing ? { game, vault: { ...pointer, active: pointer.active - 1, closedId: depositId } } : { game });
-      return { paid: chunk, done: last };
+      return { paid: chunk, done: last, game: after };
     });
   }
 

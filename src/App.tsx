@@ -298,6 +298,19 @@ export function App() {
   const showGameRef = useRef(showGame);
   showGameRef.current = showGame;
 
+  /** After a refusal ("Not enough gems."), the stored game replaces the one on screen, so the screen can never stay above the server. */
+  const resync = useCallback(
+    async (kidId: string) => {
+      try {
+        const k = await repo?.getKid(kidId);
+        if (k) showGame(kidId, k.game);
+      } catch {
+        // Offline: the screen keeps what it has; the next write or launch corrects it.
+      }
+    },
+    [repo, showGame],
+  );
+
   /** The shop's writes. The screen shows the stored result, so a failed purchase never looks bought. */
   const applyGame = useCallback(
     async (kidId: string, delta: GameDelta) => {
@@ -307,12 +320,14 @@ export function App() {
         await attempt();
         return true;
       } catch (e) {
-        if (e instanceof GameDeltaError) reportFailure(e.message, e);
-        else reportFailure('That was not saved.', e, attempt);
+        if (e instanceof GameDeltaError) {
+          reportFailure(e.message, e);
+          void resync(kidId);
+        } else reportFailure('That was not saved.', e, attempt);
         return false;
       }
     },
-    [repo, showGame],
+    [repo, showGame, resync],
   );
 
   /** Gifts for one kid: who they can give to, giving, and the presents waiting on Home. Every failure shows a toast. */
@@ -325,8 +340,10 @@ export function App() {
           showGame(kidId, await repo.giftItem(kidId, receiverId, itemId));
           return true;
         } catch (e) {
-          if (e instanceof GameDeltaError) reportFailure(e.message, e);
-          else if ((e as { code?: string }).code === 'permission-denied') reportFailure('Gifts are off right now.', e);
+          if (e instanceof GameDeltaError) {
+            reportFailure(e.message, e);
+            void resync(kidId);
+          } else if ((e as { code?: string }).code === 'permission-denied') reportFailure('Gifts are off right now.', e);
           else reportFailure('That gift was not saved.', e);
           return false;
         }

@@ -5,18 +5,17 @@ import type { VaultApi } from './vaultApi';
 
 type Fail = (message: string, err: unknown, retry?: () => Promise<void>) => void;
 
-/** The vault for one kid. Every chunk of a payout saves on its own, and the screen shows the stored gems after each. */
-export function buildVaultApi(repo: Pick<Repo, 'getKid' | 'listVault' | 'vaultDeposit' | 'vaultPay'>, kidId: string, showGame: (kidId: string, game: KidGame) => void, reportFailure: Fail): VaultApi {
-  const refreshGame = async () => {
-    const k = await repo.getKid(kidId);
-    if (k) showGame(kidId, k.game);
-  };
+/**
+ * The vault for one kid. Every chunk of a payout saves on its own. The screen shows the game each transaction stored, never a
+ * read after it: a read after a transaction could answer from the live listener's copy, one write behind. On 11-26 a break then a
+ * deposit 1.6 s later left 63 gems on screen with 53 stored, and the shop refused a 60-gem gift.
+ */
+export function buildVaultApi(repo: Pick<Repo, 'listVault' | 'vaultDeposit' | 'vaultPay'>, kidId: string, showGame: (kidId: string, game: KidGame) => void, reportFailure: Fail): VaultApi {
   return {
     list: () => repo.listVault(kidId, 50),
     deposit: async (amount, term) => {
       try {
-        await repo.vaultDeposit(kidId, amount, term);
-        await refreshGame();
+        showGame(kidId, await repo.vaultDeposit(kidId, amount, term));
         return true;
       } catch (e) {
         if (e instanceof GameDeltaError) reportFailure(e.message, e);
@@ -28,7 +27,7 @@ export function buildVaultApi(repo: Pick<Repo, 'getKid' | 'listVault' | 'vaultDe
       try {
         for (;;) {
           const r = await repo.vaultPay(kidId, id, mode);
-          await refreshGame();
+          showGame(kidId, r.game);
           if (r.done) return 'done';
         }
       } catch (e) {
