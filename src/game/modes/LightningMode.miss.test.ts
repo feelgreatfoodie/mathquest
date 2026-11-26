@@ -6,6 +6,8 @@ import { answerOnScreen, ended, letRingClose, mount, phaseOf, preCards, prereade
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.mock('../../ui/early/useSpeech', async (orig) => ({ ...(await orig<typeof import('../../ui/early/useSpeech')>()), speak: vi.fn(async (t: string) => void spoken.push(t)), stopSpeaking: vi.fn(), unlockSpeech: vi.fn() }));
 vi.mock('../../ui/early/sounds', () => ({ chime: vi.fn(), softTone: vi.fn(), unlockSounds: vi.fn(), setMuted: vi.fn(), isMuted: () => false }));
+// This file is the auto-advance OFF behavior (the constant null). The shipped value, 2000, is covered in LightningMode.missAuto.test.ts.
+vi.mock('../../engine/lightning', async (orig) => ({ ...(await orig<typeof import('../../engine/lightning')>()), LIGHTNING_MISS_AUTO_ADVANCE_MS: null }));
 
 let rig: Rig;
 afterEach(() => rig?.teardown());
